@@ -309,7 +309,7 @@
 "Backup_Start" = "Back Up";
 "Backup_Starting" = "Preparing…";
 "Backup_Result" = "Backup finished: %d succeeded, %d failed.";
-"Restore_Result" = "%d package(s) added to the install queue.";
+"Restore_Result" = "%d package(s) added to the install queue, %d skipped.";
 "Backup_Configuration_Done" = "Configuration backed up.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
 "Backup_Sources_Result" = "%d source(s) backed up.";

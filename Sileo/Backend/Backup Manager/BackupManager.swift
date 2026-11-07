@@ -6,6 +6,12 @@
 //  configuration into /var/mobile/Documents, and restores them through
 //  Sileo's install queue.
 //
+//  A package that a configured source still offers is only written down,
+//  not copied: the restore downloads it again, verified, and takes the
+//  newest version when the installed one is gone. Only a package no source
+//  knows (a local .deb, a removed source) is kept as a file, from apt's
+//  cache when it is still there and repacked from disk otherwise.
+//
 
 import Foundation
 
@@ -31,6 +37,21 @@ final class BackupManager {
         var sourcesURL: URL {
             url.appendingPathComponent("源地址备份", isDirectory: true)
         }
+
+        var manifestURL: URL {
+            packagesURL.appendingPathComponent("manifest.json")
+        }
+    }
+
+    struct ManifestEntry: Codable {
+        var package: String
+        var name: String
+        var version: String
+        var architecture: String?
+        /// The source the package can be downloaded from again, if any.
+        var repo: String?
+        /// The .deb kept in the backup folder when no source offers it.
+        var deb: String?
     }
 
     enum BackupError: LocalizedError {
@@ -138,7 +159,9 @@ final class BackupManager {
             return
         }
         let directory = folder.packagesURL
+        let manifestURL = folder.manifestURL
         DispatchQueue.global(qos: .userInitiated).async {
+            PackageListManager.shared.initWait()
             let fileManager = FileManager.default
             do {
                 try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -147,85 +170,195 @@ final class BackupManager {
                 return
             }
 
-            var done = 0
+            var entries: [ManifestEntry] = []
             var failed = 0
             let total = Double(packages.count)
+
             for (index, package) in packages.enumerated() {
-                let detail = "\(index + 1)/\(packages.count)"
                 DispatchQueue.main.async {
-                    progress(Double(index) / total, package.name, detail)
+                    progress(Double(index) / total, package.name, "\(index + 1)/\(packages.count)")
                 }
+                var entry = ManifestEntry(
+                    package: package.package,
+                    name: package.name,
+                    version: package.version,
+                    architecture: package.architecture,
+                    repo: nil,
+                    deb: nil
+                )
+
+                if let repoPackage = PackageListManager.shared.newestPackage(identifier: package.package),
+                   let repo = repoPackage.sourceRepo {
+                    entry.repo = repo.rawURL
+                    entries.append(entry)
+                    continue
+                }
+
+                // No source offers it: keep a file, apt's own copy first.
                 let fileName = [
                     package.package,
                     BackupManager.safeName(package.version),
                     BackupManager.safeName(package.architecture ?? "all")
                 ].joined(separator: "_") + ".deb"
                 let destination = directory.appendingPathComponent(fileName)
+
+                if BackupManager.copyCachedPackage(package: package, to: destination) {
+                    entry.deb = fileName
+                    entries.append(entry)
+                    continue
+                }
+
                 do {
                     _ = try PackageRepacker.repack(package: package, to: destination)
-                    done += 1
+                    entry.deb = fileName
+                    entries.append(entry)
                 } catch {
                     failed += 1
                     NSLog("SileoLog: backup failed \(package.package): \(error)")
                     try? fileManager.removeItem(at: destination)
                 }
             }
+
+            do {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                try encoder.encode(entries).write(to: manifestURL, options: .atomic)
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+
             DispatchQueue.main.async {
                 progress(1, "", "")
-                completion(.success((done, failed)))
+                completion(.success((entries.count, failed)))
             }
         }
+    }
+
+    /// Copies the .deb apt downloaded for this package, if it is still cached.
+    private static func copyCachedPackage(package: Package, to destination: URL) -> Bool {
+        let cache = "\(CommandPath.prefix)/var/cache/apt/archives"
+        let version = safeName(package.version)
+        let architecture = safeName(package.architecture ?? "all")
+        let candidates = [
+            "\(package.package)_\(version)_\(architecture).deb",
+            "\(package.package)_\(package.version)_\(architecture).deb"
+        ]
+        for candidate in candidates {
+            let source = "\(cache)/\(candidate)"
+            guard FileManager.default.fileExists(atPath: source) else { continue }
+            try? FileManager.default.removeItem(at: destination)
+            let (status, _, _) = spawnAsRoot(args: [CommandPath.cp, "-a", rootfs(source), rootfs(destination.path)])
+            guard status == 0 else { continue }
+            spawnAsRoot(args: [CommandPath.chown, "501:501", rootfs(destination.path)])
+            return true
+        }
+        return false
     }
 
     func restorePackages(
         from folder: BackupFolder,
         progress: @escaping ProgressHandler,
-        completion: @escaping (Result<Int, Error>) -> Void
+        completion: @escaping (Result<(Int, Int), Error>) -> Void
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
-            let fileManager = FileManager.default
-            let contents = (try? fileManager.contentsOfDirectory(
-                at: folder.packagesURL,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            )) ?? []
-            let debs = contents
-                .filter { $0.pathExtension.lowercased() == "deb" }
-                .sorted { $0.lastPathComponent < $1.lastPathComponent }
-            guard !debs.isEmpty else {
+            let entries = BackupManager.manifestEntries(in: folder)
+            guard !entries.isEmpty else {
                 DispatchQueue.main.async { completion(.failure(BackupError.nothingToRestore)) }
                 return
             }
 
-            var packages: [Package] = []
-            let total = Double(debs.count)
-            for (index, url) in debs.enumerated() {
+            var queued: [Package] = []
+            var skipped = 0
+            let total = Double(entries.count)
+
+            for (index, entry) in entries.enumerated() {
                 DispatchQueue.main.async {
-                    progress(Double(index) / total, url.lastPathComponent, "\(index + 1)/\(debs.count)")
+                    progress(Double(index) / total, entry.name, "\(index + 1)/\(entries.count)")
                 }
-                if let package = PackageListManager.shared.package(url: url) {
-                    packages.append(package)
+                if let package = BackupManager.resolve(entry: entry, in: folder) {
+                    queued.append(package)
+                } else {
+                    skipped += 1
+                    NSLog("SileoLog: restore skipped \(entry.package) \(entry.version)")
                 }
             }
 
             DispatchQueue.main.async {
                 progress(1, "", "")
-                guard !packages.isEmpty else {
+                guard !queued.isEmpty else {
                     completion(.failure(BackupError.nothingToRestore))
                     return
                 }
                 let manager = DownloadManager.shared
-                for package in packages {
+                for package in queued {
                     manager.add(package: package, queue: .installations)
                 }
                 if !manager.queueRunning {
                     manager.reloadData(recheckPackages: true)
                 }
                 NotificationCenter.default.post(name: PackageQueueButton.actionPerformedNotification, object: nil)
-                completion(.success(packages.count))
+                completion(.success((queued.count, skipped)))
             }
         }
+    }
+
+    private static func manifestEntries(in folder: BackupFolder) -> [ManifestEntry] {
+        let fileManager = FileManager.default
+        if let data = try? Data(contentsOf: folder.manifestURL),
+           let entries = try? JSONDecoder().decode([ManifestEntry].self, from: data) {
+            return entries
+        }
+        // A backup made before the manifest: whatever debs it holds.
+        let contents = (try? fileManager.contentsOfDirectory(
+            at: folder.packagesURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return contents
+            .filter { $0.pathExtension.lowercased() == "deb" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { url in
+                ManifestEntry(
+                    package: url.deletingPathExtension().lastPathComponent,
+                    name: url.lastPathComponent,
+                    version: "",
+                    architecture: nil,
+                    repo: nil,
+                    deb: url.lastPathComponent
+                )
+            }
+    }
+
+    /// The package to install for a manifest entry: the recorded source (or
+    /// any source, newest) when it offers the package, otherwise the kept .deb.
+    private static func resolve(entry: ManifestEntry, in folder: BackupFolder) -> Package? {
+        if let repoURL = entry.repo,
+           let repo = RepoManager.shared.repoList.first(where: { $0.rawURL == repoURL }),
+           let package = exactOrNewest(in: repo, entry: entry) {
+            return package
+        }
+        if let package = PackageListManager.shared.newestPackage(identifier: entry.package),
+           package.sourceRepo != nil {
+            return package
+        }
+        if let deb = entry.deb {
+            let url = folder.packagesURL.appendingPathComponent(deb)
+            if let package = PackageListManager.shared.package(url: url) {
+                return package
+            }
+        }
+        return nil
+    }
+
+    private static func exactOrNewest(in repo: Repo, entry: ManifestEntry) -> Package? {
+        if let exact = repo.packageArray.first(where: {
+            $0.package == entry.package && $0.version == entry.version
+        }) {
+            return exact
+        }
+        return repo.newestPackage(identifier: entry.package)
     }
 
     // MARK: - Configuration

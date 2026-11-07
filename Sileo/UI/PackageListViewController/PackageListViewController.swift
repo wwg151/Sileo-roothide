@@ -586,8 +586,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 progress.update(fraction: fraction, message: message, detail: detail)
             }, completion: { result in
                 switch result {
-                case .success(let count):
-                    progress.finish(message: String(format: String(localizationKey: "Restore_Result"), count))
+                case .success(let counts):
+                    progress.finish(message: String(format: String(localizationKey: "Restore_Result"), counts.0, counts.1))
                 case .failure(let error):
                     progress.finish(message: error.localizedDescription)
                 }
