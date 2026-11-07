@@ -560,7 +560,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }, completion: { result in
             switch result {
             case .success(let counts):
-                progress.finish(message: String(format: String(localizationKey: "Backup_Result"), counts.0, counts.1))
+                let text = String(format: String(localizationKey: "Backup_Result"), counts.0, counts.1)
+                progress.finish(message: text + "\n\n" + folder.url.path)
             case .failure(let error):
                 progress.finish(message: error.localizedDescription)
             }
@@ -619,7 +620,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         BackupManager.shared.backupConfiguration(to: folder, completion: { result in
             switch result {
             case .success:
-                progress.finish(message: String(localizationKey: "Backup_Configuration_Done"))
+                progress.finish(message: String(localizationKey: "Backup_Configuration_Done") + "\n\n" + folder.url.path)
             case .failure(let error):
                 progress.finish(message: error.localizedDescription)
             }
@@ -676,7 +677,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         BackupManager.shared.backupSources(to: folder, completion: { result in
             switch result {
             case .success(let count):
-                progress.finish(message: String(format: String(localizationKey: "Backup_Sources_Result"), count))
+                let text = String(format: String(localizationKey: "Backup_Sources_Result"), count)
+                progress.finish(message: text + "\n\n" + folder.url.path)
             case .failure(let error):
                 progress.finish(message: error.localizedDescription)
             }
