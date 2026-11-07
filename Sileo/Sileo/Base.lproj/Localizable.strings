@@ -291,3 +291,6 @@
 "No_Broken_Sources" = "No broken sources";
 "Broken_Sources_Removed" = "Broken sources removed";
 "Broken_Sources_Refreshing" = "Sources are still loading or refreshing. Try again when it has finished.";
+"Batch_Import_Packages" = "Batch Import Packages";
+"Batch_Import_Packages_No_Deb" = "No .deb file was selected.";
+"Batch_Import_Packages_Failed" = "None of the selected packages could be read. %lu file(s) were skipped.";

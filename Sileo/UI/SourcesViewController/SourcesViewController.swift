@@ -268,13 +268,17 @@ final class SourcesViewController: SileoViewController {
                     let importReposAction = UIAction(title: String(localizationKey: "Import_Sources_File"), image: .init(systemName: "archivebox")) { _ in
                         self.promptImportRepos()
                     }
+
+                    let importPackagesAction = UIAction(title: String(localizationKey: "Batch_Import_Packages"), image: .init(systemName: "tray.and.arrow.down")) { _ in
+                        self.promptImportPackages()
+                    }
                     
                     let removeBrokenAction = UIAction(title: String(localizationKey: "Remove_Broken_Sources"), image: .init(systemName: "wand.and.rays"), attributes: .destructive) { _ in
                         self.removeBrokenSources()
                     }
                     let removeBrokenMenu = UIMenu(title: "", options: .displayInline, children: [removeBrokenAction])
                     
-                    let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"), children: [promptAddRepoAction, importReposAction, removeBrokenMenu])
+                    let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"), children: [promptAddRepoAction, importReposAction, importPackagesAction, removeBrokenMenu])
                     // no primary action: a tap opens the menu, "Add Source" in it opens the add source prompt
                     nav.rightBarButtonItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
                 } else {
@@ -350,6 +354,104 @@ final class SourcesViewController: SileoViewController {
         self.present(controller, animated: true, completion: nil)
     }
 
+    private func promptImportPackages() {
+        if DownloadManager.shared.queueRunning {
+            TabBarController.singleton?.presentPopupController()
+            return
+        }
+        let controller: UIDocumentPickerViewController
+        if #available(iOS 14.0, *) {
+            controller = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        } else {
+            controller = UIDocumentPickerViewController(documentTypes: ["public.item"], in: .import)
+        }
+        controller.allowsMultipleSelection = true
+        let delegate = PackagePickerImporterDelegate.shared
+        delegate.sourcesVC = self
+        controller.delegate = delegate
+        self.present(controller, animated: true, completion: nil)
+    }
+
+    /// Stages the picked .deb files, reads each control file and queues every package for installation.
+    func importPackages(fromURLs urls: [URL]) {
+        let debURLs = urls.filter { $0.pathExtension.lowercased() == "deb" }
+        var skipped = urls.count - debURLs.count
+        guard !debURLs.isEmpty else {
+            showSimpleAlert(title: String(localizationKey: "Batch_Import_Packages"),
+                            message: String(localizationKey: "Batch_Import_Packages_No_Deb"))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            PackageListManager.shared.initWait()
+
+            var parsed: [String: Package] = [:]
+            for url in debURLs {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if didAccess {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+
+                let tmpdir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                let staged = tmpdir.appendingPathComponent(UUID().uuidString + ".deb")
+                do {
+                    try FileManager.default.createDirectory(at: tmpdir, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: url, to: staged)
+                } catch {
+                    NSLog("SileoLog: batchImport failed to stage \(url.lastPathComponent): \(error)")
+                    skipped += 1
+                    continue
+                }
+
+                guard let package = PackageListManager.shared.package(url: staged) else {
+                    NSLog("SileoLog: batchImport unreadable deb \(url.lastPathComponent)")
+                    try? FileManager.default.removeItem(at: tmpdir)
+                    skipped += 1
+                    continue
+                }
+
+                // Several debs for one package: keep the highest version only
+                if let existing = parsed[package.package],
+                   !DpkgWrapper.isVersion(package.version, greaterThan: existing.version) {
+                    NSLog("SileoLog: batchImport skipped older \(package.package)=\(package.version)")
+                    try? FileManager.default.removeItem(at: tmpdir)
+                    continue
+                }
+
+                parsed[package.package] = package
+            }
+
+            let packages = parsed.values.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            let skippedCount = skipped
+            DispatchQueue.main.async {
+                self.enqueueImportedPackages(packages, skipped: skippedCount)
+            }
+        }
+    }
+
+    private func enqueueImportedPackages(_ packages: [Package], skipped: Int) {
+        guard !packages.isEmpty else {
+            showSimpleAlert(title: String(localizationKey: "Batch_Import_Packages"),
+                            message: String(format: String(localizationKey: "Batch_Import_Packages_Failed"), skipped))
+            return
+        }
+
+        let manager = DownloadManager.shared
+        for package in packages {
+            manager.add(package: package, queue: .installations)
+        }
+        if !manager.queueRunning {
+            manager.reloadData(recheckPackages: true)
+        }
+        NotificationCenter.default.post(name: PackageQueueButton.actionPerformedNotification, object: nil)
+
+        if skipped > 0 {
+            NSLog("SileoLog: batchImport queued \(packages.count), skipped \(skipped)")
+        }
+    }
+
     @objc private func presentAddRepoOptions() {
         let alert = UIAlertController(title: String(localizationKey: "Add_Source.Title"), message: nil, preferredStyle: .actionSheet)
         alert.addAction(UIAlertAction(title: String(localizationKey: "Add_Source.Button.Add"), style: .default) { [weak self] _ in
@@ -357,6 +459,9 @@ final class SourcesViewController: SileoViewController {
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Import_Sources_File"), style: .default) { [weak self] _ in
             self?.promptImportRepos()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Batch_Import_Packages"), style: .default) { [weak self] _ in
+            self?.promptImportPackages()
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Remove_Broken_Sources"), style: .destructive) { [weak self] _ in
             self?.removeBrokenSources()
@@ -441,6 +546,20 @@ final class SourcesViewController: SileoViewController {
             }
             
             sourcesVC?.importRepos(fromURL: firstURL)
+        }
+    }
+
+    class PackagePickerImporterDelegate: NSObject, UIDocumentPickerDelegate {
+        var sourcesVC: SourcesViewController? = nil
+
+        static var shared = PackagePickerImporterDelegate()
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard !urls.isEmpty else {
+                return
+            }
+
+            sourcesVC?.importPackages(fromURLs: urls)
         }
     }
      

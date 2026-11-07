@@ -297,3 +297,6 @@
 "No_Broken_Sources" = "没有损坏的插件源";
 "Broken_Sources_Removed" = "已移除损坏的插件源";
 "Broken_Sources_Refreshing" = "插件源仍在载入或刷新中，请完成后再试。";
+"Batch_Import_Packages" = "批量导入插件";
+"Batch_Import_Packages_No_Deb" = "没有选择 .deb 文件。";
+"Batch_Import_Packages_Failed" = "所选插件都无法读取，已跳过 %lu 个文件。";
