@@ -380,6 +380,7 @@ final class BackupManager {
                 PackageRepacker.tarPath, "-cf", rootfs(archive.path),
                 "-C", rootfs(libraryParent),
                 "--exclude=Library/Caches",
+                "--exclude=Library/Filza",
                 "Library"
             ])
             guard status == 0 else {
