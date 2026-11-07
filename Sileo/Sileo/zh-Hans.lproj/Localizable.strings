@@ -300,3 +300,4 @@
 "Batch_Import_Packages" = "批量导入插件";
 "Batch_Import_Packages_No_Deb" = "没有选择 .deb 文件。";
 "Batch_Import_Packages_Failed" = "所选插件都无法读取，已跳过 %lu 个文件。";
+"Batch_Import_Packages_Reading" = "正在读取插件…";

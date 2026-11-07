@@ -382,6 +382,11 @@ final class SourcesViewController: SileoViewController {
             return
         }
 
+        let progressAlert = UIAlertController(title: String(localizationKey: "Batch_Import_Packages"),
+                                              message: String(localizationKey: "Batch_Import_Packages_Reading"),
+                                              preferredStyle: .alert)
+        present(progressAlert, animated: true)
+
         DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
 
@@ -420,13 +425,40 @@ final class SourcesViewController: SileoViewController {
                     continue
                 }
 
-                parsed[package.package] = package
+                // Rootless/rootful debs are converted to roothide here, before they are queued,
+                // so the batch import does not have to show one conversion prompt per package.
+                var queued = package
+                if !checkRootHide(package),
+                   UserDefaults.standard.bool(forKey: "CompatibilityMode", fallback: true),
+                   RootlessConverter.isConvertible(package: package) {
+                    let convertedURL = tmpdir.appendingPathComponent("converted.deb")
+                    do {
+                        try RootlessConverter.convert(deb: staged, to: convertedURL)
+                        guard let converted = PackageListManager.shared.package(url: convertedURL),
+                              checkRootHide(converted) else {
+                            throw RootlessConverter.Failure.step(String(localizationKey: "Compat_Convert_Failed"), "")
+                        }
+                        converted.origArchitecture = package.architecture
+                        converted.originalSourceFile = package.sourceFile ?? package.originalSourceFile
+                        queued = converted
+                        try? FileManager.default.removeItem(at: staged)
+                    } catch {
+                        NSLog("SileoLog: batchImport convert failed \(package.package): \(error)")
+                        try? FileManager.default.removeItem(at: tmpdir)
+                        skipped += 1
+                        continue
+                    }
+                }
+
+                parsed[queued.package] = queued
             }
 
             let packages = parsed.values.sorted { $0.name.lowercased() < $1.name.lowercased() }
             let skippedCount = skipped
             DispatchQueue.main.async {
-                self.enqueueImportedPackages(packages, skipped: skippedCount)
+                progressAlert.dismiss(animated: true) {
+                    self.enqueueImportedPackages(packages, skipped: skippedCount)
+                }
             }
         }
     }
