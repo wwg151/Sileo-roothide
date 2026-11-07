@@ -309,8 +309,6 @@
 "Backup_Configuration" = "备份配置";
 "Restore_All_Packages" = "全部插件恢复";
 "Restore_Configuration" = "恢复配置";
-"Backup_Sources" = "备份越狱源";
-"Restore_Sources" = "恢复越狱源";
 "Backup_Select_All" = "全选";
 "Backup_Start" = "备份";
 "Backup_Starting" = "正在准备…";
@@ -318,8 +316,6 @@
 "Restore_Result" = "已把 %d 个插件加入安装队列，跳过 %d 个。";
 "Backup_Configuration_Done" = "配置备份完成。";
 "Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
-"Backup_Sources_Result" = "已备份 %d 个源。";
-"Restore_Sources_Result" = "已恢复 %d 个源。";
 "Backup_No_Backup" = "没有找到备份。";
 "Backup_Choose_Folder" = "请选择备份";
 "Backup_No_Packages" = "没有可备份的第三方插件。";

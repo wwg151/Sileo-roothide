@@ -34,10 +34,6 @@ final class BackupManager {
             url.appendingPathComponent("配置备份", isDirectory: true)
         }
 
-        var sourcesURL: URL {
-            url.appendingPathComponent("源地址备份", isDirectory: true)
-        }
-
         var manifestURL: URL {
             packagesURL.appendingPathComponent("manifest.json")
         }
@@ -416,60 +412,6 @@ final class BackupManager {
             }
             spawnAsRoot(args: [CommandPath.chown, "-R", "501:501", rootfs("/var/mobile/Library")])
             DispatchQueue.main.async { completion(.success(())) }
-        }
-    }
-
-    // MARK: - Sources
-
-    func backupSources(
-        to folder: BackupFolder,
-        completion: @escaping (Result<Int, Error>) -> Void
-    ) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let fileManager = FileManager.default
-            let lines = RepoManager.shared.repoList.compactMap { $0.aptSource }
-            guard !lines.isEmpty else {
-                DispatchQueue.main.async { completion(.failure(BackupError.nothingToRestore)) }
-                return
-            }
-            do {
-                try fileManager.createDirectory(at: folder.sourcesURL, withIntermediateDirectories: true)
-                let file = folder.sourcesURL.appendingPathComponent("sources.sources")
-                try (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
-                DispatchQueue.main.async { completion(.success(lines.count)) }
-            } catch {
-                DispatchQueue.main.async { completion(.failure(error)) }
-            }
-        }
-    }
-
-    func restoreSources(
-        from folder: BackupFolder,
-        completion: @escaping (Result<Int, Error>) -> Void
-    ) {
-        let file = folder.sourcesURL.appendingPathComponent("sources.sources")
-        guard FileManager.default.fileExists(atPath: file.path) else {
-            completion(.failure(BackupError.nothingToRestore))
-            return
-        }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let manager = RepoManager()
-            manager.parseSourcesFile(at: file)
-            var added = 0
-            for repo in manager.repoList {
-                guard let url = URL(string: repo.rawURL) else { continue }
-                if RepoManager.shared.addDistRepo(
-                    url: url,
-                    suites: repo.suite,
-                    components: repo.components.joined(separator: " ")
-                ) != nil {
-                    added += 1
-                }
-            }
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: PackageListManager.reloadNotification, object: nil)
-                completion(.success(added))
-            }
         }
     }
 

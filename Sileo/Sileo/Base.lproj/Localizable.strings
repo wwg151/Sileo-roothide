@@ -303,8 +303,6 @@
 "Backup_Configuration" = "Back Up Configuration";
 "Restore_All_Packages" = "Restore All Packages";
 "Restore_Configuration" = "Restore Configuration";
-"Backup_Sources" = "Back Up Sources";
-"Restore_Sources" = "Restore Sources";
 "Backup_Select_All" = "Select All";
 "Backup_Start" = "Back Up";
 "Backup_Starting" = "Preparing…";
@@ -312,8 +310,6 @@
 "Restore_Result" = "%d package(s) added to the install queue, %d skipped.";
 "Backup_Configuration_Done" = "Configuration backed up.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
-"Backup_Sources_Result" = "%d source(s) backed up.";
-"Restore_Sources_Result" = "%d source(s) restored.";
 "Backup_No_Backup" = "No backup was found.";
 "Backup_Choose_Folder" = "Choose a backup";
 "Backup_No_Packages" = "There is no third-party package to back up.";
