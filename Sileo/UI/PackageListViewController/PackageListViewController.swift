@@ -565,24 +565,31 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
         chooseBackupFolder(title: String(localizationKey: "Restore_All_Packages"), kind: .packages) { [weak self] folder in
             guard let self = self else { return }
-            let progress = BackupProgressAlert(
-                title: String(localizationKey: "Restore_All_Packages"),
-                message: String(localizationKey: "Backup_Starting"),
-                cancellable: false,
-                onCancel: nil
-            )
-            self.present(progress.alert, animated: true)
-            BackupManager.shared.restorePackages(from: folder, progress: { fraction, message, detail in
-                progress.update(fraction: fraction, message: message, detail: detail)
-            }, completion: { result in
-                switch result {
-                case .success(let counts):
-                    progress.finish(message: String(format: String(localizationKey: "Restore_Result"), counts.0, counts.1))
-                case .failure(let error):
-                    progress.finish(message: error.localizedDescription)
-                }
-            })
+            self.confirmRestore(title: String(localizationKey: "Restore_All_Packages"),
+                                message: String(localizationKey: "Restore_Confirm_Packages")) {
+                self.startPackageRestore(from: folder)
+            }
         }
+    }
+
+    private func startPackageRestore(from folder: BackupManager.BackupFolder) {
+        let progress = BackupProgressAlert(
+            title: String(localizationKey: "Restore_All_Packages"),
+            message: String(localizationKey: "Backup_Starting"),
+            cancellable: false,
+            onCancel: nil
+        )
+        present(progress.alert, animated: true)
+        BackupManager.shared.restorePackages(from: folder, progress: { fraction, message, detail in
+            progress.update(fraction: fraction, message: message, detail: detail)
+        }, completion: { result in
+            switch result {
+            case .success(let counts):
+                progress.finish(message: String(format: String(localizationKey: "Restore_Result"), counts.0, counts.1))
+            case .failure(let error):
+                progress.finish(message: error.localizedDescription)
+            }
+        })
     }
 
     private func backupConfiguration() {
@@ -624,22 +631,38 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
         chooseBackupFolder(title: String(localizationKey: "Restore_Configuration"), kind: .configuration) { [weak self] folder in
             guard let self = self else { return }
-            let progress = BackupProgressAlert(
-                title: String(localizationKey: "Restore_Configuration"),
-                message: String(localizationKey: "Backup_Starting"),
-                cancellable: false,
-                onCancel: nil
-            )
-            self.present(progress.alert, animated: true)
-            BackupManager.shared.restoreConfiguration(from: folder, completion: { result in
-                switch result {
-                case .success:
-                    progress.finish(message: String(localizationKey: "Restore_Configuration_Done"))
-                case .failure(let error):
-                    progress.finish(message: error.localizedDescription)
-                }
-            })
+            self.confirmRestore(title: String(localizationKey: "Restore_Configuration"),
+                                message: String(localizationKey: "Restore_Confirm_Configuration")) {
+                self.startConfigurationRestore(from: folder)
+            }
         }
+    }
+
+    private func startConfigurationRestore(from folder: BackupManager.BackupFolder) {
+        let progress = BackupProgressAlert(
+            title: String(localizationKey: "Restore_Configuration"),
+            message: String(localizationKey: "Backup_Starting"),
+            cancellable: false,
+            onCancel: nil
+        )
+        present(progress.alert, animated: true)
+        BackupManager.shared.restoreConfiguration(from: folder, completion: { result in
+            switch result {
+            case .success:
+                progress.finish(message: String(localizationKey: "Restore_Configuration_Done"))
+            case .failure(let error):
+                progress.finish(message: error.localizedDescription)
+            }
+        })
+    }
+
+    private func confirmRestore(title: String, message: String, completion: @escaping () -> Void) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Confirm_Button"), style: .destructive) { _ in
+            completion()
+        })
+        present(alert, animated: true)
     }
 
     private func chooseBackupFolder(

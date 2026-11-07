@@ -309,6 +309,9 @@
 "Backup_Starting" = "Preparing…";
 "Backup_Result" = "Backup finished: %d succeeded, %d failed.";
 "Restore_Result" = "%d package(s) added to the install queue, %d skipped.";
+"Restore_Confirm_Button" = "Restore";
+"Restore_Confirm_Packages" = "The packages in this backup are added to the install queue and installed; an installed package of the same name is replaced. Continue?";
+"Restore_Confirm_Configuration" = "This backup replaces the tweak configuration under /var/mobile/Library. The current settings are lost. Continue?";
 "Backup_Configuration_Done" = "Configuration backed up.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
 "Backup_No_Backup" = "No backup was found.";

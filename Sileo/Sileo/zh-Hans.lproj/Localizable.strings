@@ -315,6 +315,9 @@
 "Backup_Starting" = "正在准备…";
 "Backup_Result" = "备份完成：成功 %d 个，失败 %d 个。";
 "Restore_Result" = "已把 %d 个插件加入安装队列，跳过 %d 个。";
+"Restore_Confirm_Button" = "恢复";
+"Restore_Confirm_Packages" = "将把该备份中的插件加入安装队列并安装，同名的已安装插件会被替换。是否继续？";
+"Restore_Confirm_Configuration" = "将用该备份覆盖 /var/mobile/Library 下的插件配置，当前设置会丢失。是否继续？";
 "Backup_Configuration_Done" = "配置备份完成。";
 "Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
 "Backup_No_Backup" = "没有找到备份。";
