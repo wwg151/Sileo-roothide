@@ -9,3 +9,6 @@
 
 /giveMeRoot/bin/
 /packages/
+
+# local build downloads (Apelin)
+/dl/

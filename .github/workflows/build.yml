@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: sileo-${{ github.workflow }}-${{ github.ref }}
@@ -80,6 +80,21 @@ jobs:
             out/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish deb to GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=roothide-dev
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "Sileo (roothide) — dev builds" \
+              --notes "Automatic iphoneos-arm64e builds of the dev branch." \
+              --prerelease
+          fi
+          gh release upload "$tag" out/*.deb out/SHA256SUMS --clobber
 
   deploy:
     name: Push deb packages to repo
