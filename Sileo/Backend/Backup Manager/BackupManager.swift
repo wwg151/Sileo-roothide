@@ -70,10 +70,22 @@ final class BackupManager {
         }
     }
 
+    enum BackupKind {
+        case packages
+        case configuration
+
+        var folderPrefix: String {
+            switch self {
+            case .packages: return "Sileo插件备份_"
+            case .configuration: return "Sileo配置备份_"
+            }
+        }
+    }
+
     typealias ProgressHandler = (_ fraction: Double, _ message: String, _ detail: String) -> Void
 
     private let rootURL = URL(fileURLWithPath: "/var/mobile/Documents", isDirectory: true)
-    private let folderPrefix = "Sileo备份_"
+    private let legacyFolderPrefix = "Sileo备份_"
     private let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -83,7 +95,7 @@ final class BackupManager {
 
     // MARK: - Folders
 
-    func backupFolders() -> [BackupFolder] {
+    func backupFolders(kind: BackupKind) -> [BackupFolder] {
         let fileManager = FileManager.default
         guard let contents = try? fileManager.contentsOfDirectory(
             at: rootURL,
@@ -93,14 +105,17 @@ final class BackupManager {
             return []
         }
         return contents
-            .filter { $0.lastPathComponent.hasPrefix(folderPrefix) }
+            .filter { url in
+                let name = url.lastPathComponent
+                return name.hasPrefix(kind.folderPrefix) || name.hasPrefix(legacyFolderPrefix)
+            }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
             .map { BackupFolder(url: $0) }
     }
 
-    func createBackupFolder() throws -> BackupFolder {
+    func createBackupFolder(kind: BackupKind) throws -> BackupFolder {
         let folder = rootURL.appendingPathComponent(
-            folderPrefix + timestampFormatter.string(from: Date()),
+            kind.folderPrefix + timestampFormatter.string(from: Date()),
             isDirectory: true
         )
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -171,9 +186,12 @@ final class BackupManager {
             let total = Double(packages.count)
 
             for (index, package) in packages.enumerated() {
-                DispatchQueue.main.async {
+                DispatchQueue.main.sync {
                     progress(Double(index) / total, package.name, "\(index + 1)/\(packages.count)")
                 }
+                // A manifest-only package is written down in a few microseconds;
+                // pacing keeps the bar readable instead of jumping to the end.
+                Thread.sleep(forTimeInterval: 0.03)
                 var entry = ManifestEntry(
                     package: package.package,
                     name: package.name,

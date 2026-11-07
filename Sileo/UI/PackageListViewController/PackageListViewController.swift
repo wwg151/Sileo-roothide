@@ -528,7 +528,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     private func startPackageBackup(_ packages: [Package]) {
         let folder: BackupManager.BackupFolder
         do {
-            folder = try BackupManager.shared.createBackupFolder()
+            folder = try BackupManager.shared.createBackupFolder(kind: .packages)
         } catch {
             showBackupMessage(title: String(localizationKey: "Backup_All_Packages"),
                               message: error.localizedDescription)
@@ -563,7 +563,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                               message: String(localizationKey: "Backup_Unavailable"))
             return
         }
-        chooseBackupFolder(title: String(localizationKey: "Restore_All_Packages")) { [weak self] folder in
+        chooseBackupFolder(title: String(localizationKey: "Restore_All_Packages"), kind: .packages) { [weak self] folder in
             guard let self = self else { return }
             let progress = BackupProgressAlert(
                 title: String(localizationKey: "Restore_All_Packages"),
@@ -593,7 +593,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
         let folder: BackupManager.BackupFolder
         do {
-            folder = try BackupManager.shared.createBackupFolder()
+            folder = try BackupManager.shared.createBackupFolder(kind: .configuration)
         } catch {
             showBackupMessage(title: String(localizationKey: "Backup_Configuration"),
                               message: error.localizedDescription)
@@ -622,7 +622,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                               message: String(localizationKey: "Backup_Unavailable"))
             return
         }
-        chooseBackupFolder(title: String(localizationKey: "Restore_Configuration")) { [weak self] folder in
+        chooseBackupFolder(title: String(localizationKey: "Restore_Configuration"), kind: .configuration) { [weak self] folder in
             guard let self = self else { return }
             let progress = BackupProgressAlert(
                 title: String(localizationKey: "Restore_Configuration"),
@@ -642,8 +642,12 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
     }
 
-    private func chooseBackupFolder(title: String, completion: @escaping (BackupManager.BackupFolder) -> Void) {
-        let folders = BackupManager.shared.backupFolders()
+    private func chooseBackupFolder(
+        title: String,
+        kind: BackupManager.BackupKind,
+        completion: @escaping (BackupManager.BackupFolder) -> Void
+    ) {
+        let folders = BackupManager.shared.backupFolders(kind: kind)
         guard !folders.isEmpty else {
             showBackupMessage(title: title, message: String(localizationKey: "Backup_No_Backup"))
             return

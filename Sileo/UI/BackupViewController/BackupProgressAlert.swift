@@ -43,7 +43,7 @@ final class BackupProgressAlert {
         let value = max(0, min(1, fraction))
         DispatchQueue.main.async {
             self.alert.message = "\n\(message)\n\(detail)\n"
-            self.progressView.setProgress(Float(value), animated: true)
+            self.progressView.setProgress(Float(value), animated: false)
             self.percentLabel.text = "\(Int(value * 100))%"
         }
     }

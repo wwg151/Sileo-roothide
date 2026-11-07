@@ -344,10 +344,11 @@ final class SourcesViewController: SileoViewController {
     private func promptImportRepos() {
         let controller: UIDocumentPickerViewController
         if #available(iOS 14.0, *) {
-            controller = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+            controller = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .item], asCopy: true)
         } else {
-            controller = UIDocumentPickerViewController(documentTypes: ["public.item"], in: .import)
+            controller = UIDocumentPickerViewController(documentTypes: ["public.item", "public.folder"], in: .import)
         }
+        controller.allowsMultipleSelection = true
         let delegate = SourcesPickerImporterDelegate.shared
         delegate.sourcesVC = self
         controller.delegate = delegate
@@ -361,9 +362,9 @@ final class SourcesViewController: SileoViewController {
         }
         let controller: UIDocumentPickerViewController
         if #available(iOS 14.0, *) {
-            controller = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+            controller = UIDocumentPickerViewController(forOpeningContentTypes: [.folder, .item], asCopy: true)
         } else {
-            controller = UIDocumentPickerViewController(documentTypes: ["public.item"], in: .import)
+            controller = UIDocumentPickerViewController(documentTypes: ["public.item", "public.folder"], in: .import)
         }
         controller.allowsMultipleSelection = true
         let delegate = PackagePickerImporterDelegate.shared
@@ -372,15 +373,140 @@ final class SourcesViewController: SileoViewController {
         self.present(controller, animated: true, completion: nil)
     }
 
+    // MARK: - Files, folders and archives
+
+    private static let archiveSuffixes = [
+        ".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz",
+        ".tar.bz2", ".tbz2", ".gz", ".xz", ".bz2", ".zst"
+    ]
+
+    private func isArchive(_ url: URL) -> Bool {
+        let name = url.lastPathComponent.lowercased()
+        return SourcesViewController.archiveSuffixes.contains { name.hasSuffix($0) }
+    }
+
+    private func extractArchive(_ url: URL, into directory: URL) -> Bool {
+        let name = url.lastPathComponent.lowercased()
+        if name.hasSuffix(".zip") {
+            let tool = "\(CommandPath.prefix)/usr/bin/unzip"
+            let (status, _, _) = spawn(command: tool, args: ["unzip", "-o", "-q", url.path, "-d", directory.path])
+            return status == 0
+        }
+        if name.hasSuffix(".7z") || name.hasSuffix(".rar") {
+            let tool = "\(CommandPath.prefix)/usr/bin/7z"
+            let (status, _, _) = spawn(command: tool, args: ["7z", "x", "-y", "-o\(directory.path)", url.path])
+            return status == 0
+        }
+        let (status, _, _) = spawn(command: PackageRepacker.tarPath, args: ["tar", "-xf", url.path, "-C", directory.path])
+        return status == 0
+    }
+
+    private func files(in directory: URL, extensions: Set<String>?) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return []
+        }
+        var result: [URL] = []
+        for case let url as URL in enumerator {
+            let isDirectory = (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == false
+            if isDirectory { continue }
+            guard let extensions = extensions else {
+                result.append(url)
+                continue
+            }
+            if extensions.contains(url.pathExtension.lowercased()) {
+                result.append(url)
+            }
+        }
+        return result
+    }
+
+    /// Turns what the picker returned into the files to read: a folder is
+    /// walked, an archive is unpacked into the temporary directory, and a
+    /// plain file is taken as it is. `extensions` nil takes every file.
+    private func expandedImportURLs(_ urls: [URL], extensions: Set<String>?) -> [URL] {
+        var result: [URL] = []
+        for url in urls {
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                result += files(in: url, extensions: extensions)
+                continue
+            }
+            if isArchive(url) {
+                let directory = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("sileo-import-\(UUID().uuidString)", isDirectory: true)
+                do {
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                } catch {
+                    continue
+                }
+                if extractArchive(url, into: directory) {
+                    result += files(in: directory, extensions: extensions)
+                }
+                continue
+            }
+            result.append(url)
+        }
+        return result
+    }
+
+    func importRepos(fromURLs urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let files = self.expandedImportURLs(urls, extensions: nil)
+            var parsed: [Repo] = []
+            for file in files {
+                let manager = RepoManager()
+                let fileExtension = file.pathExtension.lowercased()
+                if fileExtension == "list" {
+                    manager.parseListFile(at: file, isImporting: true)
+                } else if fileExtension == "sources" {
+                    manager.parseSourcesFile(at: file)
+                } else if fileExtension == "irisinrepos" {
+                    _ = manager.parseIrisinReposFile(at: file)
+                } else {
+                    manager.parsePlainTextFile(at: file)
+                }
+                parsed += manager.repoList
+            }
+
+            DispatchQueue.main.async {
+                var newRepos: [Repo] = []
+                for repo in parsed {
+                    guard let repoURL = URL(string: repo.rawURL),
+                          ["http", "https"].contains(repoURL.scheme?.lowercased() ?? ""),
+                          repoURL.host != nil else { continue }
+                    if let newRepo = RepoManager.shared.addDistRepo(
+                        url: repoURL,
+                        suites: repo.suite,
+                        components: repo.components.joined(separator: " ")
+                    ) {
+                        newRepos.append(newRepo)
+                    }
+                }
+                if newRepos.count > 0 {
+                    self.reloadData()
+                    self.updateSpecific(newRepos)
+                } else {
+                    self.showSimpleAlert(title: String(localizationKey: "Import_Sources_File"),
+                                         message: String(localizationKey: "Import_Sources_Empty"))
+                }
+            }
+        }
+    }
+
     /// Stages the picked .deb files, reads each control file and queues every package for installation.
     func importPackages(fromURLs urls: [URL]) {
-        let debURLs = urls.filter { $0.pathExtension.lowercased() == "deb" }
-        var skipped = urls.count - debURLs.count
-        guard !debURLs.isEmpty else {
-            showSimpleAlert(title: String(localizationKey: "Batch_Import_Packages"),
-                            message: String(localizationKey: "Batch_Import_Packages_No_Deb"))
-            return
-        }
+        guard !urls.isEmpty else { return }
 
         let progressAlert = UIAlertController(title: String(localizationKey: "Batch_Import_Packages"),
                                               message: String(localizationKey: "Batch_Import_Packages_Reading"),
@@ -389,6 +515,20 @@ final class SourcesViewController: SileoViewController {
 
         DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
+
+            // A picked folder is walked and a picked archive is unpacked; only
+            // the .deb files inside either of them are read.
+            let debURLs = self.expandedImportURLs(urls, extensions: ["deb"])
+            var skipped = 0
+            guard !debURLs.isEmpty else {
+                DispatchQueue.main.async {
+                    progressAlert.dismiss(animated: true) {
+                        self.showSimpleAlert(title: String(localizationKey: "Batch_Import_Packages"),
+                                             message: String(localizationKey: "Batch_Import_Packages_No_Deb"))
+                    }
+                }
+                return
+            }
 
             var parsed: [String: Package] = [:]
             for url in debURLs {
@@ -573,11 +713,11 @@ final class SourcesViewController: SileoViewController {
         static var shared = SourcesPickerImporterDelegate()
         
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let firstURL = urls.first else {
+            guard !urls.isEmpty else {
                 return
             }
-            
-            sourcesVC?.importRepos(fromURL: firstURL)
+
+            sourcesVC?.importRepos(fromURLs: urls)
         }
     }
 
