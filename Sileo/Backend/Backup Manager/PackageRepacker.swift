@@ -162,8 +162,40 @@ final class PackageRepacker {
         }
         guard !relativePaths.isEmpty else { throw RepackError.noFiles }
 
+        // Every path that has something listed below it.
+        var parents = Set<String>()
+        for relative in relativePaths {
+            var parts = relative.split(separator: "/").map(String.init)
+            while parts.count > 1 {
+                parts.removeLast()
+                parents.insert(parts.joined(separator: "/"))
+            }
+        }
+
+        // The bootstrap keeps some directories as links (ElleKit's
+        // DynamicLibraries, the jbroot's var): written as a link, nothing can
+        // be put below it, so those go in as directories.
+        var archived: [String] = []
+        var materialised: [String] = []
+        for relative in relativePaths {
+            var info = stat()
+            guard lstat("\(CommandPath.prefix)/\(relative)", &info) == 0 else { continue }
+            if info.st_mode & S_IFMT == S_IFLNK, parents.contains(relative) {
+                materialised.append(relative)
+            } else {
+                archived.append(relative)
+            }
+        }
+
+        for relative in materialised.sorted(by: { $0.count < $1.count }) {
+            let target = payload.appendingPathComponent(relative).path
+            spawnAsRoot(args: [CommandPath.mkdir, "-p", rootfs(target)])
+            spawnAsRoot(args: [CommandPath.chown, "0:0", rootfs(target)])
+            spawnAsRoot(args: [CommandPath.chmod, "0755", rootfs(target)])
+        }
+
         let listURL = work.appendingPathComponent("paths.txt")
-        try (relativePaths.joined(separator: "\n") + "\n").write(to: listURL, atomically: true, encoding: .utf8)
+        try (archived.joined(separator: "\n") + "\n").write(to: listURL, atomically: true, encoding: .utf8)
         let archive = work.appendingPathComponent("payload.tar")
 
         let (createStatus, _, createError) = spawnAsRoot(args: [
