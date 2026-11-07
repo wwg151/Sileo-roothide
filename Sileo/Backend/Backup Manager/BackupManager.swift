@@ -148,7 +148,7 @@ final class BackupManager {
         _ packages: [Package],
         to folder: BackupFolder,
         progress: @escaping ProgressHandler,
-        completion: @escaping (Result<(Int, Int), Error>) -> Void
+        completion: @escaping (Result<(Int, [String]), Error>) -> Void
     ) {
         guard !packages.isEmpty else {
             completion(.failure(BackupError.noPackages))
@@ -167,7 +167,7 @@ final class BackupManager {
             }
 
             var entries: [ManifestEntry] = []
-            var failed = 0
+            var failures: [String] = []
             let total = Double(packages.count)
 
             for (index, package) in packages.enumerated() {
@@ -209,7 +209,7 @@ final class BackupManager {
                     entry.deb = fileName
                     entries.append(entry)
                 } catch {
-                    failed += 1
+                    failures.append("\(package.name) (\(package.package)): \(error.localizedDescription)")
                     NSLog("SileoLog: backup failed \(package.package): \(error)")
                     try? fileManager.removeItem(at: destination)
                 }
@@ -226,7 +226,7 @@ final class BackupManager {
 
             DispatchQueue.main.async {
                 progress(1, "", "")
-                completion(.success((entries.count, failed)))
+                completion(.success((entries.count, failures)))
             }
         }
     }
@@ -371,11 +371,14 @@ final class BackupManager {
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
+            // Tweak preferences live in the bootstrap's own /var/mobile/Library,
+            // not the system's: on roothide that is the jbroot's.
+            let libraryParent = "\(CommandPath.prefix)/var/mobile"
             let archive = folder.configurationURL.appendingPathComponent("Library.tar")
             try? fileManager.removeItem(at: archive)
             let (status, _, errorOutput) = spawnAsRoot(args: [
                 PackageRepacker.tarPath, "-cf", rootfs(archive.path),
-                "-C", rootfs("/var/mobile"),
+                "-C", rootfs(libraryParent),
                 "--exclude=Library/Caches",
                 "Library"
             ])
@@ -400,9 +403,10 @@ final class BackupManager {
                 DispatchQueue.main.async { completion(.failure(BackupError.nothingToRestore)) }
                 return
             }
+            let libraryParent = "\(CommandPath.prefix)/var/mobile"
             let (status, _, errorOutput) = spawnAsRoot(args: [
                 PackageRepacker.tarPath, "-xpf", rootfs(archive.path),
-                "-C", rootfs("/var/mobile")
+                "-C", rootfs(libraryParent)
             ])
             guard status == 0 else {
                 DispatchQueue.main.async {
@@ -410,7 +414,7 @@ final class BackupManager {
                 }
                 return
             }
-            spawnAsRoot(args: [CommandPath.chown, "-R", "501:501", rootfs("/var/mobile/Library")])
+            spawnAsRoot(args: [CommandPath.chown, "-R", "501:501", rootfs("\(libraryParent)/Library")])
             DispatchQueue.main.async { completion(.success(())) }
         }
     }

@@ -169,7 +169,7 @@ final class PackageRepacker {
         let (createStatus, _, createError) = spawnAsRoot(args: [
             tarPath, "-cf", rootfs(archive.path),
             "-C", rootfs(CommandPath.prefix),
-            "--no-recursion", "-T", rootfs(listURL.path)
+            "--no-recursion", "--ignore-failed-read", "-T", rootfs(listURL.path)
         ])
         guard createStatus == 0 else {
             throw RepackError.commandFailed(createError)

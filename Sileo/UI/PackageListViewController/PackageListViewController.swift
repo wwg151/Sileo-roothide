@@ -546,7 +546,10 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }, completion: { result in
             switch result {
             case .success(let counts):
-                let text = String(format: String(localizationKey: "Backup_Result"), counts.0, counts.1)
+                var text = String(format: String(localizationKey: "Backup_Result"), counts.0, counts.1.count)
+                if !counts.1.isEmpty {
+                    text += "\n\n" + counts.1.joined(separator: "\n")
+                }
                 progress.finish(message: text + "\n\n" + folder.url.path)
             case .failure(let error):
                 progress.finish(message: error.localizedDescription)
