@@ -12,3 +12,6 @@
 
 # local build downloads (Apelin)
 /dl/
+
+# files the user drops in for review (Apelin)
+/incoming/

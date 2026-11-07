@@ -162,9 +162,21 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         if showWishlist {
             let exportBtn = UIBarButtonItem(title: String(localizationKey: "Export"), style: .plain, target: self, action: #selector(self.exportButtonClicked(_:)))
             self.navigationItem.leftBarButtonItem = exportBtn
-            
-            let wishlistBtn = UIBarButtonItem(title: String(localizationKey: "Wishlist"), style: .plain, target: self, action: #selector(self.showWishlist(_:)))
-            self.navigationItem.rightBarButtonItem = wishlistBtn
+
+            if #available(iOS 14.0, *) {
+                let backupButton = UIBarButtonItem(
+                    title: String(localizationKey: "Backup_Restore"),
+                    menu: self.backupMenu()
+                )
+                self.navigationItem.rightBarButtonItem = backupButton
+            } else {
+                self.navigationItem.rightBarButtonItem = UIBarButtonItem(
+                    title: String(localizationKey: "Backup_Restore"),
+                    style: .plain,
+                    target: self,
+                    action: #selector(self.presentBackupMenu(_:))
+                )
+            }
         }
         
         if packagesLoadIdentifier.contains("--wishlist") {
@@ -410,6 +422,320 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         wishlistController.title = String(localizationKey: "Wishlist")
         wishlistController.packagesLoadIdentifier = "--wishlist"
         self.navigationController?.pushViewController(wishlistController, animated: true)
+    }
+
+    // MARK: - Backup and restore
+
+    private var backupAvailable: Bool {
+        #if targetEnvironment(simulator) || TARGET_SANDBOX
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    @available(iOS 14.0, *)
+    private func backupMenu() -> UIMenu {
+        let actions = [
+            UIAction(title: String(localizationKey: "Backup_All_Packages"),
+                     image: UIImage(systemName: "archivebox")) { [weak self] _ in
+                self?.backupAllPackages()
+            },
+            UIAction(title: String(localizationKey: "Backup_Select_Packages"),
+                     image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in
+                self?.backupSelectedPackages()
+            },
+            UIAction(title: String(localizationKey: "Backup_Configuration"),
+                     image: UIImage(systemName: "gearshape")) { [weak self] _ in
+                self?.backupConfiguration()
+            },
+            UIAction(title: String(localizationKey: "Restore_All_Packages"),
+                     image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+                self?.restoreAllPackages()
+            },
+            UIAction(title: String(localizationKey: "Restore_Configuration"),
+                     image: UIImage(systemName: "arrow.clockwise.circle")) { [weak self] _ in
+                self?.restoreConfiguration()
+            },
+            UIAction(title: String(localizationKey: "Backup_Sources"),
+                     image: UIImage(systemName: "tray.and.arrow.down")) { [weak self] _ in
+                self?.backupSources()
+            },
+            UIAction(title: String(localizationKey: "Restore_Sources"),
+                     image: UIImage(systemName: "tray.and.arrow.up")) { [weak self] _ in
+                self?.restoreSources()
+            }
+        ]
+        return UIMenu(title: String(localizationKey: "Backup_Restore"), children: actions)
+    }
+
+    @objc private func presentBackupMenu(_ sender: Any?) {
+        let alert = UIAlertController(
+            title: String(localizationKey: "Backup_Restore"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_All_Packages"), style: .default) { [weak self] _ in
+            self?.backupAllPackages()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Select_Packages"), style: .default) { [weak self] _ in
+            self?.backupSelectedPackages()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Configuration"), style: .default) { [weak self] _ in
+            self?.backupConfiguration()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_All_Packages"), style: .default) { [weak self] _ in
+            self?.restoreAllPackages()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Configuration"), style: .default) { [weak self] _ in
+            self?.restoreConfiguration()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Sources"), style: .default) { [weak self] _ in
+            self?.backupSources()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Sources"), style: .default) { [weak self] _ in
+            self?.restoreSources()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.barButtonItem = navigationItem.rightBarButtonItem
+        }
+        present(alert, animated: true)
+    }
+
+    private func backupAllPackages() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        let packages = BackupManager.shared.userInstalledPackages()
+        guard !packages.isEmpty else {
+            showBackupMessage(title: String(localizationKey: "Backup_All_Packages"),
+                              message: String(localizationKey: "Backup_No_Packages"))
+            return
+        }
+        startPackageBackup(packages)
+    }
+
+    private func backupSelectedPackages() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        let packages = BackupManager.shared.userInstalledPackages()
+        guard !packages.isEmpty else {
+            showBackupMessage(title: String(localizationKey: "Backup_Select_Packages"),
+                              message: String(localizationKey: "Backup_No_Packages"))
+            return
+        }
+        let picker = BackupPackagesViewController(packages: packages)
+        picker.onConfirm = { [weak self] chosen in
+            guard !chosen.isEmpty else { return }
+            self?.startPackageBackup(chosen)
+        }
+        let navigation = UINavigationController(rootViewController: picker)
+        present(navigation, animated: true)
+    }
+
+    private func startPackageBackup(_ packages: [Package]) {
+        let folder: BackupManager.BackupFolder
+        do {
+            folder = try BackupManager.shared.createBackupFolder()
+        } catch {
+            showBackupMessage(title: String(localizationKey: "Backup_All_Packages"),
+                              message: error.localizedDescription)
+            return
+        }
+        let progress = BackupProgressAlert(
+            title: String(localizationKey: "Backup_All_Packages"),
+            message: String(localizationKey: "Backup_Starting"),
+            cancellable: false,
+            onCancel: nil
+        )
+        present(progress.alert, animated: true)
+        BackupManager.shared.backupPackages(packages, to: folder, progress: { fraction, message, detail in
+            progress.update(fraction: fraction, message: message, detail: detail)
+        }, completion: { result in
+            switch result {
+            case .success(let counts):
+                progress.finish(message: String(format: String(localizationKey: "Backup_Result"), counts.0, counts.1))
+            case .failure(let error):
+                progress.finish(message: error.localizedDescription)
+            }
+        })
+    }
+
+    private func restoreAllPackages() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        chooseBackupFolder(title: String(localizationKey: "Restore_All_Packages")) { [weak self] folder in
+            guard let self = self else { return }
+            let progress = BackupProgressAlert(
+                title: String(localizationKey: "Restore_All_Packages"),
+                message: String(localizationKey: "Backup_Starting"),
+                cancellable: false,
+                onCancel: nil
+            )
+            self.present(progress.alert, animated: true)
+            BackupManager.shared.restorePackages(from: folder, progress: { fraction, message, detail in
+                progress.update(fraction: fraction, message: message, detail: detail)
+            }, completion: { result in
+                switch result {
+                case .success(let count):
+                    progress.finish(message: String(format: String(localizationKey: "Restore_Result"), count))
+                case .failure(let error):
+                    progress.finish(message: error.localizedDescription)
+                }
+            })
+        }
+    }
+
+    private func backupConfiguration() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        let folder: BackupManager.BackupFolder
+        do {
+            folder = try BackupManager.shared.createBackupFolder()
+        } catch {
+            showBackupMessage(title: String(localizationKey: "Backup_Configuration"),
+                              message: error.localizedDescription)
+            return
+        }
+        let progress = BackupProgressAlert(
+            title: String(localizationKey: "Backup_Configuration"),
+            message: String(localizationKey: "Backup_Starting"),
+            cancellable: false,
+            onCancel: nil
+        )
+        present(progress.alert, animated: true)
+        BackupManager.shared.backupConfiguration(to: folder, completion: { result in
+            switch result {
+            case .success:
+                progress.finish(message: String(localizationKey: "Backup_Configuration_Done"))
+            case .failure(let error):
+                progress.finish(message: error.localizedDescription)
+            }
+        })
+    }
+
+    private func restoreConfiguration() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        chooseBackupFolder(title: String(localizationKey: "Restore_Configuration")) { [weak self] folder in
+            guard let self = self else { return }
+            let progress = BackupProgressAlert(
+                title: String(localizationKey: "Restore_Configuration"),
+                message: String(localizationKey: "Backup_Starting"),
+                cancellable: false,
+                onCancel: nil
+            )
+            self.present(progress.alert, animated: true)
+            BackupManager.shared.restoreConfiguration(from: folder, completion: { result in
+                switch result {
+                case .success:
+                    progress.finish(message: String(localizationKey: "Restore_Configuration_Done"))
+                case .failure(let error):
+                    progress.finish(message: error.localizedDescription)
+                }
+            })
+        }
+    }
+
+    private func backupSources() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        let folder: BackupManager.BackupFolder
+        do {
+            folder = try BackupManager.shared.createBackupFolder()
+        } catch {
+            showBackupMessage(title: String(localizationKey: "Backup_Sources"),
+                              message: error.localizedDescription)
+            return
+        }
+        let progress = BackupProgressAlert(
+            title: String(localizationKey: "Backup_Sources"),
+            message: String(localizationKey: "Backup_Starting"),
+            cancellable: false,
+            onCancel: nil
+        )
+        present(progress.alert, animated: true)
+        BackupManager.shared.backupSources(to: folder, completion: { result in
+            switch result {
+            case .success(let count):
+                progress.finish(message: String(format: String(localizationKey: "Backup_Sources_Result"), count))
+            case .failure(let error):
+                progress.finish(message: error.localizedDescription)
+            }
+        })
+    }
+
+    private func restoreSources() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        chooseBackupFolder(title: String(localizationKey: "Restore_Sources")) { [weak self] folder in
+            guard let self = self else { return }
+            let progress = BackupProgressAlert(
+                title: String(localizationKey: "Restore_Sources"),
+                message: String(localizationKey: "Backup_Starting"),
+                cancellable: false,
+                onCancel: nil
+            )
+            self.present(progress.alert, animated: true)
+            BackupManager.shared.restoreSources(from: folder, completion: { result in
+                switch result {
+                case .success(let count):
+                    progress.finish(message: String(format: String(localizationKey: "Restore_Sources_Result"), count))
+                case .failure(let error):
+                    progress.finish(message: error.localizedDescription)
+                }
+            })
+        }
+    }
+
+    private func chooseBackupFolder(title: String, completion: @escaping (BackupManager.BackupFolder) -> Void) {
+        let folders = BackupManager.shared.backupFolders()
+        guard !folders.isEmpty else {
+            showBackupMessage(title: title, message: String(localizationKey: "Backup_No_Backup"))
+            return
+        }
+        let alert = UIAlertController(
+            title: title,
+            message: String(localizationKey: "Backup_Choose_Folder"),
+            preferredStyle: .actionSheet
+        )
+        for folder in folders.prefix(20) {
+            alert.addAction(UIAlertAction(title: folder.name, style: .default) { _ in
+                completion(folder)
+            })
+        }
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.barButtonItem = navigationItem.rightBarButtonItem
+        }
+        present(alert, animated: true)
+    }
+
+    private func showBackupMessage(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default))
+        present(alert, animated: true)
     }
     
     private func hapticResponse() {

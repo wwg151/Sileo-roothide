@@ -301,3 +301,29 @@
 "Batch_Import_Packages_No_Deb" = "没有选择 .deb 文件。";
 "Batch_Import_Packages_Failed" = "所选插件都无法读取，已跳过 %lu 个文件。";
 "Batch_Import_Packages_Reading" = "正在读取插件…";
+
+/* 备份恢复 */
+"Backup_Restore" = "备份恢复";
+"Backup_All_Packages" = "全部插件备份";
+"Backup_Select_Packages" = "选择插件备份";
+"Backup_Configuration" = "备份配置";
+"Restore_All_Packages" = "全部插件恢复";
+"Restore_Configuration" = "恢复配置";
+"Backup_Sources" = "备份越狱源";
+"Restore_Sources" = "恢复越狱源";
+"Backup_Select_All" = "全选";
+"Backup_Start" = "备份";
+"Backup_Starting" = "正在准备…";
+"Backup_Result" = "备份完成：成功 %d 个，失败 %d 个。";
+"Restore_Result" = "已把 %d 个插件加入安装队列。";
+"Backup_Configuration_Done" = "配置备份完成。";
+"Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
+"Backup_Sources_Result" = "已备份 %d 个源。";
+"Restore_Sources_Result" = "已恢复 %d 个源。";
+"Backup_No_Backup" = "没有找到备份。";
+"Backup_Choose_Folder" = "请选择备份";
+"Backup_No_Packages" = "没有可备份的第三方插件。";
+"Backup_Nothing_To_Restore" = "该备份中没有可恢复的内容。";
+"Backup_Unavailable" = "当前构建不支持备份功能。";
+"Backup_No_File_List" = "无法读取该包的文件清单。";
+"Backup_No_Files" = "没有可打包的文件。";
