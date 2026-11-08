@@ -10,6 +10,9 @@ import Foundation
 import LNPopupController
 import ObjectiveC
 
+/// Key for the frame the queue bar's title had after we moved it.
+private var popupTitleShiftKey: UInt8 = 0
+
 class TabBarController: UITabBarController, UITabBarControllerDelegate {
     static var singleton: TabBarController?
     private var downloadsController: UINavigationController?
@@ -347,48 +350,81 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     /// it. The queue bar is lifted until its bottom edge meets the capsule's
     /// top edge, measured in window coordinates so no guess is involved.
     ///
-    /// The queue bar lays its title out a few points from its leading edge,
-    /// which reads as cramped once the bar is a capsule. Its content is inset
-    /// here, after every one of its layout passes, to the same distance the
-    /// floating tab bar keeps between its edge and its first item.
+    /// The queue bar lays its title a few points from its leading edge, which
+    /// reads as cramped once the bar is a capsule. The title view is moved
+    /// right, and narrowed by the same amount, after every one of the bar's
+    /// layout passes, so it starts as far from the capsule as the floating tab
+    /// bar's first item does.
     static func applyFloatingPopupContentInset(to bar: LNPopupBar) {
         guard UIDevice.current.userInterfaceIdiom == .phone,
               UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false) else {
+            debugLog("skip: floating off")
             return
         }
         guard bar.responds(to: NSSelectorFromString("contentView")),
               let outer = bar.value(forKey: "contentView") as? UIView,
               outer.responds(to: NSSelectorFromString("contentView")),
-              let inner = outer.value(forKey: "contentView") as? UIView,
-              let superview = inner.superview else {
+              let inner = outer.value(forKey: "contentView") as? UIView else {
+            debugLog("skip: no content view")
             return
         }
+        debugLog("bar=\(bar.frame) outer=\(outer.frame) inner=\(inner.frame) subs=\(inner.subviews.map { "\(String(describing: type(of: $0)))\($0.frame)" })")
         let extra: CGFloat = 14
-        let width = superview.bounds.width
-        guard width > extra * 2 + 40 else { return }
-        var frame = inner.frame
-        if abs(frame.minX - extra) < 0.5, abs(frame.width - (width - extra * 2)) < 0.5 {
-            return
+        let toolbar = bar.toolbar
+        for sub in inner.subviews {
+            if sub === toolbar { continue }
+            let name = String(describing: type(of: sub))
+            if name.contains("Image") || name.contains("Effect") || name.contains("Background") {
+                continue
+            }
+            let applied = objc_getAssociatedObject(sub, &popupTitleShiftKey) as? NSValue
+            if let applied = applied, applied.cgRectValue.equalTo(sub.frame) {
+                continue
+            }
+            var frame = sub.frame
+            guard frame.width > extra * 2 + 20 else { continue }
+            frame.origin.x += extra
+            frame.size.width -= extra
+            sub.frame = frame
+            objc_setAssociatedObject(sub, &popupTitleShiftKey, NSValue(cgRect: frame), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         }
-        frame.origin.x = extra
-        frame.size.width = width - extra * 2
-        inner.frame = frame
     }
 
     private static var popupBarLayoutHooked = false
+    private static var debugLogCount = 0
+
+    /// Temporary: leaves a short record of what the queue bar looks like, so
+    /// the layout can be checked from outside the app.
+    static func debugLog(_ text: String) {
+        guard debugLogCount < 8 else { return }
+        debugLogCount += 1
+        let url = URL(fileURLWithPath: "/var/mobile/Documents/sileo-popup-debug.txt")
+        let line = text + "\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
 
     /// The queue bar lays its content out itself, so the inset above has to
     /// run right after each of those passes.
     static func installPopupBarLayoutHook() {
         guard !popupBarLayoutHooked else { return }
         popupBarLayoutHooked = true
+        try? FileManager.default.removeItem(atPath: "/var/mobile/Documents/sileo-popup-debug.txt")
         guard let original = class_getInstanceMethod(LNPopupBar.self, #selector(UIView.layoutSubviews)),
               let inherited = class_getInstanceMethod(UIView.self, #selector(UIView.layoutSubviews)),
               method_getImplementation(original) != method_getImplementation(inherited),
               let replacement = class_getInstanceMethod(LNPopupBar.self, #selector(LNPopupBar.sileo_layoutSubviews)) else {
+            debugLog("hook: not installed")
             return
         }
         method_exchangeImplementations(original, replacement)
+        debugLog("hook: installed")
     }
 
     /// The queue bar takes the capsule's shape too: the same side margins as
