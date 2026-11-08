@@ -419,33 +419,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private static var popupBarLayoutHooked = false
-    private static var popupDumped = false
-
-    /// Temporary: writes the window's structure once, so what is left at the
-    /// top of the open window can be named from outside the app.
-    static func dumpWindow(of view: UIView) {
-        var lines: [String] = []
-        func walk(_ view: UIView, depth: Int) {
-            guard depth <= 6 else { return }
-            let indent = String(repeating: "  ", count: depth)
-            let background = view.backgroundColor.map { "\($0)" } ?? "nil"
-            lines.append("\(indent)\(String(describing: type(of: view))) \(view.frame) hidden=\(view.isHidden) alpha=\(view.alpha) bg=\(background)")
-            for sub in view.subviews {
-                walk(sub, depth: depth + 1)
-            }
-        }
-        for window in UIApplication.shared.windows {
-            lines.append("window \(String(describing: type(of: window))) \(window.frame) level=\(window.windowLevel.rawValue) hidden=\(window.isHidden)")
-            for sub in window.subviews {
-                walk(sub, depth: 1)
-            }
-        }
-        if let bar = (TabBarController.singleton?.popupBar) {
-            lines.append("bar \(bar.frame) hidden=\(bar.isHidden) alpha=\(bar.alpha) super=\(String(describing: bar.superview.map { type(of: $0) })) \(String(describing: bar.superview?.frame))")
-        }
-        let url = URL(fileURLWithPath: "/var/mobile/Documents/sileo-popup-debug.txt")
-        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
-    }
     /// True while the queue is open as a window.
     static var popupIsOpen = false
     /// Our own capsule over the bar's material, so the bar itself keeps the
@@ -919,14 +892,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 TabBarController.popupIsOpen = true
                 if !popupBar.isHidden {
                     popupBar.isHidden = true
-                }
-            }
-            if popupPresentationState == .open, !TabBarController.popupDumped {
-                TabBarController.popupDumped = true
-                // Give the window time to settle before recording it.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                    guard let self = self else { return }
-                    TabBarController.dumpWindow(of: self.view)
                 }
             }
         }
