@@ -191,11 +191,17 @@ final class BackupManager {
     // MARK: - Packages
 
     /// Third-party packages: everything dpkg knows that the device's exclude
-    /// list and dpkg's own Essential/Priority fields do not claim.
+    /// list, dpkg's own Essential/Priority fields, and the bootstrap's own
+    /// packages do not claim.
     func userInstalledPackages() -> [Package] {
         let excluded = excludedPackageNames()
         let packages = PackageListManager.shared.installedPackages.values.filter { package in
             if excluded.contains(package.package) {
+                return false
+            }
+            // The bootstrap's libraries, tools, keyrings and patchers are not
+            // the user's packages, however dpkg marks them.
+            if BackupManager.isBootstrapPackage(package) {
                 return false
             }
             let raw = package.rawControl
@@ -210,6 +216,30 @@ final class BackupManager {
         }
         return packages.sorted { $0.name.lowercased() < $1.name.lowercased() }
     }
+
+    /// A library, or one of the packages the roothide bootstrap itself puts
+    /// there: its shell, core utilities, archivers, keyrings, injection
+    /// libraries and patchers. Every other package came from a source the
+    /// user added or a .deb they installed.
+    private static func isBootstrapPackage(_ package: Package) -> Bool {
+        let identifier = package.package
+        if identifier.hasPrefix("lib") {
+            return true
+        }
+        if bootstrapPackages.contains(identifier) {
+            return true
+        }
+        let section = (package.rawControl["section"] ?? "").lowercased()
+        return section == "libraries" || section == "keyrings"
+    }
+
+    private static let bootstrapPackages: Set<String> = [
+        "apt", "base", "bash", "ca-certificates", "chariz-keyring", "coreutils",
+        "dash", "dpkg", "dopamine-basebin-link", "ellekit", "firmware", "gpgv",
+        "grep", "gzip", "havoc-keyring", "ldid", "p7zip", "profile.d", "roothide",
+        "rootless-compat", "snaputil", "sudo", "tar", "uikittools", "unrar", "vi",
+        "xz-utils", "zsh", "com.roothide.patchloader"
+    ]
 
     private func excludedPackageNames() -> Set<String> {
         let path = jbroot("/usr/local/lib/tweak_exclude_list")
@@ -321,6 +351,15 @@ final class BackupManager {
             } catch {
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
+            }
+
+            if !failures.isEmpty {
+                let report = failures.joined(separator: "\n") + "\n"
+                try? report.write(
+                    to: folder.url.appendingPathComponent("失败记录.txt"),
+                    atomically: true,
+                    encoding: .utf8
+                )
             }
 
             DispatchQueue.main.async {
