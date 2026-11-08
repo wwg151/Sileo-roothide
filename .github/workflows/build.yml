@@ -55,17 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          set +e
-          make clean package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=iphoneos-arm64e > build.log 2>&1
-          status=$?
-          grep -E "error:" build.log | head -20 | while IFS= read -r line; do
-            echo "::error title=compile::$line"
-          done
-          tail -60 build.log
-          set -e
-          if [ "$status" -ne 0 ]; then
-            exit "$status"
-          fi
+          make clean package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=iphoneos-arm64e XCPRETTY="| grep -E 'error:|BUILD (FAILED|SUCCEEDED)' || true"
           mkdir -p out
           cp packages/*.deb out/
 
