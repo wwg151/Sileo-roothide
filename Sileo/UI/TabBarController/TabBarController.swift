@@ -8,6 +8,10 @@
 
 import Foundation
 import LNPopupController
+import ObjectiveC
+
+/// Key for the frame the queue bar's title had after we moved it.
+private var popupTitleShiftKey: UInt8 = 0
 
 class TabBarController: UITabBarController, UITabBarControllerDelegate {
     static var singleton: TabBarController?
@@ -54,6 +58,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         (self.tabBar as? TabBar)?.onLayout = { [weak self] in self?.applyFloatingStyle() }
         // Install the saved item metrics before the first layout so the bar never has to resize on launch
         applyFloatingStyle()
+        TabBarController.installPopupBarLayoutHook()
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(floatingTabBarChanged),
                                                name: Notification.Name("FloatingTabBar"),
@@ -345,29 +350,57 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     /// it. The queue bar is lifted until its bottom edge meets the capsule's
     /// top edge, measured in window coordinates so no guess is involved.
     ///
-    private static let popupSpacerTag = 7311
-
-    /// A fixed 14 pt of empty space in front of the queue's title, so the text
-    /// keeps the same distance from the capsule's edge as the floating tab
-    /// bar's first item does. The bar measures its title from its leading bar
-    /// button items, so this needs nothing done to its layout afterwards.
-    private func updateFloatingPopupSpacer() {
-        guard let item = downloadsController?.popupItem else { return }
-        let existing = item.leadingBarButtonItems ?? []
-        let others = existing.filter { $0.tag != TabBarController.popupSpacerTag }
-        if isFloatingEnabled {
-            guard others.count == existing.count else { return }
-            let spacerView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 1))
-            spacerView.translatesAutoresizingMaskIntoConstraints = false
-            spacerView.widthAnchor.constraint(equalToConstant: 14).isActive = true
-            spacerView.heightAnchor.constraint(equalToConstant: 1).isActive = true
-            spacerView.isUserInteractionEnabled = false
-            let spacer = UIBarButtonItem(customView: spacerView)
-            spacer.tag = TabBarController.popupSpacerTag
-            item.leadingBarButtonItems = [spacer] + others
-        } else if others.count != existing.count {
-            item.leadingBarButtonItems = others.isEmpty ? nil : others
+    /// The queue bar lays its title a few points from its leading edge, which
+    /// reads as cramped once the bar is a capsule. Its title view is moved
+    /// right, and narrowed by the same amount, after every one of the bar's
+    /// layout passes. The move is made without animation, so the text is
+    /// already in place when the bar appears.
+    static func applyFloatingPopupContentInset(to bar: LNPopupBar) {
+        guard !TabBarController.popupIsOpen else { return }
+        guard UIDevice.current.userInterfaceIdiom == .phone,
+              UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false) else {
+            return
         }
+        guard let inner = bar.toolbar.superview else { return }
+        let extra: CGFloat = 14
+        let toolbar = bar.toolbar
+        for sub in inner.subviews {
+            if sub === toolbar { continue }
+            let name = String(describing: type(of: sub))
+            if name.contains("Image") || name.contains("Effect") || name.contains("Background") {
+                continue
+            }
+            let applied = objc_getAssociatedObject(sub, &popupTitleShiftKey) as? NSValue
+            if let applied = applied, applied.cgRectValue.equalTo(sub.frame) {
+                continue
+            }
+            var frame = sub.frame
+            guard frame.width > extra * 2 + 20 else { continue }
+            frame.origin.x += extra
+            frame.size.width -= extra
+            UIView.performWithoutAnimation {
+                sub.frame = frame
+            }
+            objc_setAssociatedObject(sub, &popupTitleShiftKey, NSValue(cgRect: frame), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+    }
+
+    private static var popupBarLayoutHooked = false
+    /// True while the queue is open as a window.
+    static var popupIsOpen = false
+
+    /// The queue bar lays its content out itself, so the inset above has to
+    /// run right after each of those passes.
+    static func installPopupBarLayoutHook() {
+        guard !popupBarLayoutHooked else { return }
+        popupBarLayoutHooked = true
+        guard let original = class_getInstanceMethod(LNPopupBar.self, #selector(UIView.layoutSubviews)),
+              let inherited = class_getInstanceMethod(UIView.self, #selector(UIView.layoutSubviews)),
+              method_getImplementation(original) != method_getImplementation(inherited),
+              let replacement = class_getInstanceMethod(LNPopupBar.self, #selector(LNPopupBar.sileo_layoutSubviews)) else {
+            return
+        }
+        method_exchangeImplementations(original, replacement)
     }
 
     /// The queue bar takes the capsule's shape too: the same side margins as
@@ -424,15 +457,26 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
                 self.popupBar.transform = .identity
             }
         }
-        applyFloatingPopupShape()
-        guard isFloatingEnabled, popupIsPresented,
-              popupPresentationState == .barPresented,
-              let container = floatingBackground, !container.isHidden,
+        guard popupIsPresented else { return }
+        TabBarController.popupIsOpen = popupPresentationState != .barPresented
+        guard isFloatingEnabled else {
+            reset()
+            resetFloatingPopupShape()
+            return
+        }
+        // While the queue is open as a window the bar belongs to the framework:
+        // moving it here is what used to leave a strip of it on screen.
+        guard popupPresentationState == .barPresented else {
+            resetFloatingPopupShape()
+            return
+        }
+        guard let container = floatingBackground, !container.isHidden,
               popupBar.bounds.height > 0,
               popupBar.bounds.height < view.bounds.height * 0.5 else {
             reset()
             return
         }
+        applyFloatingPopupShape()
         // Measure without the shift applied, or repeated passes would stack it
         popupBar.transform = .identity
         let capsuleTop = container.convert(CGPoint.zero, to: nil).y
@@ -546,7 +590,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     }
 
     private func applyFloatingStyle() {
-        updateFloatingPopupSpacer()
         guard isFloatingEnabled else {
             if let container = floatingBackground {
                 container.removeFromSuperview()
@@ -739,13 +782,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
                                            animated: Bool) {
         // The capsule belongs to the collapsed bar; the open window must not
         // keep its inset frame or its rounding.
-        popupBar.transform = .identity
+        TabBarController.popupIsOpen = true
         resetFloatingPopupShape()
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            didClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
+        TabBarController.popupIsOpen = false
         applyFloatingStyle()
     }
 
@@ -771,6 +815,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         let alertController = UIAlertController(title: String(localizationKey: "Unknown", type: .error), message: string, preferredStyle: .alert)
         alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default))
         self.present(alertController, animated: true, completion: nil)
+    }
+}
+
+extension LNPopupBar {
+    /// Exchanged with the bar's own layoutSubviews, so it runs right after the
+    /// bar has placed its content.
+    @objc func sileo_layoutSubviews() {
+        sileo_layoutSubviews()
+        TabBarController.applyFloatingPopupContentInset(to: self)
     }
 }
 
