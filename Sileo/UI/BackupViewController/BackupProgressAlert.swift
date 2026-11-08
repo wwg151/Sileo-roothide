@@ -3,8 +3,9 @@
 //  Sileo
 //
 //  The card a backup or restore waits on: what is happening, which package,
-//  a bar, how much is left, and Cancel. A card of our own rather than an
-//  alert, so every line keeps its distance from the bar.
+//  a bar with its percentage riding the filled end, how much is left, and
+//  Cancel. A card of our own rather than an alert, so every line keeps its
+//  distance from the bar.
 //
 
 import Foundation
@@ -18,12 +19,14 @@ final class BackupProgressAlert: UIViewController {
     private let card = UIView()
     private let titleLabel = UILabel()
     private let nameLabel = UILabel()
-    private let detailLabel = UILabel()
+    private let barContainer = UIView()
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let percentLabel = UILabel()
+    private let detailLabel = UILabel()
     private let etaLabel = UILabel()
     private let cancelButton = UIButton(type: .system)
     private let okButton = UIButton(type: .system)
+    private var percentCenterX: NSLayoutConstraint?
 
     private let cardTitle: String
     private let firstMessage: String
@@ -70,6 +73,11 @@ final class BackupProgressAlert: UIViewController {
         }
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        placePercent()
+    }
+
     // MARK: - API
 
     func update(fraction: Double, message: String, detail: String) {
@@ -94,11 +102,10 @@ final class BackupProgressAlert: UIViewController {
     }
 
     private func applyFinished(_ message: String) {
-        progressView.isHidden = true
-        percentLabel.isHidden = true
+        barContainer.isHidden = true
+        detailLabel.isHidden = true
         etaLabel.isHidden = true
         cancelButton.isHidden = true
-        detailLabel.isHidden = true
         nameLabel.text = message
         okButton.isHidden = false
     }
@@ -127,17 +134,32 @@ final class BackupProgressAlert: UIViewController {
         detailLabel.textColor = .secondaryLabel
         detailLabel.textAlignment = .center
 
+        // The bar and the percentage sit in one box: the label rides the
+        // filled end, so it has to move with the bar.
+        progressView.translatesAutoresizingMaskIntoConstraints = false
+        progressView.progressTintColor = view.tintColor
+        percentLabel.translatesAutoresizingMaskIntoConstraints = false
         percentLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         percentLabel.textColor = .secondaryLabel
-        percentLabel.textAlignment = .center
         percentLabel.text = "0%"
+        barContainer.addSubview(progressView)
+        barContainer.addSubview(percentLabel)
+        NSLayoutConstraint.activate([
+            progressView.leadingAnchor.constraint(equalTo: barContainer.leadingAnchor),
+            progressView.trailingAnchor.constraint(equalTo: barContainer.trailingAnchor),
+            progressView.bottomAnchor.constraint(equalTo: barContainer.bottomAnchor),
+            progressView.heightAnchor.constraint(equalToConstant: 4),
+            barContainer.heightAnchor.constraint(equalToConstant: 24),
+            percentLabel.bottomAnchor.constraint(equalTo: progressView.topAnchor, constant: -4)
+        ])
+        let centerX = percentLabel.centerXAnchor.constraint(equalTo: barContainer.leadingAnchor)
+        centerX.isActive = true
+        percentCenterX = centerX
 
         etaLabel.font = .preferredFont(forTextStyle: .footnote)
         etaLabel.textColor = .secondaryLabel
         etaLabel.textAlignment = .center
         etaLabel.text = " "
-
-        progressView.progressTintColor = view.tintColor
 
         for button in [cancelButton, okButton] {
             button.titleLabel?.font = .preferredFont(forTextStyle: .body)
@@ -146,8 +168,8 @@ final class BackupProgressAlert: UIViewController {
             button.heightAnchor.constraint(equalToConstant: 40).isActive = true
         }
         cancelButton.setTitle(String(localizationKey: "Cancel"), for: .normal)
-        cancelButton.backgroundColor = .tertiarySystemFill
-        cancelButton.setTitleColor(.label, for: .normal)
+        cancelButton.backgroundColor = view.tintColor.withAlphaComponent(0.15)
+        cancelButton.setTitleColor(view.tintColor, for: .normal)
         cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         cancelButton.isHidden = !cancellable
 
@@ -163,15 +185,15 @@ final class BackupProgressAlert: UIViewController {
         buttons.distribution = .fillEqually
 
         let stack = UIStackView(arrangedSubviews: [
-            titleLabel, nameLabel, progressView, percentLabel, detailLabel, etaLabel, buttons
+            titleLabel, nameLabel, barContainer, detailLabel, etaLabel, buttons
         ])
         stack.axis = .vertical
         stack.alignment = .fill
         stack.spacing = 14
         stack.setCustomSpacing(18, after: titleLabel)
-        stack.setCustomSpacing(10, after: progressView)
-        stack.setCustomSpacing(8, after: percentLabel)
-        stack.setCustomSpacing(20, after: etaLabel)
+        stack.setCustomSpacing(12, after: barContainer)
+        stack.setCustomSpacing(8, after: detailLabel)
+        stack.setCustomSpacing(22, after: etaLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(stack)
 
@@ -182,13 +204,22 @@ final class BackupProgressAlert: UIViewController {
             stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 24),
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -20),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -20),
-            progressView.heightAnchor.constraint(equalToConstant: 4)
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -20)
         ])
 
         if let message = finishedMessage {
             applyFinished(message)
         }
+    }
+
+    /// Puts the percentage over the head of the filled part of the bar.
+    private func placePercent() {
+        guard let constraint = percentCenterX else { return }
+        let width = barContainer.bounds.width
+        guard width > 0 else { return }
+        let half = max(percentLabel.intrinsicContentSize.width, 24) / 2
+        let head = width * CGFloat(fraction)
+        constraint.constant = max(half, min(width - half, head))
     }
 
     // MARK: - Estimate
@@ -223,6 +254,7 @@ final class BackupProgressAlert: UIViewController {
         }
         progressView.setProgress(Float(fraction), animated: true)
         percentLabel.text = "\(Int(fraction * 100))%"
+        placePercent()
         if let remaining = estimatedRemaining() {
             smoothedRemaining = remaining
             let seconds = max(0, Int(remaining.rounded()))

@@ -19,6 +19,35 @@ final class BackupManager {
 
     static let shared = BackupManager()
 
+    // MARK: - Cancelling
+
+    private let cancelLock = NSLock()
+    private var cancelRequested = false
+
+    /// A running backup or restore reads this between steps and stops.
+    var isCancelled: Bool {
+        cancelLock.lock()
+        defer { cancelLock.unlock() }
+        return cancelRequested
+    }
+
+    func beginOperation() {
+        cancelLock.lock()
+        cancelRequested = false
+        cancelLock.unlock()
+    }
+
+    func cancelCurrentOperation() {
+        cancelLock.lock()
+        cancelRequested = true
+        cancelLock.unlock()
+    }
+
+    /// A cancelled backup leaves nothing behind: the folder it made goes.
+    private func discard(_ folder: BackupFolder) {
+        try? FileManager.default.removeItem(at: folder.url)
+    }
+
     struct BackupFolder {
         let url: URL
 
@@ -58,6 +87,7 @@ final class BackupManager {
         case noBackupFound
         case noPackages
         case nothingToRestore
+        case cancelled
         case failed(String)
 
         var errorDescription: String? {
@@ -68,6 +98,8 @@ final class BackupManager {
                 return String(localizationKey: "Backup_No_Packages", type: .error)
             case .nothingToRestore:
                 return String(localizationKey: "Backup_Nothing_To_Restore", type: .error)
+            case .cancelled:
+                return String(localizationKey: "Backup_Cancelled", type: .error)
             case .failed(let message):
                 return message
             }
@@ -205,6 +237,7 @@ final class BackupManager {
         }
         let directory = folder.packagesURL
         let manifestURL = folder.manifestURL
+        beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
             let fileManager = FileManager.default
@@ -220,6 +253,11 @@ final class BackupManager {
             let total = Double(packages.count)
 
             for (index, package) in packages.enumerated() {
+                if self.isCancelled {
+                    self.discard(folder)
+                    DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                    return
+                }
                 let detail = "\(index + 1)/\(packages.count)"
                 func report(_ phase: Double) {
                     let value = (Double(index) + phase) / total
@@ -270,6 +308,12 @@ final class BackupManager {
                 }
             }
 
+            if self.isCancelled {
+                self.discard(folder)
+                DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                return
+            }
+
             do {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -312,6 +356,7 @@ final class BackupManager {
         progress: @escaping ProgressHandler,
         completion: @escaping (Result<(Int, Int), Error>) -> Void
     ) {
+        beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
             let entries = BackupManager.manifestEntries(in: folder)
@@ -325,6 +370,10 @@ final class BackupManager {
             let total = Double(entries.count)
 
             for (index, entry) in entries.enumerated() {
+                if self.isCancelled {
+                    DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                    return
+                }
                 DispatchQueue.main.async {
                     progress(Double(index) / total, entry.name, "\(index + 1)/\(entries.count)")
                 }
@@ -338,6 +387,10 @@ final class BackupManager {
 
             DispatchQueue.main.async {
                 progress(1, "", "")
+                if self.isCancelled {
+                    completion(.failure(BackupError.cancelled))
+                    return
+                }
                 guard !queued.isEmpty else {
                     completion(.failure(BackupError.nothingToRestore))
                     return
@@ -427,6 +480,7 @@ final class BackupManager {
         to folder: BackupFolder,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
             let fileManager = FileManager.default
             do {
@@ -453,6 +507,11 @@ final class BackupManager {
                 }
                 return
             }
+            if self.isCancelled {
+                self.discard(folder)
+                DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                return
+            }
             spawnAsRoot(args: [CommandPath.chown, "501:501", rootfs(archive.path)])
             DispatchQueue.main.async { completion(.success(())) }
         }
@@ -462,6 +521,7 @@ final class BackupManager {
         from folder: BackupFolder,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
             let archive = folder.configurationURL.appendingPathComponent("Library.tar")
             guard FileManager.default.fileExists(atPath: archive.path) else {
@@ -469,6 +529,10 @@ final class BackupManager {
                 return
             }
             let libraryParent = "\(CommandPath.prefix)/var/mobile"
+            guard !self.isCancelled else {
+                DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                return
+            }
             let (status, _, errorOutput) = spawnAsRoot(args: [
                 PackageRepacker.tarPath, "-xpf", rootfs(archive.path),
                 "-C", rootfs(libraryParent)
@@ -492,6 +556,7 @@ final class BackupManager {
         to folder: BackupFolder,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
             let fileManager = FileManager.default
             do {
@@ -514,6 +579,11 @@ final class BackupManager {
                 }
                 return
             }
+            if self.isCancelled {
+                self.discard(folder)
+                DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                return
+            }
             spawnAsRoot(args: [CommandPath.chown, "501:501", rootfs(archive.path)])
             DispatchQueue.main.async { completion(.success(())) }
         }
@@ -523,6 +593,7 @@ final class BackupManager {
         from folder: BackupFolder,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
             let archive = folder.sourcesURL.appendingPathComponent("apt.tar")
             guard FileManager.default.fileExists(atPath: archive.path) else {
@@ -530,6 +601,10 @@ final class BackupManager {
                 return
             }
             let etc = "\(CommandPath.prefix)/etc"
+            guard !self.isCancelled else {
+                DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                return
+            }
             let (status, _, errorOutput) = spawnAsRoot(args: [
                 PackageRepacker.tarPath, "-xpf", rootfs(archive.path),
                 "-C", rootfs(etc)

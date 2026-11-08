@@ -339,6 +339,7 @@
 "Backup_Choose_Folder" = "Choose a backup";
 "Backup_No_Packages" = "There is no third-party package to back up.";
 "Backup_Nothing_To_Restore" = "This backup holds nothing to restore.";
+"Backup_Cancelled" = "Cancelled; what was already packaged has been removed.";
 "Backup_Unavailable" = "Backup is not available in this build.";
 "Backup_No_File_List" = "The package's file list could not be read.";
 "Backup_No_Files" = "There is no file to put in the package.";

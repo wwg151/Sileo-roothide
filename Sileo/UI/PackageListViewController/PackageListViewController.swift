@@ -566,8 +566,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         let progress = BackupProgressAlert(
             title: String(localizationKey: "Backup_All_Packages"),
             message: String(localizationKey: "Backup_Starting"),
-            cancellable: false,
-            onCancel: nil
+            cancellable: true,
+            onCancel: { BackupManager.shared.cancelCurrentOperation() }
         )
         present(progress.alert, animated: true)
         BackupManager.shared.backupPackages(packages, to: folder, progress: { fraction, message, detail in
@@ -605,8 +605,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         let progress = BackupProgressAlert(
             title: String(localizationKey: "Restore_All_Packages"),
             message: String(localizationKey: "Backup_Starting"),
-            cancellable: false,
-            onCancel: nil
+            cancellable: true,
+            onCancel: { BackupManager.shared.cancelCurrentOperation() }
         )
         present(progress.alert, animated: true)
         BackupManager.shared.restorePackages(from: folder, progress: { fraction, message, detail in
@@ -638,8 +638,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         let progress = BackupProgressAlert(
             title: String(localizationKey: "Backup_Configuration"),
             message: String(localizationKey: "Backup_Starting"),
-            cancellable: false,
-            onCancel: nil
+            cancellable: true,
+            onCancel: { BackupManager.shared.cancelCurrentOperation() }
         )
         present(progress.alert, animated: true)
         BackupManager.shared.backupConfiguration(to: folder, completion: { result in
@@ -671,8 +671,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         let progress = BackupProgressAlert(
             title: String(localizationKey: "Restore_Configuration"),
             message: String(localizationKey: "Backup_Starting"),
-            cancellable: false,
-            onCancel: nil
+            cancellable: true,
+            onCancel: { BackupManager.shared.cancelCurrentOperation() }
         )
         present(progress.alert, animated: true)
         BackupManager.shared.restoreConfiguration(from: folder, completion: { result in
@@ -702,8 +702,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         let progress = BackupProgressAlert(
             title: String(localizationKey: "Backup_Sources"),
             message: String(localizationKey: "Backup_Starting"),
-            cancellable: false,
-            onCancel: nil
+            cancellable: true,
+            onCancel: { BackupManager.shared.cancelCurrentOperation() }
         )
         present(progress.alert, animated: true)
         BackupManager.shared.backupSources(to: folder, completion: { result in
@@ -729,8 +729,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 let progress = BackupProgressAlert(
                     title: String(localizationKey: "Restore_Sources"),
                     message: String(localizationKey: "Backup_Starting"),
-                    cancellable: false,
-                    onCancel: nil
+                    cancellable: true,
+                    onCancel: { BackupManager.shared.cancelCurrentOperation() }
                 )
                 self.present(progress.alert, animated: true)
                 BackupManager.shared.restoreSources(from: folder, completion: { result in
