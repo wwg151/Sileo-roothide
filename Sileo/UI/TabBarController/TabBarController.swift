@@ -13,7 +13,7 @@ import ObjectiveC
 /// Key for the frame the queue bar's title had after we moved it.
 private var popupTitleShiftKey: UInt8 = 0
 
-class TabBarController: UITabBarController, UITabBarControllerDelegate {
+class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupPresentationDelegate {
     static var singleton: TabBarController?
     private var downloadsController: UINavigationController?
     private(set) public var popupIsPresented = false
@@ -38,6 +38,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         
         delegate = self
         TabBarController.singleton = self
+        popupPresentationDelegate = self
         
         let savedTab = UserDefaults.standard.integer(forKey: TabBarController.lastSelectedTabKey)
         if let count = viewControllers?.count, savedTab > 0, savedTab < count {
@@ -413,6 +414,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     private static var popupBarLayoutHooked = false
     /// True while the queue is open as a window.
     static var popupIsOpen = false
+    /// True while the bar carries the capsule shape we gave it.
+    private var popupCapsuleApplied = false
+    private var popupBarOriginalClips: Bool?
+    private var popupToolbarOriginalClips: Bool?
 
     /// The queue bar lays its content out itself, so the inset above has to
     /// run right after each of those passes.
@@ -437,6 +442,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         let bar = popupBar
         guard bar.bounds.height > 0, bar.bounds.height < view.bounds.height * 0.5 else { return }
         if isFloatingEnabled, collapsed, let container = floatingBackground, !container.isHidden {
+            if !popupCapsuleApplied {
+                popupBarOriginalClips = bar.clipsToBounds
+                popupToolbarOriginalClips = bar.toolbar.clipsToBounds
+                popupCapsuleApplied = true
+            }
             let inset = floatingInset
             let width = max(0, view.bounds.width - inset * 2)
             var frame = bar.frame
@@ -461,6 +471,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
 
     /// The bar as the framework lays it out: full width, square corners.
     private func resetFloatingPopupShape() {
+        guard popupCapsuleApplied else { return }
+        popupCapsuleApplied = false
         let bar = popupBar
         var frame = bar.frame
         if abs(frame.origin.x) > 0.5 || abs(frame.width - view.bounds.width) > 0.5 {
@@ -471,8 +483,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         if bar.layer.cornerRadius != 0 {
             bar.layer.cornerRadius = 0
         }
-        bar.clipsToBounds = false
-        bar.toolbar.clipsToBounds = false
+        bar.clipsToBounds = popupBarOriginalClips ?? false
+        bar.toolbar.clipsToBounds = popupToolbarOriginalClips ?? false
         bar.toolbar.layer.cornerRadius = 0
     }
 
