@@ -506,6 +506,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // While the queue is open as a window the bar belongs to the framework:
         // moving it here is what used to leave a strip of it on screen.
         guard !TabBarController.popupIsOpen else {
+            reset()
             resetFloatingPopupShape()
             return
         }
@@ -820,18 +821,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                                            willOpenPopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
         // The capsule belongs to the collapsed bar; the open window must not
-        // keep its inset frame or its rounding, and the bar itself must not
-        // stay visible above the window it opened.
+        // keep its inset frame or its rounding. The bar also goes back to the
+        // place the framework docked it, so the window covers it instead of
+        // leaving it visible along the top edge.
         TabBarController.popupIsOpen = true
+        popupBar.transform = .identity
         resetFloatingPopupShape()
-        popupBar.alpha = 0
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            didClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
         TabBarController.popupIsOpen = false
-        popupBar.alpha = 1
         applyFloatingStyle()
     }
 
