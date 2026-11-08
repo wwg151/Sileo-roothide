@@ -161,6 +161,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             self.popupQueueLock.wait()
             DispatchQueue.main.async {
                 self.presentPopupBar(withContentViewController: downloadsController, animated: animated) {
+                    self.popupBar.alpha = 1
+                    TabBarController.popupIsOpen = false
                     self.applyFloatingStyle()
                     completion?()
                     self.popupQueueLock.signal()
@@ -196,6 +198,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             self.popupQueueLock.wait()
             DispatchQueue.main.async {
                 self.dismissPopupBar(animated: animated) {
+                    self.popupBar.alpha = 1
+                    TabBarController.popupIsOpen = false
                     self.applyFloatingStyle()
                     completion?()
                     self.popupQueueLock.signal()
@@ -341,15 +345,23 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
 
     /// How far the floating tab bar keeps its first item from the capsule's
     /// edge. The queue bar's title is placed the same distance in, so the two
-    /// line up whatever the bar's own margins happen to be.
+    /// line up whatever the bar's own margins happen to be. The measurement is
+    /// kept, so the first queue bar of a launch is already in place instead of
+    /// settling once the tab bar has laid out.
     private var floatingContentInset: CGFloat {
-        guard let container = floatingBackground, container.frame.width > 0 else { return 20 }
-        let buttons = buttonsSortedByX()
-        guard let first = buttons.first else { return 20 }
-        let firstX = first.convert(first.bounds, to: tabBar).minX
-        let inset = firstX - container.frame.minX
-        return max(10, min(40, inset))
+        if floatingSettled, let container = floatingBackground, container.frame.width > 0,
+           let first = buttonsSortedByX().first {
+            let firstX = first.convert(first.bounds, to: tabBar).minX
+            let measured = firstX - container.frame.minX
+            if measured > 10, measured < 60 {
+                UserDefaults.standard.set(Double(measured), forKey: floatingContentInsetKey)
+                return measured
+            }
+        }
+        let saved = UserDefaults.standard.double(forKey: floatingContentInsetKey)
+        return saved > 0 ? CGFloat(saved) : 20
     }
+    private let floatingContentInsetKey = "FloatingTabBarContentInset"
     private var floatingPopupTabBarHeight: CGFloat {
         // Popup bottom edge should touch the capsule's top edge
         if isFloatingEnabled, let container = floatingBackground, !container.isHidden, container.frame.height > 0 {
@@ -421,7 +433,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     /// it goes back to the full-width bar it always was.
     private func applyFloatingPopupShape() {
         guard popupIsPresented else { return }
-        let collapsed = popupPresentationState == .barPresented
+        let collapsed = !TabBarController.popupIsOpen
         let bar = popupBar
         guard bar.bounds.height > 0, bar.bounds.height < view.bounds.height * 0.5 else { return }
         if isFloatingEnabled, collapsed, let container = floatingBackground, !container.isHidden {
@@ -471,7 +483,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             }
         }
         guard popupIsPresented else { return }
-        TabBarController.popupIsOpen = popupPresentationState != .barPresented
+        if popupPresentationState == .open {
+            TabBarController.popupIsOpen = true
+        }
         guard isFloatingEnabled else {
             reset()
             resetFloatingPopupShape()
@@ -479,7 +493,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         }
         // While the queue is open as a window the bar belongs to the framework:
         // moving it here is what used to leave a strip of it on screen.
-        guard popupPresentationState == .barPresented else {
+        guard !TabBarController.popupIsOpen else {
             resetFloatingPopupShape()
             return
         }
@@ -794,15 +808,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
                                            willOpenPopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
         // The capsule belongs to the collapsed bar; the open window must not
-        // keep its inset frame or its rounding.
+        // keep its inset frame or its rounding, and the bar itself must not
+        // stay visible above the window it opened.
         TabBarController.popupIsOpen = true
         resetFloatingPopupShape()
+        popupBar.alpha = 0
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            didClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
         TabBarController.popupIsOpen = false
+        popupBar.alpha = 1
         applyFloatingStyle()
     }
 
