@@ -209,8 +209,10 @@ final class BackupManager {
             if (raw["essential"] ?? "").lowercased() == "yes" {
                 return false
             }
+            // Only dpkg's "required" is the bootstrap's own: a package marked
+            // "important" can be one the user added (zip, unzip).
             let priority = (raw["priority"] ?? "").lowercased()
-            if priority == "required" || priority == "important" {
+            if priority == "required" {
                 return false
             }
             return true
@@ -256,10 +258,13 @@ final class BackupManager {
 
     private static let bootstrapPackages: Set<String> = [
         "apt", "base", "bash", "ca-certificates", "chariz-keyring", "coreutils",
-        "dash", "dpkg", "dopamine-basebin-link", "ellekit", "firmware", "gawk",
-        "gpgv", "grep", "gzip", "havoc-keyring", "ldid", "p7zip", "profile.d",
-        "roothide", "rootless-compat", "snaputil", "sudo", "tar", "uikittools",
-        "unrar", "unzip", "vi", "xz-utils", "zip", "zsh", "com.roothide.patchloader"
+        "dash", "darwintools", "debianutils", "diffutils", "diskdev-cmds", "dpkg",
+        "dopamine-basebin-link", "ellekit", "essential", "file-cmds", "findutils",
+        "firmware", "gawk", "gpgv", "grep", "gzip", "havoc-keyring", "launchctl",
+        "ldid", "ncurses-bin", "ncurses-term", "p7zip", "procursus-keyring",
+        "profile.d", "roothide", "rootless-compat", "sed", "shell-cmds",
+        "snaputil", "sudo", "system-cmds", "tar", "uikittools", "unrar", "unzip",
+        "vi", "xz-utils", "zip", "zsh", "com.roothide.patchloader"
     ]
 
     private func excludedPackageNames() -> Set<String> {
