@@ -738,8 +738,11 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     private func openBackupsInFilza() {
-        let path = "/var/mobile/Documents"
-        let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        // Filza reads a folder only when the path ends in a slash; without it
+        // the folder is taken as a file to reveal and its parent opens.
+        let path = "/var/mobile/Documents/"
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? trimmed
         guard let url = URL(string: "filza://view/\(encoded)") else { return }
         if UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url, options: [:], completionHandler: nil)

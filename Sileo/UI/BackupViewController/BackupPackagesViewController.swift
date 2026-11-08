@@ -42,26 +42,33 @@ final class BackupPackagesViewController: UITableViewController {
             target: self,
             action: #selector(confirmSelection)
         )
-        updateConfirmButton()
+        updateButtons()
     }
 
-    private func updateConfirmButton() {
+    private func updateButtons() {
+        let allSelected = !packages.isEmpty && selectedPackages.count == packages.count
+        navigationItem.leftBarButtonItem?.title = String(
+            localizationKey: allSelected ? "Backup_Deselect_All" : "Backup_Select_All"
+        )
         navigationItem.rightBarButtonItem?.isEnabled = !selectedPackages.isEmpty
     }
 
     @objc private func toggleSelectAll() {
-        if selectedPackages.count == packages.count {
+        if !packages.isEmpty && selectedPackages.count == packages.count {
             selectedPackages.removeAll()
             for indexPath in tableView.indexPathsForSelectedRows ?? [] {
-                tableView.deselectRow(at: indexPath, animated: true)
+                tableView.deselectRow(at: indexPath, animated: false)
             }
         } else {
             selectedPackages = Set(packages.map { $0.package })
             for row in 0..<packages.count {
-                tableView.selectRow(at: IndexPath(row: row, section: 0), animated: true, scrollPosition: .none)
+                tableView.selectRow(at: IndexPath(row: row, section: 0), animated: false, scrollPosition: .none)
             }
         }
-        updateConfirmButton()
+        // selectRow/deselectRow do not call the delegate, and cells already on
+        // screen keep their accessory, so the table is redrawn from the set.
+        tableView.reloadData()
+        updateButtons()
     }
 
     @objc private func confirmSelection() {
@@ -91,13 +98,13 @@ final class BackupPackagesViewController: UITableViewController {
         let package = packages[indexPath.row]
         selectedPackages.insert(package.package)
         tableView.cellForRow(at: indexPath)?.accessoryType = .checkmark
-        updateConfirmButton()
+        updateButtons()
     }
 
     override func tableView(_ tableView: UITableView, didDeselectRowAt indexPath: IndexPath) {
         let package = packages[indexPath.row]
         selectedPackages.remove(package.package)
         tableView.cellForRow(at: indexPath)?.accessoryType = .none
-        updateConfirmButton()
+        updateButtons()
     }
 }

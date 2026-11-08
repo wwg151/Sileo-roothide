@@ -307,6 +307,7 @@
 "Backup_Sources" = "Back Up Sources";
 "Restore_Sources" = "Restore Sources";
 "Backup_Select_All" = "Select All";
+"Backup_Deselect_All" = "Cancel";
 "Backup_Start" = "Back Up";
 "Backup_Starting" = "Preparing…";
 "Backup_Result" = "Backup finished: %d succeeded, %d failed.";
