@@ -205,6 +205,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                     self.popupBar.alpha = 1
                     self.popupBar.isHidden = false
                     self.popupBarHiddenAt = nil
+                    self.restorePopupWindow()
                     TabBarController.popupIsOpen = false
                     self.applyFloatingStyle()
                     completion?()
@@ -259,6 +260,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             TabBarController.popupIsOpen = false
             self.popupBar.isHidden = false
             self.popupBarHiddenAt = nil
+            self.restorePopupWindow()
             self.applyFloatingStyle()
             completion?()
         })
@@ -432,6 +434,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// When the bar was hidden for the open window, so a close that never
     /// reported itself can still give it back.
     private var popupBarHiddenAt: Date?
+    /// The open window's own material, put aside while it covers the screen.
+    private var popupWindowOriginalBackground: UIColor?
+    private var popupWindowHiddenEffects: [UIView] = []
 
     /// True while the queue is open as a window.
     static var popupIsOpen = false
@@ -576,6 +581,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             UserDefaults.standard.set(Double(floatingItemWidth), forKey: floatingItemWidthKey)
             UserDefaults.standard.set(Double(floatingReferenceWidth), forKey: floatingBarWidthKey)
         }
+        // The window covers the tab bar; it must not fade back in over it.
+        guard !TabBarController.popupIsOpen else { return }
         guard self.tabBar.alpha < 1 else { return }
         UIView.animate(withDuration: 0.2) { self.tabBar.alpha = 1 }
     }
@@ -759,7 +766,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         floatingRetryCount = 0
-        container.isHidden = false
+        container.isHidden = TabBarController.popupIsOpen
         let itemMidY = rowMids.reduce(0, +) / CGFloat(rowMids.count)
         let frame = CGRect(x: floatingInset, y: itemMidY - barHeight / 2, width: self.tabBar.bounds.width - floatingInset * 2, height: barHeight)
         container.frame = frame
@@ -886,6 +893,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
+        stylePopupWindowForOpenState()
         resetFloatingPopupShape()
     }
 
@@ -895,7 +903,32 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
+        restorePopupWindow()
         applyFloatingStyle()
+    }
+
+    /// The open window is drawn opaque in the content's own colour, so the
+    /// light material behind it cannot show as a band along the top and the
+    /// bottom of the screen.
+    private func stylePopupWindowForOpenState() {
+        guard popupWindowOriginalBackground == nil else { return }
+        let content = popupContentView
+        popupWindowOriginalBackground = content.backgroundColor ?? .clear
+        content.backgroundColor = .systemBackground
+        for sub in content.subviews where sub is UIVisualEffectView {
+            popupWindowHiddenEffects.append(sub)
+            sub.isHidden = true
+        }
+    }
+
+    private func restorePopupWindow() {
+        guard let background = popupWindowOriginalBackground else { return }
+        popupWindowOriginalBackground = nil
+        popupContentView.backgroundColor = background
+        for sub in popupWindowHiddenEffects {
+            sub.isHidden = false
+        }
+        popupWindowHiddenEffects.removeAll()
     }
 
     override func viewDidLayoutSubviews() {
@@ -911,6 +944,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 if !popupBar.isHidden {
                     popupBar.isHidden = true
                 }
+                stylePopupWindowForOpenState()
             } else if popupBar.isHidden, let hiddenAt = popupBarHiddenAt,
                       Date().timeIntervalSince(hiddenAt) > 1 {
                 // The window was closed without telling us (the chevron at
@@ -918,6 +952,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 TabBarController.popupIsOpen = false
                 popupBar.isHidden = false
                 popupBarHiddenAt = nil
+                restorePopupWindow()
             }
         }
         applyFloatingStyle()
