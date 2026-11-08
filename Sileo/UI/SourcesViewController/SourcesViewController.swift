@@ -413,17 +413,28 @@ final class SourcesViewController: SileoViewController {
         }
         let controller = SourceSearchViewController(repos: repos)
         controller.onSelect = { [weak self] repo in
-            guard let self = self,
-                  let index = self.sortedRepoList.firstIndex(where: { $0.rawURL == repo.rawURL }) else {
-                return
-            }
-            let indexPath = IndexPath(row: index, section: 1)
-            self.tableView.selectRow(at: indexPath, animated: true, scrollPosition: .middle)
-            self.tableViewSelectRowAt(tableView: self.tableView, indexPath: indexPath)
-            self.detailedPageUserPresent = true
+            self?.openSource(from: repo)
         }
         let navigation = UINavigationController(rootViewController: controller)
         present(navigation, animated: true)
+    }
+
+    private var openingSourceFromSearch = false
+
+    private func openSource(from repo: Repo) {
+        guard !openingSourceFromSearch else { return }
+        guard let index = sortedRepoList.firstIndex(where: { $0.rawURL == repo.rawURL }) else {
+            return
+        }
+        openingSourceFromSearch = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.openingSourceFromSearch = false
+        }
+        let indexPath = IndexPath(row: index, section: 1)
+        presentRepoUrl = repo.url
+        tableView.selectRow(at: indexPath, animated: true, scrollPosition: .middle)
+        tableViewSelectRowAt(tableView: tableView, indexPath: indexPath)
+        detailedPageUserPresent = true
     }
 
     /// Source names and URLs, filtered as the user types.
@@ -498,11 +509,19 @@ final class SourcesViewController: SileoViewController {
         }
 
         override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+            tableView.deselectRow(at: indexPath, animated: false)
             let repo = filtered[indexPath.row]
-            tableView.deselectRow(at: indexPath, animated: true)
+            // One navigation only: the handler is taken away here, and runs
+            // after the sheet is gone, or the split view drops the first call
+            // and the next tap opens the source twice.
             let handler = onSelect
+            onSelect = nil
             dismiss(animated: true) {
-                handler?(repo)
+                // The split view ignores a detail request made while a sheet is
+                // still going away; ask once it is gone.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    handler?(repo)
+                }
             }
         }
     }
