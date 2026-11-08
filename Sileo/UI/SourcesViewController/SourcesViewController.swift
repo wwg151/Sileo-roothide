@@ -438,11 +438,11 @@ final class SourcesViewController: SileoViewController {
     }
 
     /// Source names and URLs, filtered as the user types.
-    final class SourceSearchViewController: UITableViewController, UISearchResultsUpdating {
+    final class SourceSearchViewController: UITableViewController, UISearchBarDelegate {
 
         private let repos: [Repo]
         private var filtered: [Repo]
-        private let searchController = UISearchController(searchResultsController: nil)
+        private let searchBar = UISearchBar()
         var onSelect: ((Repo) -> Void)?
 
         init(repos: [Repo]) {
@@ -459,31 +459,47 @@ final class SourcesViewController: SileoViewController {
         override func viewDidLoad() {
             super.viewDidLoad()
             title = String(localizationKey: "Search_Sources")
-            searchController.searchResultsUpdater = self
-            searchController.obscuresBackgroundDuringPresentation = false
-            searchController.searchBar.placeholder = String(localizationKey: "Search_Sources.Placeholder")
-            navigationItem.searchController = searchController
-            navigationItem.hidesSearchBarWhenScrolling = false
+            // A plain search bar in the header, not a UISearchController: with
+            // the latter the first tap on a result only ends editing, and the
+            // row answers the second one.
+            searchBar.delegate = self
+            searchBar.searchBarStyle = .minimal
+            searchBar.placeholder = String(localizationKey: "Search_Sources.Placeholder")
+            searchBar.autoresizingMask = [.flexibleWidth]
+            searchBar.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 56)
+            tableView.tableHeaderView = searchBar
+            tableView.keyboardDismissMode = .onDrag
             navigationItem.leftBarButtonItem = UIBarButtonItem(
                 title: String(localizationKey: "Cancel"),
                 style: .plain,
                 target: self,
                 action: #selector(close)
             )
-            definesPresentationContext = true
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            guard let header = tableView.tableHeaderView, header.frame.width != tableView.bounds.width else {
+                return
+            }
+            var frame = header.frame
+            frame.size.width = tableView.bounds.width
+            header.frame = frame
+            tableView.tableHeaderView = header
         }
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
-            searchController.searchBar.becomeFirstResponder()
+            searchBar.becomeFirstResponder()
         }
 
         @objc private func close() {
+            searchBar.resignFirstResponder()
             dismiss(animated: true)
         }
 
-        func updateSearchResults(for searchController: UISearchController) {
-            let text = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+            let text = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if text.isEmpty {
                 filtered = repos
             } else {
@@ -492,6 +508,10 @@ final class SourcesViewController: SileoViewController {
                 }
             }
             tableView.reloadData()
+        }
+
+        func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+            searchBar.resignFirstResponder()
         }
 
         override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -510,6 +530,7 @@ final class SourcesViewController: SileoViewController {
 
         override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
             tableView.deselectRow(at: indexPath, animated: false)
+            searchBar.resignFirstResponder()
             let repo = filtered[indexPath.row]
             // One navigation only: the handler is taken away here, and runs
             // after the sheet is gone, or the split view drops the first call
