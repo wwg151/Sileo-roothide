@@ -464,6 +464,10 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             UIAction(title: String(localizationKey: "Restore_Sources"),
                      image: UIImage(systemName: "tray.and.arrow.up")) { [weak self] _ in
                 self?.restoreSources()
+            },
+            UIAction(title: String(localizationKey: "Backup_View"),
+                     image: UIImage(systemName: "folder")) { [weak self] _ in
+                self?.openBackupsInFilza()
             }
         ]
         return UIMenu(title: String(localizationKey: "Backup_Restore"), children: actions)
@@ -495,6 +499,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Sources"), style: .default) { [weak self] _ in
             self?.restoreSources()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_View"), style: .default) { [weak self] _ in
+            self?.openBackupsInFilza()
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
         if let popover = alert.popoverPresentationController {
@@ -727,6 +734,18 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                     }
                 })
             }
+        }
+    }
+
+    private func openBackupsInFilza() {
+        let path = "/var/mobile/Documents"
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        guard let url = URL(string: "filza://view/\(encoded)") else { return }
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+        } else {
+            showBackupMessage(title: String(localizationKey: "Backup_View"),
+                              message: String(localizationKey: "Backup_View_No_Filza"))
         }
     }
 

@@ -317,6 +317,8 @@
 "Restore_Confirm_Sources" = "This backup replaces every source list and key under etc/apt. The current sources are lost. Continue?";
 "Backup_Sources_Done" = "Sources backed up.";
 "Restore_Sources_Done" = "Sources restored. Refresh the sources for them to load.";
+"Backup_View" = "View Backups";
+"Backup_View_No_Filza" = "Filza is not installed. The backups are in /var/mobile/Documents.";
 "Backup_Configuration_Done" = "Configuration backed up.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
 "Backup_No_Backup" = "No backup was found.";

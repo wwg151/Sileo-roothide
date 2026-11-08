@@ -323,6 +323,8 @@
 "Restore_Confirm_Sources" = "将用该备份覆盖 etc/apt 下的所有源列表与密钥，当前源会丢失。是否继续？";
 "Backup_Sources_Done" = "插件源备份完成。";
 "Restore_Sources_Done" = "插件源已恢复，建议刷新插件源后使用。";
+"Backup_View" = "查看备份";
+"Backup_View_No_Filza" = "未安装 Filza，备份位于 /var/mobile/Documents。";
 "Backup_Configuration_Done" = "配置备份完成。";
 "Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
 "Backup_No_Backup" = "没有找到备份。";
