@@ -340,6 +340,24 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         }
         return self.tabBar.frame.height
     }
+
+    /// The capsule reaches a little above the tab bar, into the queue bar that
+    /// sits on it. The queue bar is lifted by that much, so the capsule keeps
+    /// its size and only touches the queue instead of covering it.
+    private func updateFloatingPopupOffset() {
+        // Only while the queue is the bar sitting on the tab bar; once it fills
+        // the screen the bar is at the top and needs no shift.
+        guard isFloatingEnabled, popupIsPresented,
+              let container = floatingBackground, !container.isHidden,
+              popupBar.frame.maxY >= tabBar.frame.minY - 1 else {
+            if self.popupBar.transform != .identity {
+                self.popupBar.transform = .identity
+            }
+            return
+        }
+        let overflow = max(0, -container.frame.minY)
+        self.popupBar.transform = CGAffineTransform(translationX: 0, y: -overflow)
+    }
     private var floatingRetryCount = 0
     private var floatingBackground: UIView?
     private var floatingAppearance: UITabBarAppearance?
@@ -464,6 +482,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
                 self.tabBar.scrollEdgeAppearance = originalScrollEdgeAppearance
                 self.tabBar.itemWidth = 0
                 self.tabBar.itemSpacing = 0
+                self.popupBar.transform = .identity
             }
             return
         }
@@ -513,9 +532,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             floatingBackground = container
         }
         guard let container = floatingBackground, let blur = container.viewWithTag(1) else { return }
-        // While the queue is open the capsule would otherwise reach into the
-        // popup bar above the tab bar; it hugs the item row instead.
-        let barHeight: CGFloat = popupIsPresented ? 49 : 78
+        let barHeight: CGFloat = 78
         // Center the capsule on the visible icon+label row so top/bottom spacing is equal
         var rowMids: [CGFloat] = []
         var colMids: [CGFloat] = []
@@ -550,6 +567,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         if popupIsPresented, self.popupBar.tabBarHeight != floatingPopupTabBarHeight {
             self.popupBar.tabBarHeight = floatingPopupTabBarHeight
         }
+        updateFloatingPopupOffset()
         blur.frame = container.bounds
         blur.layer.cornerRadius = barHeight / 2
         container.layer.shadowPath = UIBezierPath(roundedRect: container.bounds, cornerRadius: barHeight / 2).cgPath
