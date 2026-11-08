@@ -908,7 +908,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             }
             if popupPresentationState == .open, !TabBarController.popupDumped {
                 TabBarController.popupDumped = true
-                TabBarController.dumpWindow(of: view)
+                // Give the window time to settle before recording it.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self = self else { return }
+                    TabBarController.dumpWindow(of: self.view)
+                }
             }
         }
         applyFloatingStyle()
