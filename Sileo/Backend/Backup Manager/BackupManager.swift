@@ -195,13 +195,14 @@ final class BackupManager {
     /// packages do not claim.
     func userInstalledPackages() -> [Package] {
         let excluded = excludedPackageNames()
+        let bootstrapTime = bootstrapInstallTime()
         let packages = PackageListManager.shared.installedPackages.values.filter { package in
             if excluded.contains(package.package) {
                 return false
             }
-            // The bootstrap's libraries, tools, keyrings and patchers are not
+            // The bootstrap's libraries, keyrings and its own tools are not
             // the user's packages, however dpkg marks them.
-            if BackupManager.isBootstrapPackage(package) {
+            if BackupManager.isBootstrapPackage(package, bootstrapTime: bootstrapTime) {
                 return false
             }
             let raw = package.rawControl
@@ -217,28 +218,48 @@ final class BackupManager {
         return packages.sorted { $0.name.lowercased() < $1.name.lowercased() }
     }
 
-    /// A library, or one of the packages the roothide bootstrap itself puts
-    /// there: its shell, core utilities, archivers, keyrings, injection
-    /// libraries and patchers. Every other package came from a source the
-    /// user added or a .deb they installed.
-    private static func isBootstrapPackage(_ package: Package) -> Bool {
+    /// The moment the bootstrap unpacked its packages: the largest group dpkg
+    /// installed at once. Everything later came from a source or a .deb the
+    /// user added, even when it carries a name the bootstrap also uses.
+    private func bootstrapInstallTime() -> Date? {
+        var batches: [Date: Int] = [:]
+        for package in PackageListManager.shared.installedPackages.values {
+            guard let date = package.installDate else { continue }
+            let minute = Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 60).rounded(.down) * 60)
+            batches[minute, default: 0] += 1
+        }
+        return batches.max { $0.value < $1.value }?.key
+    }
+
+    /// A library, a keyring, or one of the packages the roothide bootstrap
+    /// itself puts there. A package with such a name that was installed after
+    /// the bootstrap's own batch is the user's.
+    private static func isBootstrapPackage(_ package: Package, bootstrapTime: Date?) -> Bool {
         let identifier = package.package
         if identifier.hasPrefix("lib") {
             return true
         }
-        if bootstrapPackages.contains(identifier) {
+        let section = (package.rawControl["section"] ?? "").lowercased()
+        if section == "libraries" || section == "keyrings" {
             return true
         }
-        let section = (package.rawControl["section"] ?? "").lowercased()
-        return section == "libraries" || section == "keyrings"
+        guard bootstrapPackages.contains(identifier) else {
+            return false
+        }
+        if let installDate = package.installDate,
+           let bootstrapTime = bootstrapTime,
+           installDate > bootstrapTime.addingTimeInterval(120) {
+            return false
+        }
+        return true
     }
 
     private static let bootstrapPackages: Set<String> = [
         "apt", "base", "bash", "ca-certificates", "chariz-keyring", "coreutils",
-        "dash", "dpkg", "dopamine-basebin-link", "ellekit", "firmware", "gpgv",
-        "grep", "gzip", "havoc-keyring", "ldid", "p7zip", "profile.d", "roothide",
-        "rootless-compat", "snaputil", "sudo", "tar", "uikittools", "unrar", "vi",
-        "xz-utils", "zsh", "com.roothide.patchloader"
+        "dash", "dpkg", "dopamine-basebin-link", "ellekit", "firmware", "gawk",
+        "gpgv", "grep", "gzip", "havoc-keyring", "ldid", "p7zip", "profile.d",
+        "roothide", "rootless-compat", "snaputil", "sudo", "tar", "uikittools",
+        "unrar", "unzip", "vi", "xz-utils", "zip", "zsh", "com.roothide.patchloader"
     ]
 
     private func excludedPackageNames() -> Set<String> {
