@@ -341,22 +341,28 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         return self.tabBar.frame.height
     }
 
-    /// The capsule reaches a little above the tab bar, into the queue bar that
-    /// sits on it. The queue bar is lifted by that much, so the capsule keeps
-    /// its size and only touches the queue instead of covering it.
+    /// The capsule reaches above the tab bar, into the queue bar that sits on
+    /// it. The queue bar is lifted until its bottom edge meets the capsule's
+    /// top edge, measured in window coordinates so no guess is involved.
     private func updateFloatingPopupOffset() {
-        // Only while the queue is the bar sitting on the tab bar; once it fills
-        // the screen the bar is at the top and needs no shift.
-        guard isFloatingEnabled, popupIsPresented,
-              let container = floatingBackground, !container.isHidden,
-              popupBar.frame.maxY >= tabBar.frame.minY - 1 else {
+        func reset() {
             if self.popupBar.transform != .identity {
                 self.popupBar.transform = .identity
             }
+        }
+        guard isFloatingEnabled, popupIsPresented,
+              let container = floatingBackground, !container.isHidden,
+              popupBar.bounds.height > 0,
+              popupBar.bounds.height < view.bounds.height * 0.5 else {
+            reset()
             return
         }
-        let overflow = max(0, -container.frame.minY)
-        self.popupBar.transform = CGAffineTransform(translationX: 0, y: -overflow)
+        // Measure without the shift applied, or repeated passes would stack it
+        popupBar.transform = .identity
+        let capsuleTop = container.convert(CGPoint.zero, to: nil).y
+        let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
+        let shift = max(0, barBottom - capsuleTop)
+        popupBar.transform = CGAffineTransform(translationX: 0, y: -shift)
     }
     private var floatingRetryCount = 0
     private var floatingBackground: UIView?
