@@ -60,6 +60,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // Install the saved item metrics before the first layout so the bar never has to resize on launch
         applyFloatingStyle()
         TabBarController.installPopupBarLayoutHook()
+        popupBar.popupOpenGestureRecognizer.addTarget(self, action: #selector(popupBarTapped))
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(floatingTabBarChanged),
                                                name: Notification.Name("FloatingTabBar"),
@@ -819,6 +820,22 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     
     // MARK: - Queue state
 
+    /// The bar is tapped to open the queue: hide it right away, so the window
+    /// does not push it up along the top edge.
+    @objc private func popupBarTapped() {
+        guard popupBar.popupOpenGestureRecognizer.state == .began else { return }
+        TabBarController.popupIsOpen = true
+        popupBar.isHidden = true
+        resetFloatingPopupShape()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self = self else { return }
+            if self.popupPresentationState != .open {
+                TabBarController.popupIsOpen = false
+                self.popupBar.isHidden = false
+            }
+        }
+    }
+
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            willOpenPopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
@@ -843,6 +860,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         super.viewDidLayoutSubviews()
         
         self.tabBar.itemPositioning = .centered
+        if popupIsPresented {
+            // A second, layout-driven guard: whatever route the window took,
+            // the bar must not be visible while it is open.
+            let open = popupPresentationState == .open || TabBarController.popupIsOpen
+            if open != popupBar.isHidden {
+                popupBar.isHidden = open
+            }
+        }
         applyFloatingStyle()
         applyFloatingPopupShape()
         if UIDevice.current.userInterfaceIdiom == .pad {
