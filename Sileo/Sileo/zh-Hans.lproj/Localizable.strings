@@ -319,6 +319,7 @@
 "Backup_Deselect_All" = "取消";
 "Backup_Start" = "备份";
 "Backup_Starting" = "正在准备…";
+"Backup_Time_Left" = "预计剩余 %d 秒";
 "Backup_Result" = "备份完成：成功 %d 个，失败 %d 个。";
 "Restore_Result" = "已把 %d 个插件加入安装队列，跳过 %d 个。";
 "Restore_Confirm_Button" = "恢复";

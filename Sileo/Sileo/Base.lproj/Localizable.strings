@@ -313,6 +313,7 @@
 "Backup_Deselect_All" = "Cancel";
 "Backup_Start" = "Back Up";
 "Backup_Starting" = "Preparing…";
+"Backup_Time_Left" = "%d s left";
 "Backup_Result" = "Backup finished: %d succeeded, %d failed.";
 "Restore_Result" = "%d package(s) added to the install queue, %d skipped.";
 "Restore_Confirm_Button" = "Restore";

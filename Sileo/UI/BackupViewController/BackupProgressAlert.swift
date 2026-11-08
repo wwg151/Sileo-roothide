@@ -2,7 +2,8 @@
 //  BackupProgressAlert.swift
 //  Sileo
 //
-//  The card a backup or restore waits on: what is happening, a bar and Cancel.
+//  The card a backup or restore waits on: what is happening, a bar, how long
+//  is left, and Cancel.
 //
 
 import Foundation
@@ -13,6 +14,15 @@ final class BackupProgressAlert {
     let alert: UIAlertController
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let percentLabel = UILabel()
+
+    private var timer: Timer?
+    private var startedAt = Date()
+    private var fraction: Double = 0
+    private var currentMessage = ""
+    private var currentDetail = ""
+    private var finished = false
+    /// The last estimate, smoothed so the number walks down instead of jumping.
+    private var smoothedRemaining: TimeInterval?
 
     init(title: String, message: String, cancellable: Bool, onCancel: (() -> Void)?) {
         alert = UIAlertController(title: title, message: message + "\n\n", preferredStyle: .alert)
@@ -37,23 +47,71 @@ final class BackupProgressAlert {
             percentLabel.leadingAnchor.constraint(equalTo: progressView.leadingAnchor),
             percentLabel.bottomAnchor.constraint(equalTo: progressView.topAnchor, constant: -4)
         ])
+
+        currentMessage = message
+        startedAt = Date()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+    }
+
+    deinit {
+        timer?.invalidate()
     }
 
     func update(fraction: Double, message: String, detail: String) {
-        let value = max(0, min(1, fraction))
+        self.fraction = max(0, min(1, fraction))
+        currentMessage = message
+        currentDetail = detail
         DispatchQueue.main.async {
-            self.alert.message = "\n\(message)\n\(detail)\n"
-            self.progressView.setProgress(Float(value), animated: true)
-            self.percentLabel.text = "\(Int(value * 100))%"
+            self.render()
         }
     }
 
     func finish(message: String) {
+        finished = true
+        timer?.invalidate()
+        timer = nil
         DispatchQueue.main.async {
             self.progressView.isHidden = true
             self.percentLabel.isHidden = true
             self.alert.message = message
             self.alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default))
         }
+    }
+
+    // MARK: - Estimate
+
+    private func tick() {
+        guard !finished else { return }
+        DispatchQueue.main.async {
+            self.render()
+        }
+    }
+
+    private func estimatedRemaining() -> TimeInterval? {
+        // Too little done to say anything honest yet
+        guard fraction > 0.03, fraction < 1 else { return nil }
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed > 0.5 else { return nil }
+        let remaining = elapsed * (1 - fraction) / fraction
+        if let previous = smoothedRemaining {
+            // Walk towards the new estimate instead of jumping to it
+            return previous * 0.6 + remaining * 0.4
+        }
+        return remaining
+    }
+
+    private func render() {
+        guard !finished else { return }
+        var text = "\n\(currentMessage)\n\(currentDetail)\n"
+        if let remaining = estimatedRemaining() {
+            smoothedRemaining = remaining
+            let seconds = max(0, Int(remaining.rounded()))
+            text += String(format: String(localizationKey: "Backup_Time_Left"), seconds)
+        }
+        alert.message = text
+        progressView.setProgress(Float(fraction), animated: true)
+        percentLabel.text = "\(Int(fraction * 100))%"
     }
 }
