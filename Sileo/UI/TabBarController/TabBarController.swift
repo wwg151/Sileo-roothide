@@ -338,6 +338,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     }
     
     private var floatingInset: CGFloat { 10 }
+
+    /// How far the floating tab bar keeps its first item from the capsule's
+    /// edge. The queue bar's title is placed the same distance in, so the two
+    /// line up whatever the bar's own margins happen to be.
+    private var floatingContentInset: CGFloat {
+        guard let container = floatingBackground, container.frame.width > 0 else { return 20 }
+        let buttons = buttonsSortedByX()
+        guard let first = buttons.first else { return 20 }
+        let firstX = first.convert(first.bounds, to: tabBar).minX
+        let inset = firstX - container.frame.minX
+        return max(10, min(40, inset))
+    }
     private var floatingPopupTabBarHeight: CGFloat {
         // Popup bottom edge should touch the capsule's top edge
         if isFloatingEnabled, let container = floatingBackground, !container.isHidden, container.frame.height > 0 {
@@ -362,7 +374,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             return
         }
         guard let inner = bar.toolbar.superview else { return }
-        let extra: CGFloat = 14
+        let target = TabBarController.singleton?.floatingContentInset ?? 20
         let toolbar = bar.toolbar
         for sub in inner.subviews {
             if sub === toolbar { continue }
@@ -375,9 +387,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
                 continue
             }
             var frame = sub.frame
-            guard frame.width > extra * 2 + 20 else { continue }
-            frame.origin.x += extra
-            frame.size.width -= extra
+            let delta = target - frame.minX
+            guard delta > 0.5, frame.width > target + 40 else { continue }
+            frame.origin.x = target
+            frame.size.width -= delta
             UIView.performWithoutAnimation {
                 sub.frame = frame
             }
