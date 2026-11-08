@@ -415,6 +415,27 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private static var popupBarLayoutHooked = false
+    private static var popupDumped = false
+
+    /// Temporary: writes the window's structure once, so what is left at the
+    /// top of the open window can be named from outside the app.
+    static func dumpWindow(of view: UIView) {
+        var lines: [String] = []
+        for window in UIApplication.shared.windows {
+            lines.append("window \(String(describing: type(of: window))) \(window.frame) level=\(window.windowLevel.rawValue) hidden=\(window.isHidden)")
+            for sub in window.subviews {
+                lines.append("  \(String(describing: type(of: sub))) \(sub.frame) hidden=\(sub.isHidden) alpha=\(sub.alpha)")
+                for sub2 in sub.subviews.prefix(8) {
+                    lines.append("    \(String(describing: type(of: sub2))) \(sub2.frame) hidden=\(sub2.isHidden) alpha=\(sub2.alpha)")
+                }
+            }
+        }
+        if let bar = (TabBarController.singleton?.popupBar) {
+            lines.append("bar \(bar.frame) hidden=\(bar.isHidden) alpha=\(bar.alpha) super=\(String(describing: bar.superview.map { type(of: $0) })) \(String(describing: bar.superview?.frame))")
+        }
+        let url = URL(fileURLWithPath: "/var/mobile/Documents/sileo-popup-debug.txt")
+        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
     /// True while the queue is open as a window.
     static var popupIsOpen = false
     /// True while the bar carries the capsule shape we gave it.
@@ -866,6 +887,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             let open = popupPresentationState == .open || TabBarController.popupIsOpen
             if open != popupBar.isHidden {
                 popupBar.isHidden = open
+            }
+            if open, !TabBarController.popupDumped {
+                TabBarController.popupDumped = true
+                TabBarController.dumpWindow(of: view)
             }
         }
         applyFloatingStyle()
