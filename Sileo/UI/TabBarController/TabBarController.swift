@@ -421,13 +421,19 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// top of the open window can be named from outside the app.
     static func dumpWindow(of view: UIView) {
         var lines: [String] = []
+        func walk(_ view: UIView, depth: Int) {
+            guard depth <= 6 else { return }
+            let indent = String(repeating: "  ", count: depth)
+            let background = view.backgroundColor.map { "\($0)" } ?? "nil"
+            lines.append("\(indent)\(String(describing: type(of: view))) \(view.frame) hidden=\(view.isHidden) alpha=\(view.alpha) bg=\(background)")
+            for sub in view.subviews {
+                walk(sub, depth: depth + 1)
+            }
+        }
         for window in UIApplication.shared.windows {
             lines.append("window \(String(describing: type(of: window))) \(window.frame) level=\(window.windowLevel.rawValue) hidden=\(window.isHidden)")
             for sub in window.subviews {
-                lines.append("  \(String(describing: type(of: sub))) \(sub.frame) hidden=\(sub.isHidden) alpha=\(sub.alpha)")
-                for sub2 in sub.subviews.prefix(8) {
-                    lines.append("    \(String(describing: type(of: sub2))) \(sub2.frame) hidden=\(sub2.isHidden) alpha=\(sub2.alpha)")
-                }
+                walk(sub, depth: 1)
             }
         }
         if let bar = (TabBarController.singleton?.popupBar) {
