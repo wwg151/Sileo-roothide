@@ -797,9 +797,13 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         )
         alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: String(localizationKey: "Clear_Confirm_Button"), style: .destructive) { [weak self] _ in
-            let removed = BackupManager.shared.deleteBackups(kind: kind)
-            self?.showBackupMessage(title: title,
-                                    message: String(format: String(localizationKey: "Clear_Done"), removed))
+            DispatchQueue.global(qos: .userInitiated).async {
+                let removed = BackupManager.shared.deleteBackups(kind: kind)
+                DispatchQueue.main.async {
+                    self?.showBackupMessage(title: title,
+                                            message: String(format: String(localizationKey: "Clear_Done"), removed))
+                }
+            }
         })
         present(alert, animated: true)
     }
