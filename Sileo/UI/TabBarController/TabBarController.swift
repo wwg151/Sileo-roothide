@@ -163,6 +163,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             DispatchQueue.main.async {
                 self.presentPopupBar(withContentViewController: downloadsController, animated: animated) {
                     self.popupBar.alpha = 1
+                    self.popupBar.isHidden = false
                     TabBarController.popupIsOpen = false
                     self.applyFloatingStyle()
                     completion?()
@@ -200,6 +201,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             DispatchQueue.main.async {
                 self.dismissPopupBar(animated: animated) {
                     self.popupBar.alpha = 1
+                    self.popupBar.isHidden = false
                     TabBarController.popupIsOpen = false
                     self.applyFloatingStyle()
                     completion?()
@@ -821,11 +823,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                                            willOpenPopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
         // The capsule belongs to the collapsed bar; the open window must not
-        // keep its inset frame or its rounding. The bar also goes back to the
-        // place the framework docked it, so the window covers it instead of
-        // leaving it visible along the top edge.
+        // keep its inset frame or its rounding. The bar itself is hidden for
+        // the duration, or it shows above the window as it is pushed up.
         TabBarController.popupIsOpen = true
-        popupBar.transform = .identity
+        popupBar.isHidden = true
         resetFloatingPopupShape()
     }
 
@@ -833,6 +834,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                                            didClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
         TabBarController.popupIsOpen = false
+        popupBar.isHidden = false
         applyFloatingStyle()
     }
 
