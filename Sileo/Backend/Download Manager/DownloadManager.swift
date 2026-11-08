@@ -146,6 +146,12 @@ final class DownloadManager {
         // If it's a local file we can verify it immediately
         if package.local_deb != nil {
             if self.verifyLocalPackage(package: package) {
+                if DownloadManager.needsConversion(package), let localDeb = package.local_deb {
+                    // Converted here, inside the queue run, instead of with a
+                    // download alert when the package was queued.
+                    self.convertDownloaded(download: download, fileURL: URL(fileURLWithPath: localDeb))
+                    return
+                }
                 download.progress = 1
                 download.success = true
                 download.completed = true
@@ -300,10 +306,10 @@ final class DownloadManager {
     
     private static let incompatibleHosts = ["apt.procurs.us", "ellekit.space"]
     
-    // A rootless/rootful repo package that is queued as is and converted once it has been downloaded
+    // A rootless/rootful package that is queued as it is and converted once it
+    // has been downloaded, or when the queue runs for a local .deb
     static func needsConversion(_ package: Package) -> Bool {
-        guard package.local_deb == nil,
-              !checkRootHide(package),
+        guard !checkRootHide(package),
               UserDefaults.standard.bool(forKey: compatModeKey, fallback: true),
               !incompatibleHosts.contains(package.sourceRepo?.url?.host ?? "")
         else { return false }
