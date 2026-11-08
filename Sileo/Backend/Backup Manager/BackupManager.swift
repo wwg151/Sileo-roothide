@@ -201,8 +201,10 @@ final class BackupManager {
                     deb: nil
                 )
 
-                if let repoPackage = PackageListManager.shared.newestPackage(identifier: package.package),
-                   let repo = repoPackage.sourceRepo {
+                // Only a source that carries this exact installed version can
+                // stand in for it; anything else is kept as a file, so a
+                // restore never swaps in another source's build.
+                if let repo = BackupManager.repo(offering: package.package, version: package.version) {
                     entry.repo = repo.rawURL
                     entries.append(entry)
                     continue
@@ -345,16 +347,45 @@ final class BackupManager {
             }
     }
 
-    /// The package to install for a manifest entry: the recorded source (or
-    /// any source, newest) when it offers the package, otherwise the kept .deb.
+    /// The source that carries this exact version, preferring one where that
+    /// version is the package's newest, so a restore installs what was backed
+    /// up rather than another source's newer build.
+    private static func repo(offering identifier: String, version: String) -> Repo? {
+        let repos = RepoManager.shared.repoList.filter { repo in
+            repo.packageArray.contains { $0.package == identifier && $0.version == version }
+        }
+        if let preferred = repos.first(where: {
+            $0.newestPackage(identifier: identifier)?.version == version
+        }) {
+            return preferred
+        }
+        return repos.first
+    }
+
+    private static func package(in repo: Repo, identifier: String, version: String) -> Package? {
+        repo.packageArray.first { $0.package == identifier && $0.version == version }
+    }
+
+    private static func package(offering identifier: String, version: String) -> Package? {
+        for repo in RepoManager.shared.repoList {
+            if let package = package(in: repo, identifier: identifier, version: version) {
+                return package
+            }
+        }
+        return nil
+    }
+
+    /// The package to install for a manifest entry: the exact version from the
+    /// recorded source, then the same version from any other source, then the
+    /// kept .deb, and only when none of those exist, whatever source is newest.
     private static func resolve(entry: ManifestEntry, in folder: BackupFolder) -> Package? {
         if let repoURL = entry.repo,
            let repo = RepoManager.shared.repoList.first(where: { $0.rawURL == repoURL }),
-           let package = exactOrNewest(in: repo, entry: entry) {
+           let package = package(in: repo, identifier: entry.package, version: entry.version) {
             return package
         }
-        if let package = PackageListManager.shared.newestPackage(identifier: entry.package),
-           package.sourceRepo != nil {
+        if !entry.version.isEmpty,
+           let package = package(offering: entry.package, version: entry.version) {
             return package
         }
         if let deb = entry.deb {
@@ -363,16 +394,11 @@ final class BackupManager {
                 return package
             }
         }
-        return nil
-    }
-
-    private static func exactOrNewest(in repo: Repo, entry: ManifestEntry) -> Package? {
-        if let exact = repo.packageArray.first(where: {
-            $0.package == entry.package && $0.version == entry.version
-        }) {
-            return exact
+        if let package = PackageListManager.shared.newestPackage(identifier: entry.package),
+           package.sourceRepo != nil {
+            return package
         }
-        return repo.newestPackage(identifier: entry.package)
+        return nil
     }
 
     // MARK: - Configuration
