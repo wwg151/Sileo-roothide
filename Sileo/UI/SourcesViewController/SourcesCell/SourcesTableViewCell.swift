@@ -16,7 +16,8 @@ class SourcesTableViewCell: BaseSubtitleTableViewCell {
     public weak var repo: Repo? = nil {
         didSet {
             if let repo = repo {
-                self.title = repo.displayName
+                let pinned = PinnedSources.shared.isPinned(repo)
+                self.title = pinned ? "📌 " + repo.displayName : repo.displayName
                 self.subtitle = repo.displayURL
                 self.progress = repo.totalProgress
                 self.image(repo)

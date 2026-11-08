@@ -17,6 +17,9 @@
 		A1C0DE0000000000000000D1 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C1 /* BackupManager.swift */; };
 		A1C0DE0000000000000000D2 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C1 /* BackupManager.swift */; };
 		A1C0DE0000000000000000D3 /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C1 /* BackupManager.swift */; };
+		A1C0DE0000000000000000F2 /* PinnedSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000F1 /* PinnedSources.swift */; };
+		A1C0DE0000000000000000F3 /* PinnedSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000F1 /* PinnedSources.swift */; };
+		A1C0DE0000000000000000F4 /* PinnedSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000F1 /* PinnedSources.swift */; };
 		A1C0DE0000000000000000D4 /* PackageRepacker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C2 /* PackageRepacker.swift */; };
 		A1C0DE0000000000000000D5 /* PackageRepacker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C2 /* PackageRepacker.swift */; };
 		A1C0DE0000000000000000D6 /* PackageRepacker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C2 /* PackageRepacker.swift */; };
@@ -1159,6 +1162,7 @@
 		A1C0DE0000000000000000B1 /* MachOPatcher.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MachOPatcher.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000A1 /* RootlessConverter.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RootlessConverter.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000C1 /* BackupManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
+		A1C0DE0000000000000000F1 /* PinnedSources.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PinnedSources.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000C2 /* PackageRepacker.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PackageRepacker.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000C3 /* BackupProgressAlert.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackupProgressAlert.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000C4 /* BackupPackagesViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackupPackagesViewController.swift; sourceTree = "<group>"; };
@@ -2751,6 +2755,7 @@
 			isa = PBXGroup;
 			children = (
 				F1D6A62E22E53EF900CBD045 /* RepoManager.swift */,
+				A1C0DE0000000000000000F1 /* PinnedSources.swift */,
 			);
 			path = "Repo Manager";
 			sourceTree = "<group>";
@@ -4142,6 +4147,7 @@
 				A1C0DE0000000000000000B2 /* MachOPatcher.swift in Sources */,
 				A1C0DE0000000000000000A2 /* RootlessConverter.swift in Sources */,
 				A1C0DE0000000000000000D1 /* BackupManager.swift in Sources */,
+				A1C0DE0000000000000000F2 /* PinnedSources.swift in Sources */,
 				A1C0DE0000000000000000D4 /* PackageRepacker.swift in Sources */,
 				A1C0DE0000000000000000D7 /* BackupProgressAlert.swift in Sources */,
 				A1C0DE0000000000000000DA /* BackupPackagesViewController.swift in Sources */,
@@ -4355,6 +4361,7 @@
 				A1C0DE0000000000000000B4 /* MachOPatcher.swift in Sources */,
 				A1C0DE0000000000000000A4 /* RootlessConverter.swift in Sources */,
 				A1C0DE0000000000000000D2 /* BackupManager.swift in Sources */,
+				A1C0DE0000000000000000F3 /* PinnedSources.swift in Sources */,
 				A1C0DE0000000000000000D5 /* PackageRepacker.swift in Sources */,
 				A1C0DE0000000000000000D8 /* BackupProgressAlert.swift in Sources */,
 				A1C0DE0000000000000000DB /* BackupPackagesViewController.swift in Sources */,
@@ -4549,6 +4556,7 @@
 				A1C0DE0000000000000000B3 /* MachOPatcher.swift in Sources */,
 				A1C0DE0000000000000000A3 /* RootlessConverter.swift in Sources */,
 				A1C0DE0000000000000000D3 /* BackupManager.swift in Sources */,
+				A1C0DE0000000000000000F4 /* PinnedSources.swift in Sources */,
 				A1C0DE0000000000000000D6 /* PackageRepacker.swift in Sources */,
 				A1C0DE0000000000000000D9 /* BackupProgressAlert.swift in Sources */,
 				A1C0DE0000000000000000DC /* BackupPackagesViewController.swift in Sources */,

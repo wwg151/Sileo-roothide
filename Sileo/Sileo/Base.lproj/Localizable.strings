@@ -113,6 +113,8 @@
 "Ignored Updates" = "Blocked Updates";
 
 "Repos" = "Repositories";
+"Source_Pin" = "Pin";
+"Source_Unpin" = "Unpin";
 "Repo" = "Repository";
 
 "Add_Source.Title" = "Add Source";

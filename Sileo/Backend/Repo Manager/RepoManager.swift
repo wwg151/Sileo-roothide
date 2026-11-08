@@ -249,6 +249,7 @@ final class RepoManager {
         repoListLock.signal()
         writeListToFile()
         for repo in repos {
+            PinnedSources.shared.remove(repo)
             UserDefaults.standard.removeObject(forKey: "preferredArch_\(repo.url!)")
             UserDefaults.standard.synchronize()
             DatabaseManager.shared.deleteRepo(repo: repo)

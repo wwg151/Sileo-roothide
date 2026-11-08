@@ -1074,7 +1074,7 @@ final class SourcesViewController: SileoViewController {
     }
     
     func reSortList() {
-        sortedRepoList = RepoManager.shared.sortedRepoList()
+        sortedRepoList = PinnedSources.shared.sorted(RepoManager.shared.sortedRepoList())
     }
     
     private func deleteRepo(at indexPath: IndexPath) {
@@ -1567,6 +1567,26 @@ extension SourcesViewController: UITableViewDelegate { // UITableViewDelegate
 //        }
     }
     
+    func tableView(_ tableView: UITableView, leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        if indexPath.section == 0 { return nil }
+        let repo = sortedRepoList[indexPath.row]
+        let pinned = PinnedSources.shared.isPinned(repo)
+        let pin = UIContextualAction(
+            style: .normal,
+            title: String(localizationKey: pinned ? "Source_Unpin" : "Source_Pin")
+        ) { [weak self] _, _, completionHandler in
+            PinnedSources.shared.toggle(repo)
+            completionHandler(true)
+            DispatchQueue.main.async {
+                self?.reSortList()
+                self?.tableView.reloadSections(IndexSet(integer: 1), with: .automatic)
+                self?.updateFooterCount()
+            }
+        }
+        pin.backgroundColor = pinned ? .systemGray : .systemOrange
+        return UISwipeActionsConfiguration(actions: [pin])
+    }
+
     func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         // We don't want to be able to delete the top section so we just return early here
         if indexPath.section == 0 { return nil }
