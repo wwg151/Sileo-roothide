@@ -8,6 +8,7 @@
 
 import Foundation
 import LNPopupController
+import ObjectiveC
 
 class TabBarController: UITabBarController, UITabBarControllerDelegate {
     static var singleton: TabBarController?
@@ -54,6 +55,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         (self.tabBar as? TabBar)?.onLayout = { [weak self] in self?.applyFloatingStyle() }
         // Install the saved item metrics before the first layout so the bar never has to resize on launch
         applyFloatingStyle()
+        TabBarController.installPopupBarLayoutHook()
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(floatingTabBarChanged),
                                                name: Notification.Name("FloatingTabBar"),
@@ -345,6 +347,50 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     /// it. The queue bar is lifted until its bottom edge meets the capsule's
     /// top edge, measured in window coordinates so no guess is involved.
     ///
+    /// The queue bar lays its title out a few points from its leading edge,
+    /// which reads as cramped once the bar is a capsule. Its content is inset
+    /// here, after every one of its layout passes, to the same distance the
+    /// floating tab bar keeps between its edge and its first item.
+    static func applyFloatingPopupContentInset(to bar: LNPopupBar) {
+        guard UIDevice.current.userInterfaceIdiom == .phone,
+              UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false) else {
+            return
+        }
+        guard bar.responds(to: NSSelectorFromString("contentView")),
+              let outer = bar.value(forKey: "contentView") as? UIView,
+              outer.responds(to: NSSelectorFromString("contentView")),
+              let inner = outer.value(forKey: "contentView") as? UIView,
+              let superview = inner.superview else {
+            return
+        }
+        let extra: CGFloat = 14
+        let width = superview.bounds.width
+        guard width > extra * 2 + 40 else { return }
+        var frame = inner.frame
+        if abs(frame.minX - extra) < 0.5, abs(frame.width - (width - extra * 2)) < 0.5 {
+            return
+        }
+        frame.origin.x = extra
+        frame.size.width = width - extra * 2
+        inner.frame = frame
+    }
+
+    private static var popupBarLayoutHooked = false
+
+    /// The queue bar lays its content out itself, so the inset above has to
+    /// run right after each of those passes.
+    static func installPopupBarLayoutHook() {
+        guard !popupBarLayoutHooked else { return }
+        popupBarLayoutHooked = true
+        guard let original = class_getInstanceMethod(LNPopupBar.self, #selector(UIView.layoutSubviews)),
+              let inherited = class_getInstanceMethod(UIView.self, #selector(UIView.layoutSubviews)),
+              method_getImplementation(original) != method_getImplementation(inherited),
+              let replacement = class_getInstanceMethod(LNPopupBar.self, #selector(LNPopupBar.sileo_layoutSubviews)) else {
+            return
+        }
+        method_exchangeImplementations(original, replacement)
+    }
+
     /// The queue bar takes the capsule's shape too: the same side margins as
     /// the floating tab bar, and the same rounding. With the floating bar off
     /// it goes back to the full-width bar it always was.
@@ -718,5 +764,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         let alertController = UIAlertController(title: String(localizationKey: "Unknown", type: .error), message: string, preferredStyle: .alert)
         alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default))
         self.present(alertController, animated: true, completion: nil)
+    }
+}
+
+extension LNPopupBar {
+    /// Exchanged with the bar's own layoutSubviews, so it runs right after the
+    /// bar has placed its content.
+    @objc func sileo_layoutSubviews() {
+        sileo_layoutSubviews()
+        TabBarController.applyFloatingPopupContentInset(to: self)
     }
 }
