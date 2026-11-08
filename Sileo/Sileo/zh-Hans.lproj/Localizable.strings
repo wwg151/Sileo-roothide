@@ -307,9 +307,9 @@
 "Backup_Restore" = "备份恢复";
 "Backup_All_Packages" = "全部插件备份";
 "Backup_Select_Packages" = "选择插件备份";
-"Backup_Configuration" = "备份配置";
+"Backup_Configuration" = "配置备份";
 "Restore_All_Packages" = "插件恢复";
-"Restore_Configuration" = "恢复配置";
+"Restore_Configuration" = "配置恢复";
 "Backup_Sources" = "插件源备份";
 "Restore_Sources" = "插件源恢复";
 "Backup_Select_All" = "全选";
@@ -326,6 +326,15 @@
 "Restore_Sources_Done" = "插件源已恢复，建议刷新插件源后使用。";
 "Backup_View" = "查看备份";
 "Backup_View_No_Filza" = "未安装 Filza，备份位于 /var/mobile/Documents。";
+"Backup_Clear" = "清除备份";
+"Clear_Packages" = "清除插件备份";
+"Clear_Configuration" = "清除配置备份";
+"Clear_Sources" = "清除越狱源备份";
+"Clear_All" = "全部清除";
+"Clear_Confirm_Button" = "清除";
+"Clear_Confirm_Message" = "将永久删除 %d 个备份文件夹，无法恢复。是否继续？";
+"Clear_Done" = "已清除 %d 个备份文件夹。";
+"Clear_None" = "没有可清除的备份。";
 "Backup_Configuration_Done" = "配置备份完成。";
 "Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
 "Backup_No_Backup" = "没有找到备份。";

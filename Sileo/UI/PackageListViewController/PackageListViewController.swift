@@ -468,6 +468,11 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             UIAction(title: String(localizationKey: "Backup_View"),
                      image: UIImage(systemName: "folder")) { [weak self] _ in
                 self?.openBackupsInFilza()
+            },
+            UIAction(title: String(localizationKey: "Backup_Clear"),
+                     image: UIImage(systemName: "trash"),
+                     attributes: .destructive) { [weak self] _ in
+                self?.presentClearBackupsMenu()
             }
         ]
         return UIMenu(title: String(localizationKey: "Backup_Restore"), children: actions)
@@ -502,6 +507,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_View"), style: .default) { [weak self] _ in
             self?.openBackupsInFilza()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Clear"), style: .destructive) { [weak self] _ in
+            self?.presentClearBackupsMenu()
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
         if let popover = alert.popoverPresentationController {
@@ -738,10 +746,10 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     private func openBackupsInFilza() {
-        // Filza reads a folder only when the path ends in a slash; without it
-        // the folder is taken as a file to reveal and its parent opens.
-        let path = "/var/mobile/Documents/"
-        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        // Filza's view verb reveals a path in its folder, so it opens Documents
+        // only when handed something inside it: the newest backup folder.
+        let target = BackupManager.shared.allBackupFolders().first?.url.path ?? "/var/mobile/Documents"
+        let trimmed = target.hasPrefix("/") ? String(target.dropFirst()) : target
         let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? trimmed
         guard let url = URL(string: "filza://view/\(encoded)") else { return }
         if UIApplication.shared.canOpenURL(url) {
@@ -750,6 +758,50 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             showBackupMessage(title: String(localizationKey: "Backup_View"),
                               message: String(localizationKey: "Backup_View_No_Filza"))
         }
+    }
+
+    private func presentClearBackupsMenu() {
+        let alert = UIAlertController(
+            title: String(localizationKey: "Backup_Clear"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        let options: [(String, BackupManager.BackupKind?)] = [
+            ("Clear_Packages", .packages),
+            ("Clear_Configuration", .configuration),
+            ("Clear_Sources", .sources),
+            ("Clear_All", nil)
+        ]
+        for (key, kind) in options {
+            alert.addAction(UIAlertAction(title: String(localizationKey: key), style: .destructive) { [weak self] _ in
+                self?.confirmClearBackups(kind: kind, title: String(localizationKey: key))
+            })
+        }
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.barButtonItem = navigationItem.rightBarButtonItem
+        }
+        present(alert, animated: true)
+    }
+
+    private func confirmClearBackups(kind: BackupManager.BackupKind?, title: String) {
+        let folders = kind.map { BackupManager.shared.backupFolders(kind: $0) } ?? BackupManager.shared.allBackupFolders()
+        guard !folders.isEmpty else {
+            showBackupMessage(title: title, message: String(localizationKey: "Clear_None"))
+            return
+        }
+        let alert = UIAlertController(
+            title: title,
+            message: String(format: String(localizationKey: "Clear_Confirm_Message"), folders.count),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Clear_Confirm_Button"), style: .destructive) { [weak self] _ in
+            let removed = BackupManager.shared.deleteBackups(kind: kind)
+            self?.showBackupMessage(title: title,
+                                    message: String(format: String(localizationKey: "Clear_Done"), removed))
+        })
+        present(alert, animated: true)
     }
 
     @objc private func pressBackupButton(_ sender: UIButton) {

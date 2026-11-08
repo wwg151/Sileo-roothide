@@ -128,6 +128,29 @@ final class BackupManager {
         return BackupFolder(url: folder)
     }
 
+    /// Every backup folder, whatever it holds, newest first.
+    func allBackupFolders() -> [BackupFolder] {
+        var seen = Set<String>()
+        var all: [BackupFolder] = []
+        for kind in [BackupKind.packages, .configuration, .sources] {
+            for folder in backupFolders(kind: kind) where !seen.contains(folder.url.path) {
+                seen.insert(folder.url.path)
+                all.append(folder)
+            }
+        }
+        return all.sorted { $0.name > $1.name }
+    }
+
+    /// Removes the backup folders of one kind, or every backup when nil.
+    func deleteBackups(kind: BackupKind?) -> Int {
+        let folders = kind.map { backupFolders(kind: $0) } ?? allBackupFolders()
+        var removed = 0
+        for folder in folders where (try? FileManager.default.removeItem(at: folder.url)) != nil {
+            removed += 1
+        }
+        return removed
+    }
+
     // MARK: - Packages
 
     /// Third-party packages: everything dpkg knows that the device's exclude

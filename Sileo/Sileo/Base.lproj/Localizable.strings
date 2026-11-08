@@ -301,7 +301,7 @@
 "Backup_Restore" = "Backup & Restore";
 "Backup_All_Packages" = "Back Up All Packages";
 "Backup_Select_Packages" = "Back Up Selected Packages";
-"Backup_Configuration" = "Back Up Configuration";
+"Backup_Configuration" = "Backup Configuration";
 "Restore_All_Packages" = "Restore Packages";
 "Restore_Configuration" = "Restore Configuration";
 "Backup_Sources" = "Back Up Sources";
@@ -320,6 +320,15 @@
 "Restore_Sources_Done" = "Sources restored. Refresh the sources for them to load.";
 "Backup_View" = "View Backups";
 "Backup_View_No_Filza" = "Filza is not installed. The backups are in /var/mobile/Documents.";
+"Backup_Clear" = "Clear Backups";
+"Clear_Packages" = "Clear Package Backups";
+"Clear_Configuration" = "Clear Configuration Backups";
+"Clear_Sources" = "Clear Source Backups";
+"Clear_All" = "Clear Everything";
+"Clear_Confirm_Button" = "Clear";
+"Clear_Confirm_Message" = "%d backup folder(s) will be deleted for good. Continue?";
+"Clear_Done" = "%d backup folder(s) cleared.";
+"Clear_None" = "There is no backup to clear.";
 "Backup_Configuration_Done" = "Configuration backed up.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
 "Backup_No_Backup" = "No backup was found.";
