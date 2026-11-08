@@ -164,20 +164,19 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             self.navigationItem.leftBarButtonItem = exportBtn
 
             let backupIcon = UIImage(systemName: "externaldrive") ?? UIImage(systemName: "archivebox")
+            let backupButton = UIButton(type: .system)
+            backupButton.setImage(backupIcon, for: .normal)
+            backupButton.tintColor = UINavigationBar.appearance().tintColor ?? .label
+            backupButton.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
+            backupButton.accessibilityLabel = String(localizationKey: "Backup_Restore")
+            backupButton.addTarget(self, action: #selector(self.pressBackupButton(_:)), for: .touchDown)
             if #available(iOS 14.0, *) {
-                let backupButton = UIBarButtonItem(
-                    image: backupIcon,
-                    menu: self.backupMenu()
-                )
-                self.navigationItem.rightBarButtonItem = backupButton
+                backupButton.menu = self.backupMenu()
+                backupButton.showsMenuAsPrimaryAction = true
             } else {
-                self.navigationItem.rightBarButtonItem = UIBarButtonItem(
-                    image: backupIcon,
-                    style: .plain,
-                    target: self,
-                    action: #selector(self.presentBackupMenu(_:))
-                )
+                backupButton.addTarget(self, action: #selector(self.presentBackupMenu(_:)), for: .touchUpInside)
             }
+            self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: backupButton)
         }
         
         if packagesLoadIdentifier.contains("--wishlist") {
@@ -729,6 +728,21 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 })
             }
         }
+    }
+
+    @objc private func pressBackupButton(_ sender: UIButton) {
+        UIView.animate(withDuration: 0.12, animations: {
+            sender.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+        }, completion: { _ in
+            UIView.animate(
+                withDuration: 0.32,
+                delay: 0,
+                usingSpringWithDamping: 0.45,
+                initialSpringVelocity: 4,
+                options: [.allowUserInteraction],
+                animations: { sender.transform = .identity }
+            )
+        })
     }
 
     private func confirmRestore(title: String, message: String, completion: @escaping () -> Void) {
