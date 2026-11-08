@@ -902,51 +902,6 @@ final class DownloadManager {
     
     private static let compatModeKey = "CompatibilityMode"
     
-    // Converts a rootless/rootful package to roothide in-process, then queues the result for installation
-    private func convertPackage(package: Package, fileURL: URL) {
-        let alert = UIAlertController(title: String(localizationKey: "Compat_Converting"), message: "\n \(package.name ?? package.package) \n", preferredStyle: .alert)
-        SileoAppDelegate.presentController(alert)
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            let output = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).deb")
-            do {
-                try RootlessConverter.convert(deb: fileURL, to: output)
-            } catch {
-                NSLog("SileoLog: convertPackage failed \(error)")
-                DispatchQueue.main.async {
-                    alert.dismiss(animated: true) {
-                        self.showConvertFailure(package: package, message: error.localizedDescription)
-                    }
-                }
-                return
-            }
-            
-            if package.local_deb == nil {
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-            
-            DispatchQueue.main.async {
-                alert.dismiss(animated: true) {
-                    guard let newPackage = PackageListManager.shared.package(url: output), checkRootHide(newPackage) else {
-                        self.showConvertFailure(package: package, message: String(localizationKey: "Compat_Convert_Failed"))
-                        return
-                    }
-                    newPackage.origArchitecture = package.architecture
-                    newPackage.originalSourceFile = package.sourceFile ?? package.originalSourceFile
-                    self.add(package: newPackage, queue: .installations) {
-                        self.reloadData(recheckPackages: true)
-                    }
-                }
-            }
-        }
-    }
-    
-    private func showConvertFailure(package: Package, message: String) {
-        let alert = UIAlertController(title: String(localizationKey: "Compat_Convert_Failed"), message: "\(package.package)(\(package.version))\n\n\(message)", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel))
-        SileoAppDelegate.presentController(alert)
-    }
-    
     // call in main queue
     func downloadDeb(package: Package, msg: String, showsProgress: Bool = false, handler: @escaping ((Package,URL) -> Void)) {
         var task:EvanderDownloader?
@@ -1081,8 +1036,6 @@ final class DownloadManager {
         }
     }
     
-    private var patchAlert:UIAlertController?
-    
     public func add(package: Package, queue: DownloadManagerQueue, approved: Bool = false, completion: (() -> Void)?=nil) {
         NSLog("SileoLog: addPackage=\(package.name), queue=\(queue.rawValue), approved=\(approved) package=\(package.package), repo=\(package.sourceRepo?.url) depends=\(package.rawControl["depends"]) arch=\(package.architecture)")
 //        Thread.callStackSymbols.forEach{NSLog("SileoLog: callstack=\($0)")}
@@ -1106,17 +1059,14 @@ final class DownloadManager {
                     return
                 }
                 
-                func showPatchAlert() {
+                // A convertible rootless/rootful package waits in the queue and
+                // is converted when the queue runs, so nothing is shown here.
+                // Only one that cannot be converted is turned away.
+                if !DownloadManager.needsConversion(package) {
                     NSLog("SileoLog: not updated for roothide: \(package.package) \(package.architecture)")
                     
                     let IncompatibleRepo = DownloadManager.incompatibleHosts.contains(package.sourceRepo?.url?.host ?? "")
-                    let compatMode = UserDefaults.standard.bool(forKey: DownloadManager.compatModeKey, fallback: true)
                     let convertible = !IncompatibleRepo && RootlessConverter.isConvertible(package: package)
-                    
-                    if compatMode && convertible {
-                        self.downloadDeb(package: package, msg: String(localizationKey: "Downloading_Package_Status"), handler: self.convertPackage)
-                        return
-                    }
                     
                     let title = String(localizationKey: "Not_Supported")
                     let msg: String
@@ -1136,22 +1086,6 @@ final class DownloadManager {
                     alert.addAction(okAction)
                     
                     SileoAppDelegate.presentController(alert)
-                    self.patchAlert = alert
-                }
-                
-                // converted after it has been downloaded from the queue
-                let convertInQueue = (queue == .installations || queue == .upgrades) && DownloadManager.needsConversion(package)
-                if !convertInQueue {
-                    DispatchQueue.main.async {
-                        if let patchAlert = self.patchAlert {
-                            patchAlert.dismiss(animated: true, completion: {
-                                self.patchAlert = nil
-                                showPatchAlert()
-                            })
-                        } else {
-                            showPatchAlert()
-                        }
-                    }
                     return
                 }
             }
