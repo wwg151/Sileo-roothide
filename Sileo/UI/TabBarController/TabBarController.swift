@@ -344,12 +344,53 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     /// The capsule reaches above the tab bar, into the queue bar that sits on
     /// it. The queue bar is lifted until its bottom edge meets the capsule's
     /// top edge, measured in window coordinates so no guess is involved.
+    ///
+    /// The queue bar takes the capsule's shape too: the same side margins as
+    /// the floating tab bar, and the same rounding. With the floating bar off
+    /// it goes back to the full-width bar it always was.
+    private func applyFloatingPopupShape() {
+        guard popupIsPresented else { return }
+        let bar = popupBar
+        guard bar.bounds.height > 0, bar.bounds.height < view.bounds.height * 0.5 else { return }
+        if isFloatingEnabled, let container = floatingBackground, !container.isHidden {
+            let inset = floatingInset
+            let width = max(0, view.bounds.width - inset * 2)
+            var frame = bar.frame
+            if abs(frame.origin.x - inset) > 0.5 || abs(frame.width - width) > 0.5 {
+                frame.origin.x = inset
+                frame.size.width = width
+                bar.frame = frame
+            }
+            let radius = bar.bounds.height / 2
+            if abs(bar.layer.cornerRadius - radius) > 0.5 {
+                bar.layer.cornerRadius = radius
+                bar.layer.cornerCurve = .continuous
+            }
+            bar.clipsToBounds = true
+            bar.toolbar.clipsToBounds = true
+            bar.toolbar.layer.cornerRadius = radius
+            bar.toolbar.layer.cornerCurve = .continuous
+        } else {
+            var frame = bar.frame
+            if abs(frame.origin.x) > 0.5 || abs(frame.width - view.bounds.width) > 0.5 {
+                frame.origin.x = 0
+                frame.size.width = view.bounds.width
+                bar.frame = frame
+            }
+            if bar.layer.cornerRadius != 0 {
+                bar.layer.cornerRadius = 0
+            }
+            bar.toolbar.layer.cornerRadius = 0
+        }
+    }
+
     private func updateFloatingPopupOffset() {
         func reset() {
             if self.popupBar.transform != .identity {
                 self.popupBar.transform = .identity
             }
         }
+        applyFloatingPopupShape()
         guard isFloatingEnabled, popupIsPresented,
               let container = floatingBackground, !container.isHidden,
               popupBar.bounds.height > 0,
@@ -489,6 +530,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
                 self.tabBar.itemWidth = 0
                 self.tabBar.itemSpacing = 0
                 self.popupBar.transform = .identity
+                applyFloatingPopupShape()
             }
             return
         }
@@ -660,6 +702,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         
         self.tabBar.itemPositioning = .centered
         applyFloatingStyle()
+        applyFloatingPopupShape()
         if UIDevice.current.userInterfaceIdiom == .pad {
             self.updatePopup(animated: false)
         }
