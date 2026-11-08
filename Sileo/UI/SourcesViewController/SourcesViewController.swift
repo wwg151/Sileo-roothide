@@ -432,7 +432,7 @@ final class SourcesViewController: SileoViewController {
         }
         let indexPath = IndexPath(row: index, section: 1)
         presentRepoUrl = repo.url
-        tableView.selectRow(at: indexPath, animated: true, scrollPosition: .middle)
+        tableView.selectRow(at: indexPath, animated: false, scrollPosition: .middle)
         tableViewSelectRowAt(tableView: tableView, indexPath: indexPath)
         detailedPageUserPresent = true
     }
@@ -532,17 +532,14 @@ final class SourcesViewController: SileoViewController {
             tableView.deselectRow(at: indexPath, animated: false)
             searchBar.resignFirstResponder()
             let repo = filtered[indexPath.row]
-            // One navigation only: the handler is taken away here, and runs
-            // after the sheet is gone, or the split view drops the first call
-            // and the next tap opens the source twice.
+            // One navigation only, and at once: waiting for the sheet's
+            // dismissal animation left the user looking at the sources list
+            // for a moment, so the sheet goes without animation and the source
+            // opens straight away.
             let handler = onSelect
             onSelect = nil
-            dismiss(animated: true) {
-                // The split view ignores a detail request made while a sheet is
-                // still going away; ask once it is gone.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    handler?(repo)
-                }
+            dismiss(animated: false) {
+                handler?(repo)
             }
         }
     }
