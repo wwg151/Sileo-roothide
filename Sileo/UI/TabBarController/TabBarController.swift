@@ -165,6 +165,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 self.presentPopupBar(withContentViewController: downloadsController, animated: animated) {
                     self.popupBar.alpha = 1
                     self.popupBar.isHidden = false
+                    self.popupBarHiddenAt = nil
                     TabBarController.popupIsOpen = false
                     self.applyFloatingStyle()
                     completion?()
@@ -203,6 +204,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 self.dismissPopupBar(animated: animated) {
                     self.popupBar.alpha = 1
                     self.popupBar.isHidden = false
+                    self.popupBarHiddenAt = nil
                     TabBarController.popupIsOpen = false
                     self.applyFloatingStyle()
                     completion?()
@@ -251,7 +253,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             popupLock.signal()
         }
         
-        self.closePopup(animated: true, completion: completion)
+        self.closePopup(animated: true, completion: {
+            // The chevron at the top of the window closes it through here, and
+            // the bar has to come back with it.
+            TabBarController.popupIsOpen = false
+            self.popupBar.isHidden = false
+            self.popupBarHiddenAt = nil
+            self.applyFloatingStyle()
+            completion?()
+        })
     }
     
     func updatePopup() {
@@ -419,6 +429,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private static var popupBarLayoutHooked = false
+    /// When the bar was hidden for the open window, so a close that never
+    /// reported itself can still give it back.
+    private var popupBarHiddenAt: Date?
+
     /// True while the queue is open as a window.
     static var popupIsOpen = false
     /// Our own capsule over the bar's material, so the bar itself keeps the
@@ -840,12 +854,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         guard popupBar.popupOpenGestureRecognizer.state == .began else { return }
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
+        popupBarHiddenAt = Date()
         resetFloatingPopupShape()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self = self else { return }
             if self.popupPresentationState != .open {
                 TabBarController.popupIsOpen = false
                 self.popupBar.isHidden = false
+                self.popupBarHiddenAt = nil
             }
         }
     }
@@ -858,6 +874,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // the duration, or it shows above the window as it is pushed up.
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
+        popupBarHiddenAt = Date()
         resetFloatingPopupShape()
     }
 
@@ -868,6 +885,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // whatever the opening animation did with it, it goes now.
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
+        popupBarHiddenAt = Date()
         resetFloatingPopupShape()
     }
 
@@ -876,6 +894,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                                            animated: Bool) {
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
+        popupBarHiddenAt = nil
         applyFloatingStyle()
     }
 
@@ -885,14 +904,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         
         self.tabBar.itemPositioning = .centered
         if popupIsPresented {
-            // While the window is open the bar stays hidden, whatever route
-            // the window took to get there. Closing restores it through the
-            // popup's own callbacks, so nothing is forced back here.
             if popupPresentationState == .open {
+                // While the window is open the bar stays hidden, whatever
+                // route the window took to get there.
                 TabBarController.popupIsOpen = true
                 if !popupBar.isHidden {
                     popupBar.isHidden = true
                 }
+            } else if popupBar.isHidden, let hiddenAt = popupBarHiddenAt,
+                      Date().timeIntervalSince(hiddenAt) > 1 {
+                // The window was closed without telling us (the chevron at
+                // its top, for one): give the bar back.
+                TabBarController.popupIsOpen = false
+                popupBar.isHidden = false
+                popupBarHiddenAt = nil
             }
         }
         applyFloatingStyle()
