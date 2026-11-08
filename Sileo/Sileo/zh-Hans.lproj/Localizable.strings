@@ -308,8 +308,10 @@
 "Backup_All_Packages" = "全部插件备份";
 "Backup_Select_Packages" = "选择插件备份";
 "Backup_Configuration" = "备份配置";
-"Restore_All_Packages" = "全部插件恢复";
+"Restore_All_Packages" = "插件恢复";
 "Restore_Configuration" = "恢复配置";
+"Backup_Sources" = "插件源备份";
+"Restore_Sources" = "插件源恢复";
 "Backup_Select_All" = "全选";
 "Backup_Start" = "备份";
 "Backup_Starting" = "正在准备…";
@@ -318,6 +320,9 @@
 "Restore_Confirm_Button" = "恢复";
 "Restore_Confirm_Packages" = "将把该备份中的插件加入安装队列并安装，同名的已安装插件会被替换。是否继续？";
 "Restore_Confirm_Configuration" = "将用该备份覆盖 /var/mobile/Library 下的插件配置，当前设置会丢失。是否继续？";
+"Restore_Confirm_Sources" = "将用该备份覆盖 etc/apt 下的所有源列表与密钥，当前源会丢失。是否继续？";
+"Backup_Sources_Done" = "插件源备份完成。";
+"Restore_Sources_Done" = "插件源已恢复，建议刷新插件源后使用。";
 "Backup_Configuration_Done" = "配置备份完成。";
 "Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
 "Backup_No_Backup" = "没有找到备份。";

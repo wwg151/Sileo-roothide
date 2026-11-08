@@ -302,8 +302,10 @@
 "Backup_All_Packages" = "Back Up All Packages";
 "Backup_Select_Packages" = "Back Up Selected Packages";
 "Backup_Configuration" = "Back Up Configuration";
-"Restore_All_Packages" = "Restore All Packages";
+"Restore_All_Packages" = "Restore Packages";
 "Restore_Configuration" = "Restore Configuration";
+"Backup_Sources" = "Back Up Sources";
+"Restore_Sources" = "Restore Sources";
 "Backup_Select_All" = "Select All";
 "Backup_Start" = "Back Up";
 "Backup_Starting" = "Preparing…";
@@ -312,6 +314,9 @@
 "Restore_Confirm_Button" = "Restore";
 "Restore_Confirm_Packages" = "The packages in this backup are added to the install queue and installed; an installed package of the same name is replaced. Continue?";
 "Restore_Confirm_Configuration" = "This backup replaces the tweak configuration under /var/mobile/Library. The current settings are lost. Continue?";
+"Restore_Confirm_Sources" = "This backup replaces every source list and key under etc/apt. The current sources are lost. Continue?";
+"Backup_Sources_Done" = "Sources backed up.";
+"Restore_Sources_Done" = "Sources restored. Refresh the sources for them to load.";
 "Backup_Configuration_Done" = "Configuration backed up.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
 "Backup_No_Backup" = "No backup was found.";

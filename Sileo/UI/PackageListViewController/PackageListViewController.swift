@@ -163,15 +163,16 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             let exportBtn = UIBarButtonItem(title: String(localizationKey: "Export"), style: .plain, target: self, action: #selector(self.exportButtonClicked(_:)))
             self.navigationItem.leftBarButtonItem = exportBtn
 
+            let backupIcon = UIImage(systemName: "externaldrive") ?? UIImage(systemName: "archivebox")
             if #available(iOS 14.0, *) {
                 let backupButton = UIBarButtonItem(
-                    title: String(localizationKey: "Backup_Restore"),
+                    image: backupIcon,
                     menu: self.backupMenu()
                 )
                 self.navigationItem.rightBarButtonItem = backupButton
             } else {
                 self.navigationItem.rightBarButtonItem = UIBarButtonItem(
-                    title: String(localizationKey: "Backup_Restore"),
+                    image: backupIcon,
                     style: .plain,
                     target: self,
                     action: #selector(self.presentBackupMenu(_:))
@@ -449,6 +450,10 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                      image: UIImage(systemName: "gearshape")) { [weak self] _ in
                 self?.backupConfiguration()
             },
+            UIAction(title: String(localizationKey: "Backup_Sources"),
+                     image: UIImage(systemName: "tray.and.arrow.down")) { [weak self] _ in
+                self?.backupSources()
+            },
             UIAction(title: String(localizationKey: "Restore_All_Packages"),
                      image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
                 self?.restoreAllPackages()
@@ -456,6 +461,10 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             UIAction(title: String(localizationKey: "Restore_Configuration"),
                      image: UIImage(systemName: "arrow.clockwise.circle")) { [weak self] _ in
                 self?.restoreConfiguration()
+            },
+            UIAction(title: String(localizationKey: "Restore_Sources"),
+                     image: UIImage(systemName: "tray.and.arrow.up")) { [weak self] _ in
+                self?.restoreSources()
             }
         ]
         return UIMenu(title: String(localizationKey: "Backup_Restore"), children: actions)
@@ -476,11 +485,17 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Configuration"), style: .default) { [weak self] _ in
             self?.backupConfiguration()
         })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Sources"), style: .default) { [weak self] _ in
+            self?.backupSources()
+        })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_All_Packages"), style: .default) { [weak self] _ in
             self?.restoreAllPackages()
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Configuration"), style: .default) { [weak self] _ in
             self?.restoreConfiguration()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Sources"), style: .default) { [weak self] _ in
+            self?.restoreSources()
         })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
         if let popover = alert.popoverPresentationController {
@@ -654,6 +669,66 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 progress.finish(message: error.localizedDescription)
             }
         })
+    }
+
+    private func backupSources() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        let folder: BackupManager.BackupFolder
+        do {
+            folder = try BackupManager.shared.createBackupFolder(kind: .sources)
+        } catch {
+            showBackupMessage(title: String(localizationKey: "Backup_Sources"),
+                              message: error.localizedDescription)
+            return
+        }
+        let progress = BackupProgressAlert(
+            title: String(localizationKey: "Backup_Sources"),
+            message: String(localizationKey: "Backup_Starting"),
+            cancellable: false,
+            onCancel: nil
+        )
+        present(progress.alert, animated: true)
+        BackupManager.shared.backupSources(to: folder, completion: { result in
+            switch result {
+            case .success:
+                progress.finish(message: String(localizationKey: "Backup_Sources_Done") + "\n\n" + folder.url.path)
+            case .failure(let error):
+                progress.finish(message: error.localizedDescription)
+            }
+        })
+    }
+
+    private func restoreSources() {
+        guard backupAvailable else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Unavailable"))
+            return
+        }
+        chooseBackupFolder(title: String(localizationKey: "Restore_Sources"), kind: .sources) { [weak self] folder in
+            guard let self = self else { return }
+            self.confirmRestore(title: String(localizationKey: "Restore_Sources"),
+                                message: String(localizationKey: "Restore_Confirm_Sources")) {
+                let progress = BackupProgressAlert(
+                    title: String(localizationKey: "Restore_Sources"),
+                    message: String(localizationKey: "Backup_Starting"),
+                    cancellable: false,
+                    onCancel: nil
+                )
+                self.present(progress.alert, animated: true)
+                BackupManager.shared.restoreSources(from: folder, completion: { result in
+                    switch result {
+                    case .success:
+                        progress.finish(message: String(localizationKey: "Restore_Sources_Done"))
+                    case .failure(let error):
+                        progress.finish(message: error.localizedDescription)
+                    }
+                })
+            }
+        }
     }
 
     private func confirmRestore(title: String, message: String, completion: @escaping () -> Void) {

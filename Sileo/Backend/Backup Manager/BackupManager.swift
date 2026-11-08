@@ -34,6 +34,10 @@ final class BackupManager {
             url.appendingPathComponent("配置备份", isDirectory: true)
         }
 
+        var sourcesURL: URL {
+            url.appendingPathComponent("源备份", isDirectory: true)
+        }
+
         var manifestURL: URL {
             packagesURL.appendingPathComponent("manifest.json")
         }
@@ -73,11 +77,13 @@ final class BackupManager {
     enum BackupKind {
         case packages
         case configuration
+        case sources
 
         var folderPrefix: String {
             switch self {
             case .packages: return "Sileo插件备份_"
             case .configuration: return "Sileo配置备份_"
+            case .sources: return "Sileo源备份_"
             }
         }
     }
@@ -447,6 +453,69 @@ final class BackupManager {
             }
             spawnAsRoot(args: [CommandPath.chown, "-R", "501:501", rootfs("\(libraryParent)/Library")])
             DispatchQueue.main.async { completion(.success(())) }
+        }
+    }
+
+    // MARK: - Sources
+
+    /// `/etc/apt` inside the bootstrap, packed as one tar: sources lists, keys
+    /// and preferences.
+    func backupSources(
+        to folder: BackupFolder,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fileManager = FileManager.default
+            do {
+                try fileManager.createDirectory(at: folder.sourcesURL, withIntermediateDirectories: true)
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            let archive = folder.sourcesURL.appendingPathComponent("apt.tar")
+            try? fileManager.removeItem(at: archive)
+            let etc = "\(CommandPath.prefix)/etc"
+            let (status, _, errorOutput) = spawnAsRoot(args: [
+                PackageRepacker.tarPath, "-cf", rootfs(archive.path),
+                "-C", rootfs(etc),
+                "apt"
+            ])
+            guard status == 0 else {
+                DispatchQueue.main.async {
+                    completion(.failure(BackupError.failed(errorOutput.isEmpty ? "tar exited with \(status)" : errorOutput)))
+                }
+                return
+            }
+            spawnAsRoot(args: [CommandPath.chown, "501:501", rootfs(archive.path)])
+            DispatchQueue.main.async { completion(.success(())) }
+        }
+    }
+
+    func restoreSources(
+        from folder: BackupFolder,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let archive = folder.sourcesURL.appendingPathComponent("apt.tar")
+            guard FileManager.default.fileExists(atPath: archive.path) else {
+                DispatchQueue.main.async { completion(.failure(BackupError.nothingToRestore)) }
+                return
+            }
+            let etc = "\(CommandPath.prefix)/etc"
+            let (status, _, errorOutput) = spawnAsRoot(args: [
+                PackageRepacker.tarPath, "-xpf", rootfs(archive.path),
+                "-C", rootfs(etc)
+            ])
+            guard status == 0 else {
+                DispatchQueue.main.async {
+                    completion(.failure(BackupError.failed(errorOutput.isEmpty ? "tar exited with \(status)" : errorOutput)))
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: PackageListManager.reloadNotification, object: nil)
+                completion(.success(()))
+            }
         }
     }
 
