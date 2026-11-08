@@ -156,6 +156,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             self.popupQueueLock.wait()
             DispatchQueue.main.async {
                 self.presentPopupBar(withContentViewController: downloadsController, animated: animated) {
+                    self.applyFloatingStyle()
                     completion?()
                     self.popupQueueLock.signal()
                 }
@@ -190,6 +191,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             self.popupQueueLock.wait()
             DispatchQueue.main.async {
                 self.dismissPopupBar(animated: animated) {
+                    self.applyFloatingStyle()
                     completion?()
                     self.popupQueueLock.signal()
                 }
@@ -511,7 +513,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             floatingBackground = container
         }
         guard let container = floatingBackground, let blur = container.viewWithTag(1) else { return }
-        let barHeight: CGFloat = 78
+        // While the queue is open the capsule would otherwise reach into the
+        // popup bar above the tab bar; it hugs the item row instead.
+        let barHeight: CGFloat = popupIsPresented ? 49 : 78
         // Center the capsule on the visible icon+label row so top/bottom spacing is equal
         var rowMids: [CGFloat] = []
         var colMids: [CGFloat] = []
