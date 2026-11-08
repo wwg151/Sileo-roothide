@@ -390,7 +390,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         guard let inner = bar.toolbar.superview else { return }
-        let target = TabBarController.singleton?.floatingContentInset ?? 20
+        // The bar is full width now, so the title starts one capsule margin
+        // plus the tab bar's own item margin in.
+        let capsuleInset = TabBarController.singleton?.floatingInset ?? 10
+        let contentInset = TabBarController.singleton?.floatingContentInset ?? 20
+        let target = capsuleInset + contentInset
         let toolbar = bar.toolbar
         for sub in inner.subviews {
             if sub === toolbar { continue }
@@ -444,10 +448,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     /// True while the queue is open as a window.
     static var popupIsOpen = false
-    /// True while the bar carries the capsule shape we gave it.
-    private var popupCapsuleApplied = false
-    private var popupBarOriginalClips: Bool?
-    private var popupToolbarOriginalClips: Bool?
+    /// Our own capsule over the bar's material, so the bar itself keeps the
+    /// framework's full-width frame.
+    private var popupCapsuleView: UIVisualEffectView?
+    private var popupHiddenMaterialViews: [UIView] = []
 
     /// The queue bar lays its content out itself, so the inset above has to
     /// run right after each of those passes.
@@ -463,59 +467,70 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         method_exchangeImplementations(original, replacement)
     }
 
-    /// The queue bar takes the capsule's shape too: the same side margins as
-    /// the floating tab bar, and the same rounding. With the floating bar off
-    /// it goes back to the full-width bar it always was.
+    /// The queue bar keeps the framework's full-width frame — the open window
+    /// is measured from it — and takes its capsule from a view of our own laid
+    /// over the bar's material.
     private func applyFloatingPopupShape() {
         guard popupIsPresented else { return }
         let collapsed = !TabBarController.popupIsOpen
         let bar = popupBar
         guard bar.bounds.height > 0, bar.bounds.height < view.bounds.height * 0.5 else { return }
         if isFloatingEnabled, collapsed, let container = floatingBackground, !container.isHidden {
-            if !popupCapsuleApplied {
-                popupBarOriginalClips = bar.clipsToBounds
-                popupToolbarOriginalClips = bar.toolbar.clipsToBounds
-                popupCapsuleApplied = true
-            }
-            let inset = floatingInset
-            let width = max(0, view.bounds.width - inset * 2)
-            var frame = bar.frame
-            if abs(frame.origin.x - inset) > 0.5 || abs(frame.width - width) > 0.5 {
-                frame.origin.x = inset
-                frame.size.width = width
-                bar.frame = frame
-            }
-            let radius = bar.bounds.height / 2
-            if abs(bar.layer.cornerRadius - radius) > 0.5 {
-                bar.layer.cornerRadius = radius
-                bar.layer.cornerCurve = .continuous
-            }
-            bar.clipsToBounds = true
-            bar.toolbar.clipsToBounds = true
-            bar.toolbar.layer.cornerRadius = radius
-            bar.toolbar.layer.cornerCurve = .continuous
+            applyPopupCapsule()
         } else {
-            resetFloatingPopupShape()
+            removePopupCapsule()
         }
     }
 
-    /// The bar as the framework lays it out: full width, square corners.
-    private func resetFloatingPopupShape() {
-        guard popupCapsuleApplied else { return }
-        popupCapsuleApplied = false
+    private func applyPopupCapsule() {
         let bar = popupBar
-        var frame = bar.frame
-        if abs(frame.origin.x) > 0.5 || abs(frame.width - view.bounds.width) > 0.5 {
-            frame.origin.x = 0
-            frame.size.width = view.bounds.width
-            bar.frame = frame
+        if popupCapsuleView == nil {
+            let capsule = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+            capsule.isUserInteractionEnabled = false
+            capsule.clipsToBounds = true
+            bar.insertSubview(capsule, at: 0)
+            popupCapsuleView = capsule
+            // The bar's own full-width material and its hairlines step aside
+            // while we draw the capsule.
+            func hideMaterial(in view: UIView) {
+                for sub in view.subviews {
+                    if sub === capsule { continue }
+                    let name = String(describing: type(of: sub))
+                    if sub is UIVisualEffectView || name.contains("Shadow") {
+                        popupHiddenMaterialViews.append(sub)
+                        sub.isHidden = true
+                    } else {
+                        hideMaterial(in: sub)
+                    }
+                }
+            }
+            hideMaterial(in: bar)
         }
-        if bar.layer.cornerRadius != 0 {
-            bar.layer.cornerRadius = 0
+        guard let capsule = popupCapsuleView else { return }
+        let frame = bar.bounds.insetBy(dx: floatingInset, dy: 0)
+        if capsule.frame != frame {
+            capsule.frame = frame
         }
-        bar.clipsToBounds = popupBarOriginalClips ?? false
-        bar.toolbar.clipsToBounds = popupToolbarOriginalClips ?? false
-        bar.toolbar.layer.cornerRadius = 0
+        let radius = bar.bounds.height / 2
+        if abs(capsule.layer.cornerRadius - radius) > 0.5 {
+            capsule.layer.cornerRadius = radius
+            capsule.layer.cornerCurve = .continuous
+        }
+    }
+
+    /// The bar as the framework lays it out: full width, its own material.
+    private func resetFloatingPopupShape() {
+        removePopupCapsule()
+    }
+
+    private func removePopupCapsule() {
+        guard popupCapsuleView != nil || !popupHiddenMaterialViews.isEmpty else { return }
+        popupCapsuleView?.removeFromSuperview()
+        popupCapsuleView = nil
+        for view in popupHiddenMaterialViews {
+            view.isHidden = false
+        }
+        popupHiddenMaterialViews.removeAll()
     }
 
     private func updateFloatingPopupOffset() {
