@@ -260,6 +260,7 @@ final class SourcesViewController: SileoViewController {
                 nav.rightBarButtonItem = UIBarButtonItem(title: exportTitle, style: .plain, target: self, action: #selector(self.exportSources(_:)))
             } else {
                 nav.leftBarButtonItem = UIBarButtonItem(title: String(localizationKey: "Edit"), style: .done, target: self, action: #selector(self.toggleEditing(_:)))
+                let plusItem: UIBarButtonItem
                 if #available(iOS 14.0, *) {
                     let promptAddRepoAction = UIAction(title: String(localizationKey: "Add_Source.Button.Add"), image: .init(systemName: "plus.circle")) { _ in
                         self.addSource(nil)
@@ -280,10 +281,12 @@ final class SourcesViewController: SileoViewController {
                     
                     let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"), children: [promptAddRepoAction, importReposAction, importPackagesAction, removeBrokenMenu])
                     // no primary action: a tap opens the menu, "Add Source" in it opens the add source prompt
-                    nav.rightBarButtonItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
+                    plusItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
                 } else {
-                    nav.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.presentAddRepoOptions))
+                    plusItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.presentAddRepoOptions))
                 }
+                // The search sits to the left of the add button.
+                nav.rightBarButtonItems = [plusItem, self.sourceSearchItem()]
             }
             
         }
@@ -372,6 +375,138 @@ final class SourcesViewController: SileoViewController {
         controller.delegate = delegate
         self.present(controller, animated: true, completion: nil)
     }
+
+    // MARK: - Source search
+
+    private func sourceSearchItem() -> UIBarButtonItem {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
+        button.tintColor = UINavigationBar.appearance().tintColor ?? .label
+        button.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
+        button.accessibilityLabel = String(localizationKey: "Search_Sources")
+        button.addTarget(self, action: #selector(pressSearchButton(_:)), for: .touchDown)
+        button.addTarget(self, action: #selector(presentSourceSearch), for: .touchUpInside)
+        return UIBarButtonItem(customView: button)
+    }
+
+    @objc private func pressSearchButton(_ sender: UIButton) {
+        UIView.animate(withDuration: 0.12, animations: {
+            sender.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+        }, completion: { _ in
+            UIView.animate(
+                withDuration: 0.32,
+                delay: 0,
+                usingSpringWithDamping: 0.45,
+                initialSpringVelocity: 4,
+                options: [.allowUserInteraction],
+                animations: { sender.transform = .identity }
+            )
+        })
+    }
+
+    @objc private func presentSourceSearch() {
+        let repos = RepoManager.shared.sortedRepoList()
+        guard !repos.isEmpty else {
+            showSimpleAlert(title: String(localizationKey: "Search_Sources"),
+                            message: String(localizationKey: "Search_Sources.None"))
+            return
+        }
+        let controller = SourceSearchViewController(repos: repos)
+        controller.onSelect = { [weak self] repo in
+            guard let self = self,
+                  let index = self.sortedRepoList.firstIndex(where: { $0.rawURL == repo.rawURL }) else {
+                return
+            }
+            let indexPath = IndexPath(row: index, section: 1)
+            self.tableView.selectRow(at: indexPath, animated: true, scrollPosition: .middle)
+            self.tableViewSelectRowAt(tableView: self.tableView, indexPath: indexPath)
+            self.detailedPageUserPresent = true
+        }
+        let navigation = UINavigationController(rootViewController: controller)
+        present(navigation, animated: true)
+    }
+
+    /// Source names and URLs, filtered as the user types.
+    final class SourceSearchViewController: UITableViewController, UISearchResultsUpdating {
+
+        private let repos: [Repo]
+        private var filtered: [Repo]
+        private let searchController = UISearchController(searchResultsController: nil)
+        var onSelect: ((Repo) -> Void)?
+
+        init(repos: [Repo]) {
+            self.repos = repos
+            self.filtered = repos
+            super.init(style: .plain)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            title = String(localizationKey: "Search_Sources")
+            searchController.searchResultsUpdater = self
+            searchController.obscuresBackgroundDuringPresentation = false
+            searchController.searchBar.placeholder = String(localizationKey: "Search_Sources.Placeholder")
+            navigationItem.searchController = searchController
+            navigationItem.hidesSearchBarWhenScrolling = false
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                title: String(localizationKey: "Cancel"),
+                style: .plain,
+                target: self,
+                action: #selector(close)
+            )
+            definesPresentationContext = true
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            searchController.searchBar.becomeFirstResponder()
+        }
+
+        @objc private func close() {
+            dismiss(animated: true)
+        }
+
+        func updateSearchResults(for searchController: UISearchController) {
+            let text = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if text.isEmpty {
+                filtered = repos
+            } else {
+                filtered = repos.filter { repo in
+                    repo.repoName.lowercased().contains(text) || repo.rawURL.lowercased().contains(text)
+                }
+            }
+            tableView.reloadData()
+        }
+
+        override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+            filtered.count
+        }
+
+        override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "repo")
+                ?? UITableViewCell(style: .subtitle, reuseIdentifier: "repo")
+            let repo = filtered[indexPath.row]
+            cell.textLabel?.text = repo.repoName.isEmpty ? repo.displayURL : repo.repoName
+            cell.detailTextLabel?.text = repo.displayURL
+            cell.detailTextLabel?.textColor = .secondaryLabel
+            return cell
+        }
+
+        override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+            let repo = filtered[indexPath.row]
+            tableView.deselectRow(at: indexPath, animated: true)
+            let handler = onSelect
+            dismiss(animated: true) {
+                handler?(repo)
+            }
+        }
+    }
+
 
     // MARK: - Files, folders and archives
 

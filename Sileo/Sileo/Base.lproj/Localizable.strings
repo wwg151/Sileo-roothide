@@ -120,6 +120,9 @@
 "Add_Source.Button.Add" = "Add Source";
 "Import_Sources_File" = "Batch Import Jailbreak Sources";
 "Import_Sources_Empty" = "No source could be read from what was picked.";
+"Search_Sources" = "Search Sources";
+"Search_Sources.Placeholder" = "Search by source name or URL";
+"Search_Sources.None" = "No source has been added yet.";
 "Import_Irisin_Failed" = "The Irisin repository file is invalid or contains no valid sources.";
 "Add_Dist_Repo" = "Add Dist Repo";
 "Incorrect_Repo" = "%@ does not appear to be a valid repo⁉️ The repo may be offline or you may have entered it incorrectly. Do you want to add it anyway?";
