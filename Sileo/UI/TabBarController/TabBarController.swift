@@ -356,6 +356,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     /// layout passes, so it starts as far from the capsule as the floating tab
     /// bar's first item does.
     static func applyFloatingPopupContentInset(to bar: LNPopupBar) {
+        guard TabBarController.popupBarCollapsed else { return }
         guard UIDevice.current.userInterfaceIdiom == .phone,
               UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false) else {
             debugLog("skip: floating off")
@@ -390,6 +391,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     }
 
     private static var popupBarLayoutHooked = false
+    /// False while the queue is open as a window, when the bar must keep the
+    /// plain shape the framework expects.
+    static var popupBarCollapsed = true
     private static var debugLogCount = 0
 
     /// Temporary: leaves a short record of what the queue bar looks like, so
@@ -431,9 +435,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
     /// it goes back to the full-width bar it always was.
     private func applyFloatingPopupShape() {
         guard popupIsPresented else { return }
+        let collapsed = popupPresentationState == .barPresented
+        TabBarController.popupBarCollapsed = collapsed
         let bar = popupBar
         guard bar.bounds.height > 0, bar.bounds.height < view.bounds.height * 0.5 else { return }
-        if isFloatingEnabled, let container = floatingBackground, !container.isHidden {
+        if isFloatingEnabled, collapsed, let container = floatingBackground, !container.isHidden {
             let inset = floatingInset
             let width = max(0, view.bounds.width - inset * 2)
             var frame = bar.frame
@@ -782,6 +788,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
         super.viewDidLayoutSubviews()
         
         self.tabBar.itemPositioning = .centered
+        TabBarController.popupBarCollapsed = popupPresentationState == .barPresented
         applyFloatingStyle()
         applyFloatingPopupShape()
         if UIDevice.current.userInterfaceIdiom == .pad {
