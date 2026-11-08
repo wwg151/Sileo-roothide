@@ -361,14 +361,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate {
             debugLog("skip: floating off")
             return
         }
-        guard bar.responds(to: NSSelectorFromString("contentView")),
-              let outer = bar.value(forKey: "contentView") as? UIView,
-              outer.responds(to: NSSelectorFromString("contentView")),
-              let inner = outer.value(forKey: "contentView") as? UIView else {
-            debugLog("skip: no content view")
+        // The toolbar sits in the bar's content container, so it leads to the
+        // container without reaching into the bar's private views by name.
+        guard let inner = bar.toolbar.superview else {
+            debugLog("skip: no toolbar superview")
             return
         }
-        debugLog("bar=\(bar.frame) outer=\(outer.frame) inner=\(inner.frame) subs=\(inner.subviews.map { "\(String(describing: type(of: $0)))\($0.frame)" })")
+        debugLog("bar=\(bar.frame) inner=\(inner.frame) subs=\(inner.subviews.map { "\(String(describing: type(of: $0)))\($0.frame)" })")
         let extra: CGFloat = 14
         let toolbar = bar.toolbar
         for sub in inner.subviews {
