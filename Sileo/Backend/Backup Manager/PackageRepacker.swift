@@ -44,8 +44,13 @@ final class PackageRepacker {
         return URL(fileURLWithPath: "\(CommandPath.prefix)/var/lib/dpkg", isDirectory: true)
     }
 
-    /// Rebuilds `package` into a .deb written at `destination`.
-    static func repack(package: Package, to destination: URL) throws -> URL {
+    /// Rebuilds `package` into a .deb written at `destination`. `progress`
+    /// hears how far the work is, between 0 and 1, at each phase.
+    static func repack(
+        package: Package,
+        to destination: URL,
+        progress: ((Double) -> Void)? = nil
+    ) throws -> URL {
         let fileManager = FileManager.default
         let work = fileManager.temporaryDirectory
             .appendingPathComponent("sileo-repack-\(UUID().uuidString)", isDirectory: true)
@@ -54,6 +59,7 @@ final class PackageRepacker {
             spawnAsRoot(args: [CommandPath.rm, "-rf", rootfs(work.path)])
         }
 
+        progress?(0.05)
         let controlDirectory = work.appendingPathComponent("DEBIAN", isDirectory: true)
         try fileManager.createDirectory(at: controlDirectory, withIntermediateDirectories: true)
         try writeControl(package: package, to: controlDirectory)
@@ -61,6 +67,7 @@ final class PackageRepacker {
         let paths = try recordedPaths(package: package)
         guard !paths.isEmpty else { throw RepackError.noFiles }
 
+        progress?(0.2)
         let payload = work.appendingPathComponent("payload", isDirectory: true)
         try fileManager.createDirectory(at: payload, withIntermediateDirectories: true)
         try copyPayload(paths: paths, to: payload, in: work)
@@ -70,6 +77,7 @@ final class PackageRepacker {
             rootfs(payload.appendingPathComponent("DEBIAN").path)
         ])
 
+        progress?(0.8)
         try? fileManager.removeItem(at: destination)
         let (status, _, errorOutput) = spawnAsRoot(args: [
             CommandPath.dpkgdeb, "-b", "-Zxz",
@@ -79,6 +87,7 @@ final class PackageRepacker {
             throw RepackError.commandFailed(errorOutput.isEmpty ? "dpkg-deb exited with \(status)" : errorOutput)
         }
         spawnAsRoot(args: [CommandPath.chown, "501:501", rootfs(destination.path)])
+        progress?(1)
         return destination
     }
 

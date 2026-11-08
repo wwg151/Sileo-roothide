@@ -186,12 +186,17 @@ final class BackupManager {
             let total = Double(packages.count)
 
             for (index, package) in packages.enumerated() {
-                DispatchQueue.main.sync {
-                    progress(Double(index) / total, package.name, "\(index + 1)/\(packages.count)")
+                let detail = "\(index + 1)/\(packages.count)"
+                func report(_ phase: Double) {
+                    let value = (Double(index) + phase) / total
+                    DispatchQueue.main.sync {
+                        progress(value, package.name, detail)
+                    }
                 }
-                // A manifest-only package is written down in a few microseconds;
-                // pacing keeps the bar readable instead of jumping to the end.
-                Thread.sleep(forTimeInterval: 0.03)
+                report(0)
+                // A cached copy is done in a moment; a repack reports its own
+                // phases, and the pause keeps each step on screen.
+                Thread.sleep(forTimeInterval: 0.05)
                 var entry = ManifestEntry(
                     package: package.package,
                     name: package.name,
@@ -201,16 +206,9 @@ final class BackupManager {
                     deb: nil
                 )
 
-                // Only a source that carries this exact installed version can
-                // stand in for it; anything else is kept as a file, so a
-                // restore never swaps in another source's build.
-                if let repo = BackupManager.repo(offering: package.package, version: package.version) {
-                    entry.repo = repo.rawURL
-                    entries.append(entry)
-                    continue
-                }
-
-                // No source offers it: keep a file, apt's own copy first.
+                // Kept locally, always: the installed build may be newer than
+                // anything a source offers, so nothing is fetched again on
+                // restore. apt's own copy first, a repack when it is gone.
                 let fileName = [
                     package.package,
                     BackupManager.safeName(package.version),
@@ -221,11 +219,14 @@ final class BackupManager {
                 if BackupManager.copyCachedPackage(package: package, to: destination) {
                     entry.deb = fileName
                     entries.append(entry)
+                    report(1)
                     continue
                 }
 
                 do {
-                    _ = try PackageRepacker.repack(package: package, to: destination)
+                    _ = try PackageRepacker.repack(package: package, to: destination) { phase in
+                        report(phase)
+                    }
                     entry.deb = fileName
                     entries.append(entry)
                 } catch {
@@ -345,21 +346,6 @@ final class BackupManager {
                     deb: url.lastPathComponent
                 )
             }
-    }
-
-    /// The source that carries this exact version, preferring one where that
-    /// version is the package's newest, so a restore installs what was backed
-    /// up rather than another source's newer build.
-    private static func repo(offering identifier: String, version: String) -> Repo? {
-        let repos = RepoManager.shared.repoList.filter { repo in
-            repo.packageArray.contains { $0.package == identifier && $0.version == version }
-        }
-        if let preferred = repos.first(where: {
-            $0.newestPackage(identifier: identifier)?.version == version
-        }) {
-            return preferred
-        }
-        return repos.first
     }
 
     private static func package(in repo: Repo, identifier: String, version: String) -> Package? {
