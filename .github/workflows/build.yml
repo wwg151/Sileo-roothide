@@ -68,6 +68,18 @@ jobs:
           mkdir -p out
           cp packages/*.deb out/
 
+      - name: Report failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f build.log ]; then
+            tail -60 build.log | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+          else
+            echo "::error::no build.log was written"
+          fi
+
       - name: Verify packages
         shell: bash
         run: |
