@@ -530,10 +530,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         // While the queue is open as a window the bar belongs to the framework:
-        // moving it here is what used to leave a strip of it on screen.
+        // moving it here is what used to leave a strip of it on screen. The
+        // capsule stays on the bar meanwhile, so it is already there when the
+        // bar comes back.
         guard !TabBarController.popupIsOpen else {
             reset()
-            resetFloatingPopupShape()
             return
         }
         guard let container = floatingBackground, !container.isHidden,
@@ -851,7 +852,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
-        resetFloatingPopupShape()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self = self else { return }
             if self.popupPresentationState != .open {
@@ -871,7 +871,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
-        resetFloatingPopupShape()
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
@@ -882,7 +881,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
-        resetFloatingPopupShape()
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
@@ -925,7 +923,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         tabBar.isHidden = open
         if open {
             popupBarHiddenAt = Date()
-            removePopupCapsule()
         } else {
             popupBarHiddenAt = nil
             schedulePopupBarRefresh()
@@ -943,7 +940,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             self.popupBar.isHidden = false
             self.popupBar.setNeedsLayout()
             self.popupBar.layoutIfNeeded()
-            if self.popupCapsuleMask == nil, self.isFloatingEnabled {
+            if self.isFloatingEnabled {
                 self.applyPopupCapsule()
             }
             TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
