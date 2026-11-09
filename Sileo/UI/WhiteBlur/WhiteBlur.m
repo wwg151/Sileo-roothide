@@ -47,8 +47,15 @@ hook(_UIVisualEffectSubview)
             }
             if (glass) {
                 _orig(void, filters);
-                [self setBackgroundColor:SileoGlassTint(0.45)];
+                [self setBackgroundColor:SileoGlassTint(0.28)];
                 NSLog(@"SileoLog: glass blur tinted");
+                // Landed where the shell can read it: proof the glass branch
+                // runs, and that the running binary carries it.
+                NSDictionary *info = @{ @"hit": @YES,
+                                        @"date": [NSDate date],
+                                        @"alpha": @0.28 };
+                [info writeToURL:[NSURL fileURLWithPath:@"/var/mobile/Documents/SileoGlassDebug.txt"]
+                        atomically:YES];
                 return;
             }
             NSMutableArray *filtersMutable = [filters mutableCopy];

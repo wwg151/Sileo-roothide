@@ -546,6 +546,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// glass blur behind its content instead, so what the capsule covers shows
     /// through it. Only while the floating tab bar is on.
     private static let popupGlassKey = malloc(1)!
+    /// The hairline that marks the glass edge; kept so it can be refreshed.
+    private static let popupGlassEdgeKey = malloc(1)!
 
     static func updatePopupGlassBackground(for bar: LNPopupBar) {
         let floating = UIDevice.current.userInterfaceIdiom == .phone
@@ -576,6 +578,27 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         if view.isHidden {
             view.isHidden = false
         }
+        updateGlassEdge(for: bar, on: view, key: popupGlassEdgeKey)
+    }
+
+    /// A whitish hairline around the capsule: the edge is most of what makes a
+    /// blur read as glass.
+    static func updateGlassEdge(for capsule: UIView, on blur: UIVisualEffectView, key: UnsafeMutableRawPointer) {
+        if let layer = objc_getAssociatedObject(capsule, key) as? CALayer {
+            layer.frame = blur.bounds
+            layer.cornerRadius = blur.bounds.height / 2
+            layer.frame.size.height = blur.bounds.height
+            return
+        }
+        let edge = CAShapeLayer()
+        edge.fillColor = UIColor.clear.cgColor
+        edge.strokeColor = UIColor.white.withAlphaComponent(0.35).cgColor
+        edge.lineWidth = 0.5
+        let rect = blur.bounds
+        edge.path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2).cgPath
+        edge.frame = rect
+        blur.layer.addSublayer(edge)
+        objc_setAssociatedObject(capsule, key, edge, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 
     /// The bar as the framework lays it out: full width, its own material.
