@@ -144,6 +144,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         
         popupIsPresented = true
+        popupContentView.isHidden = false
         configurePopupBarForPresentation()
 
         TabBarController.popupQueue.async {
@@ -273,6 +274,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             self.applyFloatingStyle()
             self.popupBar.isHidden = false
             self.popupBar.alpha = 1
+            // Nothing of the window is left at the bottom of the screen.
+            self.popupContentView.isHidden = true
             completion?()
         })
     }
@@ -928,6 +931,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
+        popupContentView.isHidden = false
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
@@ -963,6 +967,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         applyFloatingStyle()
         popupBar.isHidden = false
         popupBar.alpha = 1
+        // Whatever the window's landing left behind at the bottom of the
+        // screen goes with it; it is shown again when the queue is opened.
+        popupContentView.isHidden = true
     }
 
     /// The popup state the framework reports does not change on every route
@@ -982,6 +989,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         popupBar.isHidden = open
         popupBar.alpha = 1
         tabBar.isHidden = open
+        popupContentView.isHidden = !open
         if open {
             popupBarHiddenAt = Date()
         } else {
