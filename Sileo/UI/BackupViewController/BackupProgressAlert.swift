@@ -106,6 +106,10 @@ final class BackupProgressAlert: UIViewController {
         detailLabel.isHidden = true
         etaLabel.isHidden = true
         cancelButton.isHidden = true
+        // A failed package is named on its own line, so the label has to grow
+        // with the list instead of cutting it off after two lines.
+        nameLabel.numberOfLines = 0
+        nameLabel.lineBreakMode = .byWordWrapping
         nameLabel.text = message
         okButton.isHidden = false
     }

@@ -577,7 +577,22 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             case .success(let counts):
                 var text = String(format: String(localizationKey: "Backup_Result"), counts.0, counts.1.count)
                 if !counts.1.isEmpty {
-                    text += "\n\n" + counts.1.joined(separator: "\n")
+                    // One failed package per line, named plainly; the reason it
+                    // failed stays in 失败记录.txt beside the backup.
+                    let names = counts.1.map { failure -> String in
+                        if let range = failure.range(of: " (") {
+                            return String(failure[failure.startIndex..<range.lowerBound])
+                        }
+                        if let range = failure.range(of: ": ") {
+                            return String(failure[failure.startIndex..<range.lowerBound])
+                        }
+                        return failure
+                    }
+                    let shown = Array(names.prefix(12))
+                    text += "\n\n" + shown.joined(separator: "\n")
+                    if names.count > shown.count {
+                        text += "\n" + String(format: String(localizationKey: "Backup_Result_More"), names.count - shown.count)
+                    }
                 }
                 progress.finish(message: text + "\n\n" + folder.url.path)
             case .failure(let error):
