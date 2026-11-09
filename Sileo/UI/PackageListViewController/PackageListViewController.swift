@@ -496,7 +496,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             SileoActionMenuItem(title: action.title,
                                 image: action.image,
                                 destructive: action.attributes.contains(.destructive),
-                                handler: { action.handler?(action) })
+                                handler: { _ = action.handler?(action) })
         }
         let windowPoint = collectionView.convert(point, to: nil)
         let source = CGRect(x: windowPoint.x - 22, y: windowPoint.y - 10, width: 44, height: 20)

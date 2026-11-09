@@ -73,6 +73,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          set +e
           if [ -f build.log ]; then
             grep -E ": error:" build.log | head -30 | while IFS= read -r line; do
               echo "::error::$line"
