@@ -416,11 +416,12 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         guard let inner = bar.toolbar.superview else { return }
-        // The bar is full width now, so the title starts one capsule margin
-        // plus the tab bar's own item margin in.
+        // The title starts where the first tab's icon and label start, measured
+        // on the tab bar itself so the two line up whatever the bar's height or
+        // item width has become.
         let capsuleInset = TabBarController.singleton?.floatingInset ?? 10
         let contentInset = TabBarController.singleton?.floatingContentInset ?? 20
-        let target = capsuleInset + contentInset
+        let target = TabBarController.singleton?.firstTabContentLeadingX(in: inner) ?? (capsuleInset + contentInset)
         let toolbar = bar.toolbar
         for sub in inner.subviews {
             if sub === toolbar { continue }
@@ -626,6 +627,21 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     private var floatingRetryCount = 0
     private var floatingBackground: UIView?
+    /// Where the first tab's icon and label start, in the coordinates of the
+    /// view given. The queue bar's title is put on that line.
+    func firstTabContentLeadingX(in view: UIView) -> CGFloat? {
+        let buttons = buttonsSortedByX()
+        guard let first = buttons.first else { return nil }
+        var union = CGRect.null
+        for sub in first.subviews {
+            let name = String(describing: type(of: sub))
+            guard sub is UIImageView || sub is UILabel || name.contains("ImageView") else { continue }
+            union = union.union(tabBar.convert(sub.bounds, from: sub))
+        }
+        guard !union.isNull, union.width > 0 else { return nil }
+        return view.convert(CGPoint(x: union.minX, y: 0), from: tabBar).x
+    }
+
     /// The highlight that rides with the selected tab, drawn over the capsule.
     private var selectionPill: UIView?
     /// Where the pill is heading, so a layout pass does not cut its slide short.
