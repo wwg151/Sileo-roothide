@@ -260,6 +260,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             self.popupBar.isHidden = false
             self.popupBarHiddenAt = nil
             self.applyFloatingStyle()
+            self.schedulePopupBarRefresh()
             completion?()
         })
     }
@@ -899,6 +900,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         popupBar.isHidden = false
         popupBarHiddenAt = nil
         applyFloatingStyle()
+        schedulePopupBarRefresh()
     }
 
     /// The popup state the framework reports does not change on every route
@@ -917,6 +919,22 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         } else {
             popupBarHiddenAt = nil
             revealFloatingTabBar()
+            schedulePopupBarRefresh()
+        }
+    }
+
+    /// The bar is laid out again once the window's closing animation is over:
+    /// its capsule and its title inset are measured from a frame that is still
+    /// moving while it comes back.
+    private func schedulePopupBarRefresh() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self = self, self.popupIsPresented, !TabBarController.popupIsOpen else { return }
+            self.popupBar.isHidden = false
+            self.popupBar.setNeedsLayout()
+            self.popupBar.layoutIfNeeded()
+            self.applyFloatingStyle()
+            self.applyFloatingPopupShape()
+            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
         }
     }
 
