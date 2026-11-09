@@ -361,14 +361,24 @@ final class FeaturedViewController: SileoViewController, UIScrollViewDelegate, F
     }
     
     @objc func showProfile(_ sender: Any?) {
+        NSLog("SileoLog: showProfile")
         let profileViewController = SettingsViewController(style: .grouped)
         let navController = SettingsNavigationController(rootViewController: profileViewController)
-        // The profile card: it grows out of the avatar and is a sheet of glass.
+
+        // The profile card: the system's sheet does the finger-following
+        // dismissal; the transition only makes it grow out of the avatar.
+        GlassCardTransition.makeGlass(in: navController)
+        navController.modalPresentationStyle = .pageSheet
+        if let sheet = navController.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 34
+        }
         let transition = GlassCardTransition()
         transition.sourceView = profileButton
         profileTransition = transition
         navController.transitioningDelegate = transition
-        navController.modalPresentationStyle = .custom
+
         self.present(navController, animated: true, completion: nil)
     }
     
