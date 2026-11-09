@@ -447,8 +447,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     static var popupIsOpen = false
     /// Our own capsule over the bar's material, so the bar itself keeps the
     /// framework's full-width frame.
-    private var popupCapsuleView: UIVisualEffectView?
-    private var popupHiddenMaterialViews: [UIView] = []
+    /// The capsule is the bar's own layer masked to an inset rounded rect: the
+    /// material, its hairlines and its content are all cut to the shape, so
+    /// nothing has to be hidden and nothing can cover it.
+    private var popupCapsuleMask: CAShapeLayer?
 
     /// The queue bar lays its content out itself, so the inset above has to
     /// run right after each of those passes.
@@ -479,46 +481,25 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
     }
 
-    /// The capsule is our own view over the bar's material: the bar keeps the
-    /// framework's full-width frame, and its material and hairlines step aside
-    /// while the capsule is drawn.
+    /// The bar's own layer is masked to an inset rounded rect, so its material
+    /// becomes the capsule. Nothing is hidden and nothing can cover it, and
+    /// the mask lives on the bar rather than on the views it rebuilds.
     private func applyPopupCapsule() {
         let bar = popupBar
         guard bar.bounds.height > 0 else { return }
-        if popupCapsuleView == nil {
-            let capsule = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-            capsule.isUserInteractionEnabled = false
-            capsule.clipsToBounds = true
-            bar.insertSubview(capsule, at: 0)
-            popupCapsuleView = capsule
-        }
-        guard let capsule = popupCapsuleView else { return }
-        func hideMaterial(in view: UIView) {
-            for sub in view.subviews {
-                if sub === capsule { continue }
-                let name = String(describing: type(of: sub))
-                if sub is UIVisualEffectView || name.contains("Shadow") {
-                    if !popupHiddenMaterialViews.contains(where: { $0 === sub }) {
-                        popupHiddenMaterialViews.append(sub)
-                    }
-                    sub.isHidden = true
-                } else {
-                    hideMaterial(in: sub)
-                }
+        let rect = bar.bounds.insetBy(dx: floatingInset, dy: 0)
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2).cgPath
+        if let mask = popupCapsuleMask {
+            if mask.frame != bar.bounds {
+                mask.frame = bar.bounds
             }
-        }
-        hideMaterial(in: bar)
-        if capsule.superview !== bar {
-            bar.insertSubview(capsule, at: 0)
-        }
-        let frame = bar.bounds.insetBy(dx: floatingInset, dy: 0)
-        if capsule.frame != frame {
-            capsule.frame = frame
-        }
-        let radius = bar.bounds.height / 2
-        if abs(capsule.layer.cornerRadius - radius) > 0.5 {
-            capsule.layer.cornerRadius = radius
-            capsule.layer.cornerCurve = .continuous
+            mask.path = path
+        } else {
+            let mask = CAShapeLayer()
+            mask.frame = bar.bounds
+            mask.path = path
+            bar.layer.mask = mask
+            popupCapsuleMask = mask
         }
     }
 
@@ -528,13 +509,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private func removePopupCapsule() {
-        guard popupCapsuleView != nil || !popupHiddenMaterialViews.isEmpty else { return }
-        popupCapsuleView?.removeFromSuperview()
-        popupCapsuleView = nil
-        for view in popupHiddenMaterialViews {
-            view.isHidden = false
-        }
-        popupHiddenMaterialViews.removeAll()
+        guard popupCapsuleMask != nil else { return }
+        popupBar.layer.mask = nil
+        popupCapsuleMask = nil
     }
 
     private func updateFloatingPopupOffset() {
