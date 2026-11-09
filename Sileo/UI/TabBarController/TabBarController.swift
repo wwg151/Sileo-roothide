@@ -595,6 +595,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         if popupBar.transform != target {
             popupBar.transform = target
         }
+        // Written out so the geometry can be read back from outside the app
+        // while the bar is wrong; removed once it is right.
+        let capsuleTop = container.convert(CGPoint.zero, to: nil).y
+        let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
+        let diag = String(format: "capsuleTop=%.1f barBottom=%.1f barY=%.1f barH=%.1f tabBarY=%.1f tabBarH=%.1f containerY=%.1f containerH=%.1f lift=%.1f screenH=%.1f tabBarHeight=%.1f tx=%.1f",
+                          capsuleTop, barBottom,
+                          popupBar.frame.origin.y, popupBar.bounds.height,
+                          tabBar.frame.origin.y, tabBar.frame.height,
+                          container.frame.origin.y, container.frame.height,
+                          lift ?? 0, view.bounds.height, popupBar.tabBarHeight,
+                          popupBar.transform.ty)
+        UserDefaults.standard.set(diag, forKey: "DebugQueueGeometry")
     }
 
     /// Measures the lift on a bar that is already laid out and keeps it.
