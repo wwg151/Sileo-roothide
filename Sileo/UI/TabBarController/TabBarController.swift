@@ -229,26 +229,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// back with the height and the style it had when install first showed it.
     private func configurePopupBarForPresentation() {
         self.popupContentView.popupCloseButtonAutomaticallyUnobstructsTopBars = false
-        // With the floating tab bar the queue bar is a capsule over the content,
-        // so it takes the glass material; without it, the plain white blur.
-        self.popupBar.toolbar.tag = isFloatingEnabled ? GLASS_BLUR_TAG : WHITE_BLUR_TAG
-        // The toolbar built its material before it was tagged; setting the style
-        // again here rebuilds it under the tag it now carries.
-        self.popupBar.barStyle = .default
+        self.popupBar.toolbar.tag = WHITE_BLUR_TAG
         self.popupBar.barStyle = .prominent
         self.updateSileoColors()
-        if isFloatingEnabled {
-            // The bar's own material is set aside: the glass blur put behind its
-            // content is what the capsule is made of.
-            self.popupBar.toolbar.setBackgroundImage(UIImage(), forToolbarPosition: .any, barMetrics: .default)
-            self.popupBar.toolbar.isTranslucent = true
-            self.popupBar.toolbar.barTintColor = .clear
-            self.popupBar.toolbar.backgroundColor = .clear
-        } else {
-            self.popupBar.toolbar.setBackgroundImage(nil, forToolbarPosition: .any, barMetrics: .default)
-            self.popupBar.toolbar.barTintColor = nil
-            self.popupBar.toolbar.backgroundColor = nil
-        }
+        self.popupBar.toolbar.setBackgroundImage(nil, forToolbarPosition: .any, barMetrics: .default)
         self.popupBar.tabBarHeight = floatingPopupTabBarHeight
         if UIDevice.current.userInterfaceIdiom == .pad {
             self.popupBar.isInlineWithTabBar = true
@@ -542,65 +526,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.updateCapsuleMask(for: popupBar)
     }
 
-    /// The queue bar's own material is a near-solid white; this puts a thin
-    /// glass blur behind its content instead, so what the capsule covers shows
-    /// through it. Only while the floating tab bar is on.
-    private static let popupGlassKey = malloc(1)!
-    /// The hairline that marks the glass edge; kept so it can be refreshed.
-    private static let popupGlassEdgeKey = malloc(1)!
-
-    static func updatePopupGlassBackground(for bar: LNPopupBar) {
-        let floating = UIDevice.current.userInterfaceIdiom == .phone
-            && UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false)
-        let glass = objc_getAssociatedObject(bar, popupGlassKey) as? UIVisualEffectView
-        guard floating, bar.bounds.height > 0, bar.bounds.height < UIScreen.main.bounds.height * 0.5 else {
-            glass?.removeFromSuperview()
-            return
-        }
-        let view: UIVisualEffectView
-        if let glass = glass {
-            view = glass
-        } else {
-            let fresh = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-            fresh.tag = GLASS_BLUR_TAG
-            fresh.isUserInteractionEnabled = false
-            fresh.contentView.backgroundColor = .clear
-            bar.insertSubview(fresh, at: 0)
-            objc_setAssociatedObject(bar, popupGlassKey, fresh, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-            view = fresh
-        }
-        if view.superview !== bar {
-            bar.insertSubview(view, at: 0)
-        }
-        if view.frame != bar.bounds {
-            view.frame = bar.bounds
-        }
-        if view.isHidden {
-            view.isHidden = false
-        }
-        updateGlassEdge(for: bar, on: view, key: popupGlassEdgeKey)
-    }
-
-    /// A whitish hairline around the capsule: the edge is most of what makes a
-    /// blur read as glass.
-    static func updateGlassEdge(for capsule: UIView, on blur: UIVisualEffectView, key: UnsafeMutableRawPointer) {
-        if let layer = objc_getAssociatedObject(capsule, key) as? CALayer {
-            layer.frame = blur.bounds
-            layer.cornerRadius = blur.bounds.height / 2
-            layer.frame.size.height = blur.bounds.height
-            return
-        }
-        let edge = CAShapeLayer()
-        edge.fillColor = UIColor.clear.cgColor
-        edge.strokeColor = UIColor.white.withAlphaComponent(0.35).cgColor
-        edge.lineWidth = 0.5
-        let rect = blur.bounds
-        edge.path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2).cgPath
-        edge.frame = rect
-        blur.layer.addSublayer(edge)
-        objc_setAssociatedObject(capsule, key, edge, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-    }
-
     /// The bar as the framework lays it out: full width, its own material.
     private func resetFloatingPopupShape() {
         removePopupCapsule()
@@ -806,20 +731,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
     }
 
-    /// The queue bar's material follows the floating switch. When it changes the
-    /// blur is rebuilt, so the new look is seen at once instead of after a
-    /// relaunch.
-    private func syncPopupBarMaterial() {
-        let tag = isFloatingEnabled ? GLASS_BLUR_TAG : WHITE_BLUR_TAG
-        guard popupBar.toolbar.tag != tag else { return }
-        popupBar.toolbar.tag = tag
-        let style = popupBar.barStyle
-        popupBar.barStyle = (style == .prominent) ? .default : .prominent
-        popupBar.barStyle = style
-    }
-
     private func applyFloatingStyle() {
-        syncPopupBarMaterial()
         guard isFloatingEnabled else {
             if let container = floatingBackground {
                 container.removeFromSuperview()
@@ -838,8 +750,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 self.tabBar.scrollEdgeAppearance = originalScrollEdgeAppearance
                 self.tabBar.itemWidth = 0
                 self.tabBar.itemSpacing = 0
-                // Back to the plain white blur the app came with.
-                self.popupBar.toolbar.tag = WHITE_BLUR_TAG
                 self.popupBar.transform = .identity
                 applyFloatingPopupShape()
             }
@@ -877,28 +787,16 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             }
 
             let container = UIView()
-            // The capsule's blur is glass while the floating tab bar is on; the
-            // rest of the app keeps the plain white blur.
-            container.tag = GLASS_BLUR_TAG
             container.isUserInteractionEnabled = false
             container.layer.shadowColor = UIColor.black.cgColor
             container.layer.shadowOpacity = 0.2
             container.layer.shadowRadius = 10
             container.layer.shadowOffset = CGSize(width: 0, height: 4)
-            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
             blur.tag = 1
             blur.clipsToBounds = true
             blur.layer.cornerCurve = .continuous
-            // The material's own tint would wash the capsule white again; the
-            // blur itself is all that is wanted here.
-            blur.contentView.backgroundColor = .clear
             container.addSubview(blur)
-            // The effect view builds its backdrop while it is being created,
-            // before it sits inside the glass-tagged container; giving it its
-            // effect again here lets the glass tint reach that backdrop.
-            let effect = blur.effect
-            blur.effect = nil
-            blur.effect = effect
             self.tabBar.insertSubview(container, at: 0)
             floatingBackground = container
         }
@@ -1154,7 +1052,6 @@ extension LNPopupBar {
         sileo_layoutSubviews()
         TabBarController.applyFloatingPopupContentInset(to: self)
         TabBarController.updateCapsuleMask(for: self)
-        TabBarController.updatePopupGlassBackground(for: self)
     }
 }
 
