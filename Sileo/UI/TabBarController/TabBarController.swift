@@ -258,23 +258,22 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             popupLock.signal()
         }
         
-        // The window closes onto the bar, so the bar has to be there while it
-        // lands; without it the window keeps its last frame at the bottom.
-        // It stays invisible meanwhile, and the bar is built again from
-        // scratch once the window is gone, so nothing of the way back is seen.
+        // The bar is not touched while the window closes: it keeps the frame
+        // and the height it was given when install first showed it, and is
+        // simply made visible again.
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
         tabBar.isHidden = false
         applyFloatingStyle()
+        popupBar.alpha = 1
 
         self.closePopup(animated: false, completion: {
             TabBarController.popupIsOpen = false
             self.popupBar.isHidden = false
             self.popupBarHiddenAt = nil
             self.applyFloatingStyle()
-            self.popupBar.alpha = 0
-            self.schedulePopupBarRefresh()
+            self.popupBar.alpha = 1
             completion?()
         })
     }
@@ -535,23 +534,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     /// The lift the bar needs so its bottom edge meets the capsule's top edge.
-    /// Measured once and kept in the app's preferences, so a launch reads the
-    /// value instead of working it out again on a bar that is still moving.
-    static var popupBarLift: CGFloat? {
-        get {
-            guard let saved = UserDefaults.standard.object(forKey: "FloatingPopupBarLift") as? NSNumber else {
-                return nil
-            }
-            return CGFloat(saved.doubleValue)
-        }
-        set {
-            if let newValue = newValue {
-                UserDefaults.standard.set(Double(newValue), forKey: "FloatingPopupBarLift")
-            } else {
-                UserDefaults.standard.removeObject(forKey: "FloatingPopupBarLift")
-            }
-        }
-    }
+    /// Worked out on a bar that is already laid out, and only kept in memory:
+    /// a value from an earlier run must never be applied to a different layout.
+    static var popupBarLift: CGFloat?
+    static var popupBarLiftSize: CGSize = .zero
 
     private func updateFloatingPopupOffset() {
         func reset() {
@@ -583,15 +569,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         applyFloatingPopupShape()
-        // The distance from the bar's bottom edge to the capsule's top edge is
-        // measured once, kept, and read from then on — so the bar is already in
-        // its place when it appears, on every launch.
-        let savedHeight = UserDefaults.standard.double(forKey: "FloatingPopupBarLiftHeight")
-        var lift = TabBarController.popupBarLift
-        if lift == nil || abs(savedHeight - Double(view.bounds.height)) > 0.5 {
-            lift = measurePopupBarLift(on: container)
+        // Measured once, when the bar first appears; afterwards the saved
+        // distance is used as it is.
+        if TabBarController.popupBarLift == nil
+            || TabBarController.popupBarLiftSize != view.bounds.size {
+            _ = measurePopupBarLift(on: container)
         }
-        let target = CGAffineTransform(translationX: 0, y: -(lift ?? 0))
+        let target = CGAffineTransform(translationX: 0, y: -(TabBarController.popupBarLift ?? 0))
         if popupBar.transform != target {
             popupBar.transform = target
         }
@@ -604,9 +588,12 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                           popupBar.frame.origin.y, popupBar.bounds.height,
                           tabBar.frame.origin.y, tabBar.frame.height,
                           container.frame.origin.y, container.frame.height,
-                          lift ?? 0, view.bounds.height, popupBar.tabBarHeight,
+                          TabBarController.popupBarLift ?? 0, view.bounds.height, popupBar.tabBarHeight,
                           popupBar.transform.ty)
-        UserDefaults.standard.set(diag, forKey: "DebugQueueGeometry")
+        if UserDefaults.standard.string(forKey: "DebugQueueGeometry") != diag {
+            UserDefaults.standard.set(diag, forKey: "DebugQueueGeometry")
+            NSLog("SileoLog: queue \(diag)")
+        }
     }
 
     /// Measures the lift on a bar that is already laid out and keeps it.
@@ -921,7 +908,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     @objc private func popupBarTapped() {
         guard popupBar.popupOpenGestureRecognizer.state == .began else { return }
         TabBarController.popupIsOpen = true
-        popupBar.isHidden = true
+        popupBar.alpha = 0
         popupBarHiddenAt = Date()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self = self else { return }
@@ -940,7 +927,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // keep its inset frame or its rounding. The bar itself is hidden for
         // the duration, or it shows above the window as it is pushed up.
         TabBarController.popupIsOpen = true
-        popupBar.isHidden = true
+        popupBar.alpha = 0
         popupBarHiddenAt = Date()
     }
 
@@ -950,21 +937,21 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // Once the window covers the screen the bar has no business showing:
         // whatever the opening animation did with it, it goes now.
         TabBarController.popupIsOpen = true
-        popupBar.isHidden = true
+        popupBar.alpha = 0
         popupBarHiddenAt = Date()
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            willClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
-        // Same reason as the chevron: the window lands on the bar. The bar is
-        // invisible until it is back in place.
+        // Same reason as the chevron: the bar is not touched, only made
+        // transparent while the window is still there.
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
         tabBar.isHidden = false
-        popupBar.alpha = 0
         applyFloatingStyle()
+        popupBar.alpha = 1
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
@@ -975,10 +962,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         popupBarHiddenAt = nil
         tabBar.isHidden = false
         applyFloatingStyle()
-        // Invisible until it is built again, so the bar never shows the shape
-        // it had while the window was open.
-        popupBar.alpha = 0
-        schedulePopupBarRefresh()
+        popupBar.alpha = 1
     }
 
     /// The popup state the framework reports does not change on every route
@@ -993,83 +977,19 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let open = popupIsPresented && popupContentView.frame.minY < view.bounds.height * 0.5
         guard open != TabBarController.popupIsOpen else { return }
         TabBarController.popupIsOpen = open
-        popupBar.isHidden = open
-        // Hidden outright, without fading: a fade over the floating tab bar is
-        // what showed it transparent for a moment before its capsule came back.
+        // The bar is only made transparent: its frame, its height and its
+        // title are the ones it was given when install first showed it, and
+        // nothing lays it out again, so nothing adjusts when it comes back.
+        popupBar.alpha = open ? 0 : 1
         tabBar.isHidden = open
         if open {
             popupBarHiddenAt = Date()
         } else {
             popupBarHiddenAt = nil
-            // Nothing of the bar's state from the open window is shown: it is
-            // built again before it is made visible.
-            popupBar.alpha = 0
-            schedulePopupBarRefresh()
-        }
-    }
-
-    /// True while the bar is being taken down and presented again.
-    private var popupBarRebuilding = false
-    /// When the bar was last built again, so a second close route in the same
-    /// moment does not build it twice.
-    private var popupBarRebuiltAt: Date?
-
-    /// The bar is built again exactly the way it is built when install is
-    /// tapped: taken down and presented from scratch. A bar that was only
-    /// un-hidden kept the frame and the title position it had while the
-    /// window was open, which is why it had to adjust itself afterwards.
-    private func rebuildPopupBar() {
-        guard popupIsPresented, let downloads = downloadsController else {
+            applyFloatingStyle()
             popupBar.alpha = 1
-            return
-        }
-        // Both close routes can land here; one rebuild is enough.
-        if popupBarRebuilding { return }
-        if let last = popupBarRebuiltAt, Date().timeIntervalSince(last) < 1.0 {
-            popupBar.alpha = 1
-            return
-        }
-        popupBarRebuilding = true
-        popupBarRebuiltAt = Date()
-        popupBar.alpha = 0
-        // The very configuration the install path gives it, so its height is
-        // the height it had then.
-        configurePopupBarForPresentation()
-        // Nothing of this may be animated: the bar has to be in its place, at
-        // its height, before it is seen.
-        UIView.performWithoutAnimation {
-            self.dismissPopupBar(animated: false, completion: {
-                UIView.performWithoutAnimation {
-                    self.presentPopupBar(withContentViewController: downloads, animated: false, completion: {
-                        self.popupBar.layer.removeAllAnimations()
-                        self.applyFloatingStyle()
-                        self.popupBar.tabBarHeight = self.floatingPopupTabBarHeight
-                        self.popupBar.setNeedsLayout()
-                        self.popupBar.layoutIfNeeded()
-                        self.popupBar.layer.removeAllAnimations()
-                        self.applyFloatingPopupShape()
-                        TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
-                        NSLog("SileoLog: queue rebuilt frame=\(self.popupBar.frame) tabBarHeight=\(self.popupBar.tabBarHeight)")
-                        self.popupBar.alpha = 1
-                        self.popupBarRebuilding = false
-                    })
-                }
-            })
         }
     }
-
-    /// The bar is laid out again once the closing animation is over: it is
-    /// measured while its frame is still moving, so its capsule can be missing.
-    /// Nothing else is touched — the tab bar keeps the state it had.
-    private func schedulePopupBarRefresh() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self = self, self.popupIsPresented else { return }
-            self.updatePopupOpenState()
-            guard !TabBarController.popupIsOpen else { return }
-            self.rebuildPopupBar()
-        }
-    }
-
     override func viewDidLayoutSubviews() {
         NSLog("SileoLog: TabBarController.viewDidLayoutSubviews")
         super.viewDidLayoutSubviews()
