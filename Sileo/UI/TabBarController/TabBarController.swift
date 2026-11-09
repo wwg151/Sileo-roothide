@@ -630,6 +630,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private var selectionPill: UIView?
     /// Where the pill is heading, so a layout pass does not cut its slide short.
     private var selectionPillTarget: CGRect?
+    /// The tab the pill was last put on, so a change made without the delegate
+    /// call — the search tab is the app's own control — still slides.
+    private var lastPillIndex: Int?
     private var floatingAppearance: UITabBarAppearance?
     private var floatingItemWidth: CGFloat = 0
     private var floatingRefreshPending = false
@@ -778,7 +781,12 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         if index == itemCount - 1 { x = container.bounds.width - gap - width }
         let target = CGRect(x: x, y: gap, width: width, height: height)
         pill.backgroundColor = selectionPillColor()
-        if animated {
+        // A tab can change without the delegate telling us — the search tab is
+        // the app's own control — so the pill slides whenever the tab it was
+        // last put on is not the one selected now.
+        let changed = lastPillIndex != nil && lastPillIndex != index
+        lastPillIndex = index
+        if animated || changed {
             selectionPillTarget = target
             UIView.animate(withDuration: 0.45,
                            delay: 0,
@@ -837,6 +845,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 container.removeFromSuperview()
                 floatingBackground = nil
                 selectionPill = nil
+                selectionPillTarget = nil
+                lastPillIndex = nil
                 floatingAppearance = nil
                 floatingItemWidth = 0
                 floatingRefreshPending = false
