@@ -450,7 +450,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// The capsule is the bar's own layer masked to an inset rounded rect: the
     /// material, its hairlines and its content are all cut to the shape, so
     /// nothing has to be hidden and nothing can cover it.
-    private var popupCapsuleMask: CAShapeLayer?
 
     /// The queue bar lays its content out itself, so the inset above has to
     /// run right after each of those passes.
@@ -482,25 +481,41 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     /// The bar's own layer is masked to an inset rounded rect, so its material
-    /// becomes the capsule. Nothing is hidden and nothing can cover it, and
-    /// the mask lives on the bar rather than on the views it rebuilds.
-    private func applyPopupCapsule() {
-        let bar = popupBar
-        guard bar.bounds.height > 0 else { return }
-        let rect = bar.bounds.insetBy(dx: floatingInset, dy: 0)
-        let path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2).cgPath
-        if let mask = popupCapsuleMask {
-            if mask.frame != bar.bounds {
-                mask.frame = bar.bounds
+    /// becomes the capsule. The mask is kept on the bar and put back on every
+    /// one of its layout passes, so a bar the framework lays out again is
+    /// already the capsule — nothing has to adjust afterwards.
+    private static let popupCapsuleMaskKey = malloc(1)!
+
+    static func updateCapsuleMask(for bar: LNPopupBar) {
+        let floating = UIDevice.current.userInterfaceIdiom == .phone
+            && UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false)
+        let shouldShape = floating && bar.bounds.height > 0
+        guard shouldShape else {
+            if let mask = objc_getAssociatedObject(bar, popupCapsuleMaskKey) as? CAShapeLayer,
+               bar.layer.mask === mask {
+                bar.layer.mask = nil
             }
-            mask.path = path
-        } else {
-            let mask = CAShapeLayer()
-            mask.frame = bar.bounds
-            mask.path = path
-            bar.layer.mask = mask
-            popupCapsuleMask = mask
+            return
         }
+        var mask = objc_getAssociatedObject(bar, popupCapsuleMaskKey) as? CAShapeLayer
+        if mask == nil {
+            let fresh = CAShapeLayer()
+            objc_setAssociatedObject(bar, popupCapsuleMaskKey, fresh, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            mask = fresh
+        }
+        guard let mask = mask else { return }
+        if bar.layer.mask !== mask {
+            bar.layer.mask = mask
+        }
+        if mask.frame != bar.bounds {
+            mask.frame = bar.bounds
+        }
+        let rect = bar.bounds.insetBy(dx: 10, dy: 0)
+        mask.path = UIBezierPath(roundedRect: rect, cornerRadius: rect.height / 2).cgPath
+    }
+
+    private func applyPopupCapsule() {
+        TabBarController.updateCapsuleMask(for: popupBar)
     }
 
     /// The bar as the framework lays it out: full width, its own material.
@@ -509,9 +524,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private func removePopupCapsule() {
-        guard popupCapsuleMask != nil else { return }
-        popupBar.layer.mask = nil
-        popupCapsuleMask = nil
+        TabBarController.updateCapsuleMask(for: popupBar)
     }
 
     private func updateFloatingPopupOffset() {
@@ -979,6 +992,7 @@ extension LNPopupBar {
     @objc func sileo_layoutSubviews() {
         sileo_layoutSubviews()
         TabBarController.applyFloatingPopupContentInset(to: self)
+        TabBarController.updateCapsuleMask(for: self)
     }
 }
 
