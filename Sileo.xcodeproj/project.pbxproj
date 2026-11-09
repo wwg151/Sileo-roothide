@@ -29,6 +29,9 @@
 		A1C0DE000000000000000B02 /* SileoActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000000000000000B01 /* SileoActionMenu.swift */; };
 		A1C0DE000000000000000B03 /* SileoActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000000000000000B01 /* SileoActionMenu.swift */; };
 		A1C0DE000000000000000B04 /* SileoActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000000000000000B01 /* SileoActionMenu.swift */; };
+		A1C0DE000000000000000C02 /* GlassCardTransition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000000000000000C01 /* GlassCardTransition.swift */; };
+		A1C0DE000000000000000C03 /* GlassCardTransition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000000000000000C01 /* GlassCardTransition.swift */; };
+		A1C0DE000000000000000C04 /* GlassCardTransition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE000000000000000C01 /* GlassCardTransition.swift */; };
 		A1C0DE0000000000000000D4 /* PackageRepacker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C2 /* PackageRepacker.swift */; };
 		A1C0DE0000000000000000D5 /* PackageRepacker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C2 /* PackageRepacker.swift */; };
 		A1C0DE0000000000000000D6 /* PackageRepacker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000C2 /* PackageRepacker.swift */; };
@@ -1174,6 +1177,7 @@
 		A1C0DE0000000000000000F1 /* PinnedSources.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PinnedSources.swift; sourceTree = "<group>"; };
 		A1C0DE000000000000000A01 /* RemovedSources.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RemovedSources.swift; sourceTree = "<group>"; };
 		A1C0DE000000000000000A05 /* RemovedSourcesViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = RemovedSourcesViewController.swift; sourceTree = "<group>"; };
+		A1C0DE000000000000000C01 /* GlassCardTransition.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GlassCardTransition.swift; sourceTree = "<group>"; };
 		A1C0DE000000000000000B01 /* SileoActionMenu.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SileoActionMenu.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000C2 /* PackageRepacker.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PackageRepacker.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000C3 /* BackupProgressAlert.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackupProgressAlert.swift; sourceTree = "<group>"; };
@@ -2105,6 +2109,7 @@
 				F1330EA82324F76C00971073 /* UIColor-ThemeColors.swift */,
 				E191837B29CF5F48009AA62E /* ImageLoader.swift */,
 				A1C0DE000000000000000B01 /* SileoActionMenu.swift */,
+				A1C0DE000000000000000C01 /* GlassCardTransition.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -4165,6 +4170,7 @@
 				A1C0DE0000000000000000F2 /* PinnedSources.swift in Sources */,
 				A1C0DE000000000000000A02 /* RemovedSources.swift in Sources */,
 				A1C0DE000000000000000B02 /* SileoActionMenu.swift in Sources */,
+				A1C0DE000000000000000C02 /* GlassCardTransition.swift in Sources */,
 				A1C0DE000000000000000A06 /* RemovedSourcesViewController.swift in Sources */,
 				A1C0DE0000000000000000D4 /* PackageRepacker.swift in Sources */,
 				A1C0DE0000000000000000D7 /* BackupProgressAlert.swift in Sources */,
@@ -4382,6 +4388,7 @@
 				A1C0DE0000000000000000F3 /* PinnedSources.swift in Sources */,
 				A1C0DE000000000000000A03 /* RemovedSources.swift in Sources */,
 				A1C0DE000000000000000B03 /* SileoActionMenu.swift in Sources */,
+				A1C0DE000000000000000C03 /* GlassCardTransition.swift in Sources */,
 				A1C0DE000000000000000A07 /* RemovedSourcesViewController.swift in Sources */,
 				A1C0DE0000000000000000D5 /* PackageRepacker.swift in Sources */,
 				A1C0DE0000000000000000D8 /* BackupProgressAlert.swift in Sources */,
@@ -4580,6 +4587,7 @@
 				A1C0DE0000000000000000F4 /* PinnedSources.swift in Sources */,
 				A1C0DE000000000000000A04 /* RemovedSources.swift in Sources */,
 				A1C0DE000000000000000B04 /* SileoActionMenu.swift in Sources */,
+				A1C0DE000000000000000C04 /* GlassCardTransition.swift in Sources */,
 				A1C0DE000000000000000A08 /* RemovedSourcesViewController.swift in Sources */,
 				A1C0DE0000000000000000D6 /* PackageRepacker.swift in Sources */,
 				A1C0DE0000000000000000D9 /* BackupProgressAlert.swift in Sources */,

@@ -11,6 +11,8 @@ import Evander
 
 final class FeaturedViewController: SileoViewController, UIScrollViewDelegate, FeaturedViewDelegate {
     private var profileButton: UIButton?
+    /// Kept alive while the profile card is up: the transition delegate is weak.
+    private var profileTransition: GlassCardTransition?
     @IBOutlet var scrollView: UIScrollView?
     @IBOutlet var activityIndicatorView: UIActivityIndicatorView?
     var featuredView: FeaturedBaseView?
@@ -361,6 +363,12 @@ final class FeaturedViewController: SileoViewController, UIScrollViewDelegate, F
     @objc func showProfile(_ sender: Any?) {
         let profileViewController = SettingsViewController(style: .grouped)
         let navController = SettingsNavigationController(rootViewController: profileViewController)
+        // The profile card: it grows out of the avatar and is a sheet of glass.
+        let transition = GlassCardTransition()
+        transition.sourceView = profileButton
+        profileTransition = transition
+        navController.transitioningDelegate = transition
+        navController.modalPresentationStyle = .custom
         self.present(navController, animated: true, completion: nil)
     }
     
