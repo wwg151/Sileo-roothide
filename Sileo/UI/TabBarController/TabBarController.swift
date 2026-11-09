@@ -742,16 +742,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let pitch = count > 1
             ? (buttons[count - 1].frame.midX - buttons[0].frame.midX) / CGFloat(count - 1)
             : buttons[index].frame.width
-        // One size for every tab, and wider than one item's room: that is what
-        // makes it read as a wide flat ellipse, and lets it ride over the
-        // neighbours while it moves, like the reference app's.
-        let width = min(max(30, pitch * 1.35), container.bounds.width - 8)
-        let item = container.convert(buttons[index].frame, from: tabBar)
-        let height = min(container.bounds.height * 0.9, container.bounds.height - 4)
+        // The same sliver all round: the height leaves it above and below, and
+        // the first and last tabs keep it from the capsule's own ends. In
+        // between, the pill is centred on its tab.
+        let gap: CGFloat = 3
+        let width = min(max(30, pitch * 1.35), container.bounds.width - gap * 2)
+        let height = max(20, container.bounds.height - gap * 2)
         guard width > 30, height > 10 else { return }
-        var y = item.midY - height / 2
-        y = max(2, min(container.bounds.height - height - 2, y))
-        let target = CGRect(x: item.midX - width / 2, y: y, width: width, height: height)
+        let item = container.convert(buttons[index].frame, from: tabBar)
+        var x = item.midX - width / 2
+        if index == 0 { x = gap }
+        if index == count - 1 { x = container.bounds.width - gap - width }
+        let target = CGRect(x: x, y: gap, width: width, height: height)
         pill.backgroundColor = selectionPillColor()
         if animated {
             UIView.animate(withDuration: 0.45,
