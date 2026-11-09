@@ -496,7 +496,13 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             SileoActionMenuItem(title: action.title,
                                 image: action.image,
                                 destructive: action.attributes.contains(.destructive),
-                                handler: { action.perform() })
+                                handler: {
+                                    // UIMenuLeaf's own way to run an action, which is
+                                    // what the system menu does when the row is picked.
+                                    _ = action.perform(NSSelectorFromString("performWithSender:target:"),
+                                                       with: nil,
+                                                       with: nil)
+                                })
         }
         let windowPoint = collectionView.convert(point, to: nil)
         let source = CGRect(x: windowPoint.x - 22, y: windowPoint.y - 10, width: 44, height: 20)
