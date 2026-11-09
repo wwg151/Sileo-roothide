@@ -258,10 +258,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             popupLock.signal()
         }
         
-        // The bar stays out of sight until the window has finished closing; it
-        // is not laid out again, so it comes back exactly as install drew it.
+        // The bar stays in place and only transparent while the window closes;
+        // it is what the window lands on.
         TabBarController.popupIsOpen = false
-        popupBar.isHidden = true
+        popupBar.isHidden = false
+        popupBar.alpha = 0
         popupBarHiddenAt = nil
         tabBar.isHidden = false
         applyFloatingStyle()
@@ -271,6 +272,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             self.popupBarHiddenAt = nil
             self.applyFloatingStyle()
             self.popupBar.isHidden = false
+            self.popupBar.alpha = 1
             completion?()
         })
     }
@@ -941,9 +943,12 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            willClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
-        // Same reason as the chevron: out of sight until the window is gone.
+        // The bar has to be there, in its own frame, for the window to land on
+        // it — hidden, the window stops halfway and leaves its top behind. It
+        // is kept transparent meanwhile so none of that landing is seen.
         TabBarController.popupIsOpen = false
-        popupBar.isHidden = true
+        popupBar.isHidden = false
+        popupBar.alpha = 0
         popupBarHiddenAt = nil
         tabBar.isHidden = false
         applyFloatingStyle()
@@ -957,6 +962,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         tabBar.isHidden = false
         applyFloatingStyle()
         popupBar.isHidden = false
+        popupBar.alpha = 1
     }
 
     /// The popup state the framework reports does not change on every route
@@ -980,12 +986,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             popupBarHiddenAt = Date()
         } else {
             popupBarHiddenAt = nil
+            // Present but unseen, so the window has something to land on.
+            popupBar.isHidden = false
+            popupBar.alpha = 0
             applyFloatingStyle()
-            // Shown once the window has finished closing, not while it slides.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 guard let self = self, !TabBarController.popupIsOpen else { return }
                 self.applyFloatingStyle()
                 self.popupBar.isHidden = false
+                self.popupBar.alpha = 1
             }
         }
     }
