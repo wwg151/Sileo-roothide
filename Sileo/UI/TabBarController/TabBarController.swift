@@ -548,10 +548,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private func restoreFloatingTabBarAfterClose() {
         floatingRetryCount = 0
         applyFloatingStyle()
+        // The window laid the bar out again while it was open, and its title
+        // view with it: the inset is put back on the bar that is there now.
+        TabBarController.applyFloatingPopupContentInset(to: popupBar)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self = self, !TabBarController.popupIsOpen else { return }
             self.floatingRetryCount = 0
             self.applyFloatingStyle()
+            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
         }
     }
 
