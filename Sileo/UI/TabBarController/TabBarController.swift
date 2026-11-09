@@ -626,6 +626,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     private var floatingRetryCount = 0
     private var floatingBackground: UIView?
+    /// The highlight that rides with the selected tab, drawn over the capsule.
+    private var selectionPill: UIView?
     private var floatingAppearance: UITabBarAppearance?
     private var floatingItemWidth: CGFloat = 0
     private var floatingRefreshPending = false
@@ -699,6 +701,56 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let index = self.selectedIndex
         guard index < buttons.count, let icon = iconImageView(in: buttons[index]) else { return }
         playIconAnimation(for: index, on: icon)
+        positionSelectionPill(animated: true)
+    }
+
+    /// The highlight behind the selected tab: a pill of our own, drawn over the
+    /// capsule, so it can slide from one tab to the next.
+    private func ensureSelectionPill(in container: UIView, above blur: UIView) {
+        guard selectionPill == nil else { return }
+        let pill = UIView()
+        pill.isUserInteractionEnabled = false
+        pill.backgroundColor = selectionPillColor()
+        container.insertSubview(pill, aboveSubview: blur)
+        selectionPill = pill
+    }
+
+    private func selectionPillColor() -> UIColor {
+        if traitCollection.userInterfaceStyle == .dark {
+            return UIColor.white.withAlphaComponent(0.12)
+        }
+        return UIColor.tertiarySystemFill.withAlphaComponent(0.8)
+    }
+
+    /// Puts the pill on the selected tab, springing over from the old one when
+    /// the tab changed.
+    private func positionSelectionPill(animated: Bool) {
+        guard isFloatingEnabled,
+              let container = floatingBackground,
+              let pill = selectionPill,
+              !container.isHidden,
+              container.bounds.width > 0 else {
+            return
+        }
+        let buttons = buttonsSortedByX()
+        let index = selectedIndex
+        guard index < buttons.count else { return }
+        let target = container.convert(buttons[index].frame, from: tabBar).insetBy(dx: 4, dy: 2.5)
+        guard target.width > 10, target.height > 10 else { return }
+        pill.backgroundColor = selectionPillColor()
+        if animated {
+            UIView.animate(withDuration: 0.45,
+                           delay: 0,
+                           usingSpringWithDamping: 0.8,
+                           initialSpringVelocity: 0,
+                           options: [.beginFromCurrentState, .allowUserInteraction]) {
+                pill.frame = target
+                pill.layer.cornerRadius = target.height / 2
+            }
+        } else {
+            pill.frame = target
+            pill.layer.cornerRadius = target.height / 2
+        }
     }
 
     // Per-tab icon animations: featured, changes, sources, packages, search
@@ -736,6 +788,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             if let container = floatingBackground {
                 container.removeFromSuperview()
                 floatingBackground = nil
+                selectionPill = nil
                 floatingAppearance = nil
                 floatingItemWidth = 0
                 floatingRefreshPending = false
@@ -841,6 +894,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         blur.layer.cornerRadius = barHeight / 2
         container.layer.shadowPath = UIBezierPath(roundedRect: container.bounds, cornerRadius: barHeight / 2).cgPath
         self.tabBar.sendSubviewToBack(container)
+        ensureSelectionPill(in: container, above: blur)
+        positionSelectionPill(animated: false)
 
         // The system adds its own padding between items, so measure the real pitch
         // and correct itemWidth until five items evenly fill the capsule with a small side margin
