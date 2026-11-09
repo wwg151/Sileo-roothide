@@ -309,6 +309,16 @@
 "Batch_Import_Packages_Reading" = "正在读取插件…";
 "Batch_Import_Packages_Queued" = "已加入队列 %lu 个插件";
 
+/* 移除越狱源记录 */
+"Removed_Sources_Title" = "移除越狱源记录";
+"Removed_Sources_Header_Count" = "共 %lu 个已移除的越狱源，勾选后点下方按钮即可加回。";
+"Removed_Sources_Empty" = "还没有记录。左滑移除的越狱源会保存在这里，可随时加回。";
+"Removed_Sources_Add" = "添加到越狱源";
+"Removed_Sources_Add_Count" = "添加 %lu 个越狱源";
+"Removed_Sources_Forget" = "删除记录";
+"Removed_Sources_Add_Failed" = "所选越狱源无法添加。";
+"Select_All" = "全选";
+
 /* 备份恢复 */
 "Backup_Restore" = "备份恢复";
 "Backup_All_Packages" = "全部插件备份";

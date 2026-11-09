@@ -281,9 +281,12 @@ final class SourcesViewController: SileoViewController {
                     let removeBrokenAction = UIAction(title: String(localizationKey: "Remove_Broken_Sources"), image: .init(systemName: "wand.and.rays"), attributes: .destructive) { _ in
                         self.removeBrokenSources()
                     }
+                    let removedSourcesAction = UIAction(title: String(localizationKey: "Removed_Sources_Title"), image: .init(systemName: "clock.arrow.circlepath")) { _ in
+                        self.presentRemovedSources()
+                    }
                     let removeBrokenMenu = UIMenu(title: "", options: .displayInline, children: [removeBrokenAction])
                     
-                    let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"), children: [promptAddRepoAction, importReposAction, importPackagesAction, removeBrokenMenu])
+                    let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"), children: [promptAddRepoAction, importReposAction, importPackagesAction, removedSourcesAction, removeBrokenMenu])
                     // no primary action: a tap opens the menu, "Add Source" in it opens the add source prompt
                     plusItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
                 } else {
@@ -850,6 +853,46 @@ final class SourcesViewController: SileoViewController {
         present(alert, animated: true)
     }
     
+    /// The sources taken off the list with a swipe, shown as a sheet so one or
+    /// several of them can be put back.
+    private func presentRemovedSources() {
+        let picker = RemovedSourcesViewController()
+        picker.onAdd = { [weak self] sources in
+            self?.restoreRemovedSources(sources)
+        }
+        let nav = UINavigationController(rootViewController: picker)
+        nav.modalPresentationStyle = .pageSheet
+        if let sheet = nav.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(nav, animated: true)
+    }
+
+    /// Adds the picked sources back and shows them straight away.
+    private func restoreRemovedSources(_ sources: [RemovedSource]) {
+        var added: [Repo] = []
+        for source in sources {
+            guard let url = URL(string: source.url) else { continue }
+            if let repo = RepoManager.shared.addDistRepo(url: url,
+                                                         suites: source.suite,
+                                                         components: source.components.joined(separator: " ")) {
+                added.append(repo)
+            }
+        }
+        RemovedSourcesStore.shared.forget(sources)
+        reloadData()
+        if !added.isEmpty {
+            updateSpecific(added)
+        }
+        updateFooterCount()
+        NotificationCenter.default.post(name: PackageListManager.reloadNotification, object: nil)
+        if added.isEmpty {
+            showSimpleAlert(title: String(localizationKey: "Removed_Sources_Title"),
+                            message: String(localizationKey: "Removed_Sources_Add_Failed"))
+        }
+    }
+
     private func removeBrokenSources() {
         let title = String(localizationKey: "Remove_Broken_Sources")
         guard PackageListManager.shared.isLoaded, !inRefreshing, updatingRepoList.isEmpty else {
@@ -1101,6 +1144,9 @@ final class SourcesViewController: SileoViewController {
         }
         
         let repo = self.sortedRepoList[indexPath.row]
+        // Remembered before it goes, so a swipe by mistake can be undone from
+        // the add menu.
+        RemovedSourcesStore.shared.record(repo)
         RepoManager.shared.remove(repo: repo)
         tableView.deleteRows(at: [indexPath], with: .fade)
         self.reSortList()
