@@ -742,13 +742,16 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let pitch = count > 1
             ? (buttons[count - 1].frame.midX - buttons[0].frame.midX) / CGFloat(count - 1)
             : buttons[index].frame.width
-        // One size for every tab: the room between two neighbours' centres,
-        // negligibly inset, centred on the selected one.
-        let width = max(30, pitch - 6)
+        // One size for every tab: nearly the full room between two neighbours'
+        // centres, and almost as tall as the capsule — the reference app's pill
+        // leaves only a sliver around it.
+        let width = max(30, pitch - 2)
         let item = container.convert(buttons[index].frame, from: tabBar)
-        let height = min(container.bounds.height * 0.62, max(30, item.height))
+        let height = min(container.bounds.height * 0.78, container.bounds.height - 6)
         guard width > 30, height > 10 else { return }
-        let target = CGRect(x: item.midX - width / 2, y: item.midY - height / 2, width: width, height: height)
+        var y = item.midY - height / 2
+        y = max(3, min(container.bounds.height - height - 3, y))
+        let target = CGRect(x: item.midX - width / 2, y: y, width: width, height: height)
         pill.backgroundColor = selectionPillColor()
         if animated {
             UIView.animate(withDuration: 0.45,
