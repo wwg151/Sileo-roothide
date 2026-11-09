@@ -907,11 +907,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     /// The popup state the framework reports does not change on every route
-    /// into the window, so the window is measured instead: an open one fills
-    /// the screen, a closed one has no height. The queue bar and the tab bar
-    /// step aside while it is open, and come back when it closes.
+    /// into the window, so the window is measured instead: an open one has its
+    /// top edge at the top of the screen, a closed one sits at the bottom. The
+    /// queue bar and the tab bar step aside while it is open, and come back
+    /// when it closes.
     private func updatePopupOpenState() {
-        let open = popupIsPresented && popupContentView.bounds.height > view.bounds.height * 0.5
+        // The window's top edge, not its height: while it closes the content
+        // view keeps its height for a moment, which made the bar believe the
+        // window was still open and stripped its capsule.
+        let open = popupIsPresented && popupContentView.frame.minY < view.bounds.height * 0.5
         guard open != TabBarController.popupIsOpen else { return }
         TabBarController.popupIsOpen = open
         popupBar.isHidden = open
@@ -932,7 +936,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private func schedulePopupBarRefresh() {
         for delay in [0.45, 1.2] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self = self, self.popupIsPresented, !TabBarController.popupIsOpen else { return }
+                guard let self = self, self.popupIsPresented else { return }
+                self.updatePopupOpenState()
+                guard !TabBarController.popupIsOpen else { return }
                 self.popupContentView.setNeedsLayout()
                 self.popupContentView.layoutIfNeeded()
                 self.view.setNeedsLayout()
