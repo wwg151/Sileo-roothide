@@ -7,6 +7,9 @@
 //
 
 #define WHITE_BLUR_TAG ((long)0x70757265)
+// A blur with this tag keeps the system's own material instead of the white
+// wash: the menus' glass cards use it.
+#define GLASS_BLUR_TAG ((long)0x676c6173)
 
 @interface UIView (Hairline)
 

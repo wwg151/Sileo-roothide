@@ -101,6 +101,8 @@ final class SileoActionMenu: UIViewController {
         view.addSubview(card)
 
         let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+        // Tagged so the white-blur hook leaves it as real glass.
+        glass.tag = GLASS_BLUR_TAG
         glass.isUserInteractionEnabled = false
         glass.layer.cornerRadius = 16
         glass.layer.cornerCurve = .continuous
@@ -184,9 +186,9 @@ final class SileoActionMenu: UIViewController {
     /// The thin white veil that turns the blur into white glass.
     private func glassVeilColor() -> UIColor {
         if traitCollection.userInterfaceStyle == .dark {
-            return UIColor.white.withAlphaComponent(0.06)
+            return UIColor.white.withAlphaComponent(0.05)
         }
-        return UIColor.white.withAlphaComponent(0.38)
+        return UIColor.white.withAlphaComponent(0.18)
     }
 
     private func positionCard() {

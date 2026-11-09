@@ -20,6 +20,14 @@ hook(_UIVisualEffectSubview)
 - (void)setFilters:(NSArray *)filters {
     if (@available(iOS 13, *)){
         if ([self isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) {
+            // A glass blur keeps the system's own material: no wash, no filters
+            // taken away, so what is behind it really shows through.
+            for (UIView *search = (UIView *)self; search; search = search.superview) {
+                if (search.tag == GLASS_BLUR_TAG) {
+                    _orig(void, filters);
+                    return;
+                }
+            }
             NSMutableArray *filtersMutable = [filters mutableCopy];
             for (_UIVisualEffectFilterEntry *filter in filters){
                 if ([[filter filterName] isEqualToString:@"luminanceCurveMap"] ||
