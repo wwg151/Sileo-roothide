@@ -75,6 +75,9 @@ final class SileoActionMenu: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         positionCard()
+        // The card has no fill of its own, so its shadow needs the shape spelled
+        // out rather than taken from the content.
+        card.layer.shadowPath = UIBezierPath(roundedRect: card.bounds, cornerRadius: 16).cgPath
         if highlighted == nil, let first = rowViews.indices.first {
             pill.frame = rowViews[first].frame.insetBy(dx: 3, dy: 2)
             pill.layer.cornerRadius = 10
@@ -85,7 +88,9 @@ final class SileoActionMenu: UIViewController {
     // MARK: - Build
 
     private func build() {
-        card.backgroundColor = .secondarySystemGroupedBackground
+        // A sheet of white glass: a blur with a thin white veil over it, so the
+        // page shows through the card instead of a solid panel.
+        card.backgroundColor = .clear
         card.layer.cornerRadius = 16
         card.layer.cornerCurve = .continuous
         card.layer.shadowColor = UIColor.black.cgColor
@@ -94,6 +99,20 @@ final class SileoActionMenu: UIViewController {
         card.layer.shadowOffset = CGSize(width: 0, height: 10)
         card.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(card)
+
+        let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+        glass.isUserInteractionEnabled = false
+        glass.layer.cornerRadius = 16
+        glass.layer.cornerCurve = .continuous
+        glass.clipsToBounds = true
+        glass.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(glass)
+
+        let veil = UIView()
+        veil.backgroundColor = glassVeilColor()
+        veil.isUserInteractionEnabled = false
+        veil.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(veil)
 
         rowsStack.axis = .vertical
         rowsStack.spacing = 0
@@ -147,11 +166,27 @@ final class SileoActionMenu: UIViewController {
             leading,
             top,
             card.widthAnchor.constraint(equalToConstant: 264),
+            glass.topAnchor.constraint(equalTo: card.topAnchor),
+            glass.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            glass.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            glass.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            veil.topAnchor.constraint(equalTo: card.topAnchor),
+            veil.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            veil.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            veil.bottomAnchor.constraint(equalTo: card.bottomAnchor),
             rowsStack.topAnchor.constraint(equalTo: card.topAnchor, constant: 4),
             rowsStack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             rowsStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             rowsStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -4)
         ])
+    }
+
+    /// The thin white veil that turns the blur into white glass.
+    private func glassVeilColor() -> UIColor {
+        if traitCollection.userInterfaceStyle == .dark {
+            return UIColor.white.withAlphaComponent(0.06)
+        }
+        return UIColor.white.withAlphaComponent(0.38)
     }
 
     private func positionCard() {
