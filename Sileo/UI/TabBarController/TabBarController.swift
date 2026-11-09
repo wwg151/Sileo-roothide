@@ -725,7 +725,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     /// Puts the pill on the selected tab, springing over from the old one when
-    /// the tab changed.
+    /// the tab changed. It is a wide ellipse: it spans the room between the
+    /// neighbouring items, and meets the round ends of the capsule at the ends.
     private func positionSelectionPill(animated: Bool) {
         guard isFloatingEnabled,
               let container = floatingBackground,
@@ -736,9 +737,22 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         let buttons = buttonsSortedByX()
         let index = selectedIndex
-        guard index < buttons.count else { return }
-        let target = container.convert(buttons[index].frame, from: tabBar).insetBy(dx: 4, dy: 2.5)
-        guard target.width > 10, target.height > 10 else { return }
+        let count = buttons.count
+        guard index < count, count > 0 else { return }
+        let midX = buttons[index].frame.midX
+        let pitch = count > 1
+            ? (buttons[count - 1].frame.midX - buttons[0].frame.midX) / CGFloat(count - 1)
+            : buttons[index].frame.width
+        // The room between the neighbours' centres, nudged clear of them; the
+        // end items reach into the capsule's own rounded end instead.
+        var left = midX - pitch / 2 + 3
+        var right = midX + pitch / 2 - 3
+        if index == 0 { left = container.bounds.minX + 5 }
+        if index == count - 1 { right = container.bounds.maxX - 5 }
+        let item = container.convert(buttons[index].frame, from: tabBar)
+        let height = min(container.bounds.height * 0.62, max(30, item.height))
+        guard left < right, height > 10 else { return }
+        let target = CGRect(x: left, y: item.midY - height / 2, width: right - left, height: height)
         pill.backgroundColor = selectionPillColor()
         if animated {
             UIView.animate(withDuration: 0.45,
