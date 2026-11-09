@@ -719,7 +719,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         if traitCollection.userInterfaceStyle == .dark {
             return UIColor.white.withAlphaComponent(0.12)
         }
-        return UIColor.tertiarySystemFill.withAlphaComponent(0.8)
+        // Already translucent on its own (16% gray in light mode), so the pill
+        // stays flat and light instead of turning solid.
+        return UIColor.secondarySystemFill
     }
 
     /// Puts the pill on the selected tab, springing over from the old one when
