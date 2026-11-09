@@ -392,16 +392,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     private let floatingContentInsetKey = "FloatingTabBarContentInset"
     private var floatingPopupTabBarHeight: CGFloat {
-        // The room the queue bar is given below itself: from the bottom of the
-        // screen to the capsule's top edge. Measured on the capsule itself, so
-        // the bar's bottom lands on it whatever the capsule's height is.
+        // Popup bottom edge should touch the capsule's top edge
         if isFloatingEnabled, let container = floatingBackground, !container.isHidden, container.frame.height > 0 {
-            let capsuleTop = tabBar.frame.minY + container.frame.minY
-            let space = view.bounds.height - capsuleTop
-            if space > 20, space < view.bounds.height * 0.4 {
-                NSLog("SileoLog: floatingPopupTabBarHeight capsuleTop=\(capsuleTop) space=\(space) tabBar=\(self.tabBar.frame.height)")
-                return space
-            }
+            return max(self.tabBar.frame.height, self.tabBar.bounds.height - container.frame.minY)
         }
         return self.tabBar.frame.height
     }
@@ -541,6 +534,25 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.updateCapsuleMask(for: popupBar)
     }
 
+    /// The lift the bar needs so its bottom edge meets the capsule's top edge.
+    /// Measured once and kept in the app's preferences, so a launch reads the
+    /// value instead of working it out again on a bar that is still moving.
+    static var popupBarLift: CGFloat? {
+        get {
+            guard let saved = UserDefaults.standard.object(forKey: "FloatingPopupBarLift") as? NSNumber else {
+                return nil
+            }
+            return CGFloat(saved.doubleValue)
+        }
+        set {
+            if let newValue = newValue {
+                UserDefaults.standard.set(Double(newValue), forKey: "FloatingPopupBarLift")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "FloatingPopupBarLift")
+            }
+        }
+    }
+
     private func updateFloatingPopupOffset() {
         func reset() {
             if self.popupBar.transform != .identity {
@@ -571,16 +583,32 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         applyFloatingPopupShape()
-        reset()
-        // The bar is not moved by us: the room it is given below itself is set
-        // once, on the bar itself, so the framework docks it on the capsule's
-        // top edge and it is already there before it is shown.
-        let height = floatingPopupTabBarHeight
-        if abs(popupBar.tabBarHeight - height) > 0.5 {
-            popupBar.tabBarHeight = height
-            popupBar.setNeedsLayout()
-            NSLog("SileoLog: queue tabBarHeight=\(height) barFrame=\(self.popupBar.frame) container=\(container.frame)")
+        // The distance from the bar's bottom edge to the capsule's top edge is
+        // measured once, kept, and read from then on — so the bar is already in
+        // its place when it appears, on every launch.
+        let savedHeight = UserDefaults.standard.double(forKey: "FloatingPopupBarLiftHeight")
+        var lift = TabBarController.popupBarLift
+        if lift == nil || abs(savedHeight - Double(view.bounds.height)) > 0.5 {
+            lift = measurePopupBarLift(on: container)
         }
+        let target = CGAffineTransform(translationX: 0, y: -(lift ?? 0))
+        if popupBar.transform != target {
+            popupBar.transform = target
+        }
+    }
+
+    /// Measures the lift on a bar that is already laid out and keeps it.
+    private func measurePopupBarLift(on container: UIView) -> CGFloat {
+        let previous = popupBar.transform
+        popupBar.transform = .identity
+        let capsuleTop = container.convert(CGPoint.zero, to: nil).y
+        let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
+        popupBar.transform = previous
+        let lift = max(0, barBottom - capsuleTop)
+        TabBarController.popupBarLift = lift
+        UserDefaults.standard.set(Double(view.bounds.height), forKey: "FloatingPopupBarLiftHeight")
+        NSLog("SileoLog: popupBarLift=\(lift) capsuleTop=\(capsuleTop) barBottom=\(barBottom)")
+        return lift
     }
     private var floatingRetryCount = 0
     private var floatingBackground: UIView?
