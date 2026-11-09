@@ -16,8 +16,9 @@ class SourcesTableViewCell: BaseSubtitleTableViewCell {
     public weak var repo: Repo? = nil {
         didSet {
             if let repo = repo {
-                let pinned = PinnedSources.shared.isPinned(repo)
-                self.title = pinned ? "📌 " + repo.displayName : repo.displayName
+                // Pinned sources are kept on top by their order; the title is
+                // left as it is.
+                self.title = repo.displayName
                 self.subtitle = repo.displayURL
                 self.progress = repo.totalProgress
                 self.image(repo)

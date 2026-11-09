@@ -91,6 +91,11 @@ final class SourcesViewController: SileoViewController {
         refreshControl.addTarget(self, action: #selector(refreshSources(_:)), for: .valueChanged)
         
         self.title = String(localizationKey: "Sources_Page")
+        // iOS 15 adds padding above every section header of its own; with the
+        // header gone that padding was the gap under the all-packages row.
+        if #available(iOS 15.0, *) {
+            tableView.sectionHeaderTopPadding = 0
+        }
         tableView.register(SourcesTableViewFooter.self, forHeaderFooterViewReuseIdentifier: "Sileo.SourcesTableViewFooter")
         
         updateSileoColors()
