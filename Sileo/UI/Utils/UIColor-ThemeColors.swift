@@ -46,8 +46,10 @@ extension UIColor {
         SileoThemeManager.shared.currentTheme.highlightColor ?? UIColor(white: 0.9, alpha: 1)
     }
     
+    /// No separators anywhere: the lists are told apart by spacing and their own
+    /// headers, so the colour every table asks for is clear.
     static var sileoSeparatorColor: UIColor {
-        SileoThemeManager.shared.currentTheme.seperatorColor ?? UIColor(red: 234.0/255.0, green: 234.0/255.0, blue: 236.0/255.0, alpha: 1)
+        .clear
     }
     
     static var sileoHeaderColor: UIColor {

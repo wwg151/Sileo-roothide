@@ -769,10 +769,6 @@ extension DownloadsTableViewController: UITableViewDataSource {
                     titleView.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 16),
                     titleView.heightAnchor.constraint(equalToConstant: titleView.frame.size.height)
                     ])
-                
-                let separatorView = SileoSeparatorView(frame: CGRect(x: 16, y: 35, width: 304, height: 1))
-                separatorView.autoresizingMask = .flexibleWidth
-                headerView.addSubview(separatorView)
             }
             return headerView
         }

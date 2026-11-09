@@ -281,6 +281,9 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
         
         UICollectionView.appearance().tintColor = tintColor
         UITableView.appearance().tintColor = tintColor
+        // No hairlines between rows anywhere in the app: the lists are told
+        // apart by spacing and their own headers instead.
+        UITableView.appearance().separatorColor = .clear
         DepictionBaseView.appearance().tintColor = tintColor
         self.window?.tintColor = tintColor
     }
