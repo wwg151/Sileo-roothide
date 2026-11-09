@@ -262,33 +262,9 @@ final class SourcesViewController: SileoViewController {
             } else {
                 nav.leftBarButtonItem = UIBarButtonItem(title: String(localizationKey: "Edit"), style: .done, target: self, action: #selector(self.toggleEditing(_:)))
                 let plusItem: UIBarButtonItem
-                if #available(iOS 14.0, *) {
-                    let promptAddRepoAction = UIAction(title: String(localizationKey: "Add_Source.Button.Add"), image: .init(systemName: "plus.circle")) { _ in
-                        self.addSource(nil)
-                    }
-                    
-                    let importReposAction = UIAction(title: String(localizationKey: "Import_Sources_File"), image: .init(systemName: "archivebox")) { _ in
-                        self.promptImportRepos()
-                    }
-
-                    let importPackagesAction = UIAction(title: String(localizationKey: "Batch_Import_Packages"), image: .init(systemName: "tray.and.arrow.down")) { _ in
-                        self.promptImportPackages()
-                    }
-                    
-                    let removeBrokenAction = UIAction(title: String(localizationKey: "Remove_Broken_Sources"), image: .init(systemName: "wand.and.rays"), attributes: .destructive) { _ in
-                        self.removeBrokenSources()
-                    }
-                    let removedSourcesAction = UIAction(title: String(localizationKey: "Removed_Sources_Title"), image: .init(systemName: "clock.arrow.circlepath")) { _ in
-                        self.presentRemovedSources()
-                    }
-                    let removeBrokenMenu = UIMenu(title: "", options: .displayInline, children: [removeBrokenAction])
-                    
-                    let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"), children: [promptAddRepoAction, importReposAction, importPackagesAction, removedSourcesAction, removeBrokenMenu])
-                    // no primary action: a tap opens the menu, "Add Source" in it opens the add source prompt
-                    plusItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
-                } else {
-                    plusItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.presentAddRepoOptions))
-                }
+                // The menu is drawn by Sileo itself: one card, no separators,
+                // and a highlight that slides from row to row.
+                plusItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.presentAddSourceMenu(_:)))
                 // The search sits to the left of the add button.
                 nav.rightBarButtonItems = [plusItem, self.sourceSearchItem()]
             }
@@ -811,6 +787,33 @@ final class SourcesViewController: SileoViewController {
         if skipped > 0 {
             NSLog("SileoLog: batchImport queued \(packages.count), skipped \(skipped)")
         }
+    }
+
+    /// The add menu, drawn by Sileo itself: one card without separators, and a
+    /// highlight pill that slides between the rows.
+    @objc private func presentAddSourceMenu(_ sender: UIBarButtonItem) {
+        let items = [
+            SileoActionMenuItem(title: String(localizationKey: "Add_Source.Button.Add"), imageName: "plus.circle", destructive: false) { [weak self] in
+                self?.addSource(nil)
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Import_Sources_File"), imageName: "archivebox", destructive: false) { [weak self] in
+                self?.promptImportRepos()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Batch_Import_Packages"), imageName: "tray.and.arrow.down", destructive: false) { [weak self] in
+                self?.promptImportPackages()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Removed_Sources_Title"), imageName: "clock.arrow.circlepath", destructive: false) { [weak self] in
+                self?.presentRemovedSources()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Remove_Broken_Sources"), imageName: "wand.and.rays", destructive: true) { [weak self] in
+                self?.removeBrokenSources()
+            }
+        ]
+        let frame = sender.view?.superview?.convert(sender.view?.frame ?? .zero, to: nil)
+        let menu = SileoActionMenu(header: String(localizationKey: "Add_Source.Title"),
+                                   items: items,
+                                   sourceFrame: frame)
+        present(menu, animated: true)
     }
 
     @objc private func presentAddRepoOptions() {

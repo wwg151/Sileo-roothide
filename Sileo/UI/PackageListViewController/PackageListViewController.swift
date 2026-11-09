@@ -170,12 +170,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             backupButton.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
             backupButton.accessibilityLabel = String(localizationKey: "Backup_Restore")
             backupButton.addTarget(self, action: #selector(self.pressBackupButton(_:)), for: .touchDown)
-            if #available(iOS 14.0, *) {
-                backupButton.menu = self.backupMenu()
-                backupButton.showsMenuAsPrimaryAction = true
-            } else {
-                backupButton.addTarget(self, action: #selector(self.presentBackupMenu(_:)), for: .touchUpInside)
-            }
+            // The menu is Sileo's own card: no separators, and a highlight that
+            // slides between the rows.
+            backupButton.addTarget(self, action: #selector(self.presentBackupMenu(_:)), for: .touchUpInside)
             self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: backupButton)
         }
         
@@ -479,43 +476,43 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {
-        let alert = UIAlertController(
-            title: String(localizationKey: "Backup_Restore"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_All_Packages"), style: .default) { [weak self] _ in
-            self?.backupAllPackages()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Select_Packages"), style: .default) { [weak self] _ in
-            self?.backupSelectedPackages()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Configuration"), style: .default) { [weak self] _ in
-            self?.backupConfiguration()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Sources"), style: .default) { [weak self] _ in
-            self?.backupSources()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_All_Packages"), style: .default) { [weak self] _ in
-            self?.restoreAllPackages()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Configuration"), style: .default) { [weak self] _ in
-            self?.restoreConfiguration()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Sources"), style: .default) { [weak self] _ in
-            self?.restoreSources()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_View"), style: .default) { [weak self] _ in
-            self?.openBackupsInFilza()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Clear"), style: .destructive) { [weak self] _ in
-            self?.presentClearBackupsMenu()
-        })
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            popover.barButtonItem = navigationItem.rightBarButtonItem
+        let items = [
+            SileoActionMenuItem(title: String(localizationKey: "Backup_All_Packages"), imageName: "archivebox", destructive: false) { [weak self] in
+                self?.backupAllPackages()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Select_Packages"), imageName: "checkmark.circle", destructive: false) { [weak self] in
+                self?.backupSelectedPackages()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Configuration"), imageName: "gearshape", destructive: false) { [weak self] in
+                self?.backupConfiguration()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Sources"), imageName: "tray.and.arrow.down", destructive: false) { [weak self] in
+                self?.backupSources()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Restore_All_Packages"), imageName: "arrow.down.circle", destructive: false) { [weak self] in
+                self?.restoreAllPackages()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Restore_Configuration"), imageName: "arrow.clockwise.circle", destructive: false) { [weak self] in
+                self?.restoreConfiguration()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Restore_Sources"), imageName: "tray.and.arrow.up", destructive: false) { [weak self] in
+                self?.restoreSources()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_View"), imageName: "folder", destructive: false) { [weak self] in
+                self?.openBackupsInFilza()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Clear"), imageName: "trash", destructive: true) { [weak self] in
+                self?.presentClearBackupsMenu()
+            }
+        ]
+        var frame: CGRect?
+        if let button = sender as? UIButton, let superview = button.superview {
+            frame = superview.convert(button.frame, to: nil)
         }
-        present(alert, animated: true)
+        let menu = SileoActionMenu(header: String(localizationKey: "Backup_Restore"),
+                                   items: items,
+                                   sourceFrame: frame)
+        present(menu, animated: true)
     }
 
     private func backupAllPackages() {
