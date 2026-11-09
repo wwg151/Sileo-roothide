@@ -253,6 +253,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             popupLock.signal()
         }
         
+        // The window closes onto the bar, so the bar has to be there while it
+        // lands; without it the window keeps its last frame at the bottom.
+        TabBarController.popupIsOpen = false
+        popupBar.isHidden = false
+        popupBarHiddenAt = nil
+        tabBar.alpha = 1
+        applyFloatingStyle()
+
         self.closePopup(animated: true, completion: {
             // The chevron at the top of the window closes it through here, and
             // the bar has to come back with it.
@@ -894,6 +902,17 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
+                                           willClosePopupWithContentController popupContentController: UIViewController,
+                                           animated: Bool) {
+        // Same reason as the chevron: the window lands on the bar.
+        TabBarController.popupIsOpen = false
+        popupBar.isHidden = false
+        popupBarHiddenAt = nil
+        tabBar.alpha = 1
+        applyFloatingStyle()
+    }
+
+    @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            didClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
         TabBarController.popupIsOpen = false
@@ -912,7 +931,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         guard open != TabBarController.popupIsOpen else { return }
         TabBarController.popupIsOpen = open
         popupBar.isHidden = open
-        tabBar.isHidden = open
+        tabBar.alpha = open ? 0 : 1
         if open {
             popupBarHiddenAt = Date()
             removePopupCapsule()
@@ -923,12 +942,16 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
     }
 
-    /// The bar is laid out again once the window's closing animation is over:
-    /// its capsule and its title inset are measured from a frame that is still
-    /// moving while it comes back.
+    /// The window and the bar are laid out again once the closing animation is
+    /// over: both are measured while their frames are still moving, which is
+    /// why the window's controls and the bar's capsule were left behind.
     private func schedulePopupBarRefresh() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
             guard let self = self, self.popupIsPresented, !TabBarController.popupIsOpen else { return }
+            self.popupContentView.setNeedsLayout()
+            self.popupContentView.layoutIfNeeded()
+            self.view.setNeedsLayout()
+            self.view.layoutIfNeeded()
             self.popupBar.isHidden = false
             self.popupBar.setNeedsLayout()
             self.popupBar.layoutIfNeeded()
