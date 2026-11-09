@@ -91,10 +91,10 @@ final class SourcesViewController: SileoViewController {
         refreshControl.addTarget(self, action: #selector(refreshSources(_:)), for: .valueChanged)
         
         self.title = String(localizationKey: "Sources_Page")
-        // The list's own title is the one shown above the sources; the page's
-        // title at the top of the screen is left out.
+        // The list carries its own title above the sources, so the page has
+        // none at the top: the first row sits right under the toolbar.
         self.navigationItem.largeTitleDisplayMode = .never
-        self.navigationItem.titleView = UIView(frame: .zero)
+        self.navigationItem.title = ""
         tableView.register(SourcesTableViewFooter.self, forHeaderFooterViewReuseIdentifier: "Sileo.SourcesTableViewFooter")
         
         updateSileoColors()
