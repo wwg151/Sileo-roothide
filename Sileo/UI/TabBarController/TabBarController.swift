@@ -422,19 +422,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             if name.contains("Image") || name.contains("Effect") || name.contains("Background") {
                 continue
             }
-            let applied = objc_getAssociatedObject(sub, &popupTitleShiftKey) as? NSValue
-            if let applied = applied, applied.cgRectValue.equalTo(sub.frame) {
+            // Where the bar itself lays this view out: a transform is kept by
+            // every later layout pass, so the title is moved once and stays
+            // there instead of being moved again on each pass.
+            let naturalMinX = sub.center.x - sub.bounds.width / 2
+            let delta = target - naturalMinX
+            guard delta > 0.5, sub.bounds.width > target + 40 else { continue }
+            let applied = objc_getAssociatedObject(sub, &popupTitleShiftKey) as? NSNumber
+            if let applied = applied, abs(applied.doubleValue - Double(delta)) < 0.5 {
                 continue
             }
-            var frame = sub.frame
-            let delta = target - frame.minX
-            guard delta > 0.5, frame.width > target + 40 else { continue }
-            frame.origin.x = target
-            frame.size.width -= delta
             UIView.performWithoutAnimation {
-                sub.frame = frame
+                sub.transform = CGAffineTransform(translationX: delta, y: 0)
             }
-            objc_setAssociatedObject(sub, &popupTitleShiftKey, NSValue(cgRect: frame), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(sub, &popupTitleShiftKey, NSNumber(value: Double(delta)), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         }
     }
 
@@ -528,6 +529,12 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.updateCapsuleMask(for: popupBar)
     }
 
+    /// The distance the bar is lifted, measured once when it first appears and
+    /// then only read: measuring it again while the bar came back was what
+    /// moved it up a moment after the window closed.
+    static var popupBarLift: CGFloat?
+    static var popupBarLiftSize: CGSize = .zero
+
     private func updateFloatingPopupOffset() {
         func reset() {
             if self.popupBar.transform != .identity {
@@ -541,6 +548,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         guard isFloatingEnabled else {
             reset()
             resetFloatingPopupShape()
+            TabBarController.popupBarLift = nil
             return
         }
         // While the queue is open as a window the bar belongs to the framework:
@@ -558,18 +566,21 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         applyFloatingPopupShape()
-        // Measure without the shift applied, or repeated passes would stack it
-        let previous = popupBar.transform
-        popupBar.transform = .identity
-        let capsuleTop = container.convert(CGPoint.zero, to: nil).y
-        let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
-        let shift = max(0, barBottom - capsuleTop)
-        // Only move when it is not already where it belongs: re-setting the
-        // same translation after the window closed was the visible adjustment.
-        if abs(previous.ty + shift) > 0.5 {
-            popupBar.transform = CGAffineTransform(translationX: 0, y: -shift)
-        } else {
+        // Measured once, when the bar first appears; afterwards the saved
+        // distance is used as it is.
+        if TabBarController.popupBarLift == nil
+            || TabBarController.popupBarLiftSize != view.bounds.size {
+            let previous = popupBar.transform
+            popupBar.transform = .identity
+            let capsuleTop = container.convert(CGPoint.zero, to: nil).y
+            let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
+            TabBarController.popupBarLift = max(0, barBottom - capsuleTop)
+            TabBarController.popupBarLiftSize = view.bounds.size
             popupBar.transform = previous
+        }
+        let target = CGAffineTransform(translationX: 0, y: -(TabBarController.popupBarLift ?? 0))
+        if popupBar.transform != target {
+            popupBar.transform = target
         }
     }
     private var floatingRetryCount = 0
