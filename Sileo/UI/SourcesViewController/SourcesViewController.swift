@@ -1420,36 +1420,33 @@ extension SourcesViewController: UITableViewDataSource { // UITableViewDataSourc
     }
     
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        return (section == 1) ? String(localizationKey: "Repos") : nil
+        // The sources list has no title of its own: it starts right under the
+        // "all packages" row.
+        return nil
     }
     
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         let text = self.tableView(tableView, titleForHeaderInSection: section)
+        guard let text = text else { return nil }
         let headerView = UIView(frame: CGRect(origin: .zero, size: CGSize(width: 320, height: 36)))
         
-        if let text = text {
-            let headerBlur = UIToolbar(frame: headerView.bounds)
-            headerView.tag = WHITE_BLUR_TAG
-            headerBlur._hidesShadow = true
-            headerBlur.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
-            headerView.addSubview(headerBlur)
-            
-            let titleView = SileoLabelView(frame: CGRect(x: 0, y: 0, width: 320, height: 28))
-            titleView.font = UIFont.systemFont(ofSize: 22, weight: .bold)
-            titleView.text = text
-            titleView.autoresizingMask = [.flexibleWidth]
-            headerView.addSubview(titleView)
-            
-            titleView.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                titleView.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 16),
-                titleView.heightAnchor.constraint(equalToConstant: titleView.frame.size.height)
-                ])
-            
-//            let separatorView = SileoSeparatorView(frame: CGRect(x: 16, y: 35, width: 304, height: 1))
-//            separatorView.autoresizingMask = .flexibleWidth
-//            headerView.addSubview(separatorView)
-        }
+        let headerBlur = UIToolbar(frame: headerView.bounds)
+        headerView.tag = WHITE_BLUR_TAG
+        headerBlur._hidesShadow = true
+        headerBlur.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
+        headerView.addSubview(headerBlur)
+        
+        let titleView = SileoLabelView(frame: CGRect(x: 0, y: 0, width: 320, height: 28))
+        titleView.font = UIFont.systemFont(ofSize: 22, weight: .bold)
+        titleView.text = text
+        titleView.autoresizingMask = [.flexibleWidth]
+        headerView.addSubview(titleView)
+        
+        titleView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            titleView.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 16),
+            titleView.heightAnchor.constraint(equalToConstant: titleView.frame.size.height)
+            ])
         
         return headerView
     }
@@ -1459,7 +1456,9 @@ extension SourcesViewController: UITableViewDataSource { // UITableViewDataSourc
         case 0:
             return 5
         case 1:
-            return 44
+            // No room at all for the removed title: the first source sits right
+            // under the "all packages" row.
+            return 0
         default:
             return 0
         }
@@ -1474,7 +1473,8 @@ extension SourcesViewController: UITableViewDataSource { // UITableViewDataSourc
     }
     
     func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        return (section == 0) ? 2 : 30
+        // Nothing between the "all packages" row and the first source.
+        return (section == 0) ? 0 : 30
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
