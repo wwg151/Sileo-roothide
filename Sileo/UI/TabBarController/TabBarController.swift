@@ -392,9 +392,16 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     private let floatingContentInsetKey = "FloatingTabBarContentInset"
     private var floatingPopupTabBarHeight: CGFloat {
-        // Popup bottom edge should touch the capsule's top edge
+        // The room the queue bar is given below itself: from the bottom of the
+        // screen to the capsule's top edge. Measured on the capsule itself, so
+        // the bar's bottom lands on it whatever the capsule's height is.
         if isFloatingEnabled, let container = floatingBackground, !container.isHidden, container.frame.height > 0 {
-            return max(self.tabBar.frame.height, self.tabBar.bounds.height - container.frame.minY)
+            let capsuleTop = tabBar.frame.minY + container.frame.minY
+            let space = view.bounds.height - capsuleTop
+            if space > 20, space < view.bounds.height * 0.4 {
+                NSLog("SileoLog: floatingPopupTabBarHeight capsuleTop=\(capsuleTop) space=\(space) tabBar=\(self.tabBar.frame.height)")
+                return space
+            }
         }
         return self.tabBar.frame.height
     }
@@ -534,12 +541,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.updateCapsuleMask(for: popupBar)
     }
 
-    /// The distance the bar is lifted, measured once when it first appears and
-    /// then only read: measuring it again while the bar came back was what
-    /// moved it up a moment after the window closed.
-    static var popupBarLift: CGFloat?
-    static var popupBarLiftSize: CGSize = .zero
-
     private func updateFloatingPopupOffset() {
         func reset() {
             if self.popupBar.transform != .identity {
@@ -553,7 +554,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         guard isFloatingEnabled else {
             reset()
             resetFloatingPopupShape()
-            TabBarController.popupBarLift = nil
             return
         }
         // While the queue is open as a window the bar belongs to the framework:
@@ -571,21 +571,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         applyFloatingPopupShape()
-        // Measured once, when the bar first appears; afterwards the saved
-        // distance is used as it is.
-        if TabBarController.popupBarLift == nil
-            || TabBarController.popupBarLiftSize != view.bounds.size {
-            let previous = popupBar.transform
-            popupBar.transform = .identity
-            let capsuleTop = container.convert(CGPoint.zero, to: nil).y
-            let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
-            TabBarController.popupBarLift = max(0, barBottom - capsuleTop)
-            TabBarController.popupBarLiftSize = view.bounds.size
-            popupBar.transform = previous
-        }
-        let target = CGAffineTransform(translationX: 0, y: -(TabBarController.popupBarLift ?? 0))
-        if popupBar.transform != target {
-            popupBar.transform = target
+        reset()
+        // The bar is not moved by us: the room it is given below itself is set
+        // once, on the bar itself, so the framework docks it on the capsule's
+        // top edge and it is already there before it is shown.
+        let height = floatingPopupTabBarHeight
+        if abs(popupBar.tabBarHeight - height) > 0.5 {
+            popupBar.tabBarHeight = height
+            popupBar.setNeedsLayout()
+            NSLog("SileoLog: queue tabBarHeight=\(height) barFrame=\(self.popupBar.frame) container=\(container.frame)")
         }
     }
     private var floatingRetryCount = 0
@@ -998,20 +992,30 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         popupBarRebuilding = true
         popupBarRebuiltAt = Date()
         popupBar.alpha = 0
-        // The lift is measured again on the bar as it is presented now.
-        TabBarController.popupBarLift = nil
         // The very configuration the install path gives it, so its height is
         // the height it had then.
         configurePopupBarForPresentation()
-        dismissPopupBar(animated: false, completion: {
-            self.presentPopupBar(withContentViewController: downloads, animated: false, completion: {
-                self.applyFloatingStyle()
-                self.applyFloatingPopupShape()
-                TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
-                self.popupBar.alpha = 1
-                self.popupBarRebuilding = false
+        // Nothing of this may be animated: the bar has to be in its place, at
+        // its height, before it is seen.
+        UIView.performWithoutAnimation {
+            self.dismissPopupBar(animated: false, completion: {
+                UIView.performWithoutAnimation {
+                    self.presentPopupBar(withContentViewController: downloads, animated: false, completion: {
+                        self.popupBar.layer.removeAllAnimations()
+                        self.applyFloatingStyle()
+                        self.popupBar.tabBarHeight = self.floatingPopupTabBarHeight
+                        self.popupBar.setNeedsLayout()
+                        self.popupBar.layoutIfNeeded()
+                        self.popupBar.layer.removeAllAnimations()
+                        self.applyFloatingPopupShape()
+                        TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
+                        NSLog("SileoLog: queue rebuilt frame=\(self.popupBar.frame) tabBarHeight=\(self.popupBar.tabBarHeight)")
+                        self.popupBar.alpha = 1
+                        self.popupBarRebuilding = false
+                    })
+                }
             })
-        })
+        }
     }
 
     /// The bar is laid out again once the closing animation is over: it is
