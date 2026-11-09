@@ -91,11 +91,10 @@ final class SourcesViewController: SileoViewController {
         refreshControl.addTarget(self, action: #selector(refreshSources(_:)), for: .valueChanged)
         
         self.title = String(localizationKey: "Sources_Page")
-        // iOS 15 adds padding above every section header of its own; with the
-        // header gone that padding was the gap under the all-packages row.
-        if #available(iOS 15.0, *) {
-            tableView.sectionHeaderTopPadding = 0
-        }
+        // The list's own title is the one shown above the sources; the page's
+        // title at the top of the screen is left out.
+        self.navigationItem.largeTitleDisplayMode = .never
+        self.navigationItem.titleView = UIView(frame: .zero)
         tableView.register(SourcesTableViewFooter.self, forHeaderFooterViewReuseIdentifier: "Sileo.SourcesTableViewFooter")
         
         updateSileoColors()
@@ -1425,33 +1424,32 @@ extension SourcesViewController: UITableViewDataSource { // UITableViewDataSourc
     }
     
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        // The sources list has no title of its own: it starts right under the
-        // "all packages" row.
-        return nil
+        return (section == 1) ? String(localizationKey: "Repos") : nil
     }
     
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         let text = self.tableView(tableView, titleForHeaderInSection: section)
-        guard let text = text else { return nil }
         let headerView = UIView(frame: CGRect(origin: .zero, size: CGSize(width: 320, height: 36)))
         
-        let headerBlur = UIToolbar(frame: headerView.bounds)
-        headerView.tag = WHITE_BLUR_TAG
-        headerBlur._hidesShadow = true
-        headerBlur.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
-        headerView.addSubview(headerBlur)
-        
-        let titleView = SileoLabelView(frame: CGRect(x: 0, y: 0, width: 320, height: 28))
-        titleView.font = UIFont.systemFont(ofSize: 22, weight: .bold)
-        titleView.text = text
-        titleView.autoresizingMask = [.flexibleWidth]
-        headerView.addSubview(titleView)
-        
-        titleView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            titleView.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 16),
-            titleView.heightAnchor.constraint(equalToConstant: titleView.frame.size.height)
-            ])
+        if let text = text {
+            let headerBlur = UIToolbar(frame: headerView.bounds)
+            headerView.tag = WHITE_BLUR_TAG
+            headerBlur._hidesShadow = true
+            headerBlur.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
+            headerView.addSubview(headerBlur)
+            
+            let titleView = SileoLabelView(frame: CGRect(x: 0, y: 0, width: 320, height: 28))
+            titleView.font = UIFont.systemFont(ofSize: 22, weight: .bold)
+            titleView.text = text
+            titleView.autoresizingMask = [.flexibleWidth]
+            headerView.addSubview(titleView)
+            
+            titleView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                titleView.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 16),
+                titleView.heightAnchor.constraint(equalToConstant: titleView.frame.size.height)
+                ])
+        }
         
         return headerView
     }
@@ -1461,9 +1459,7 @@ extension SourcesViewController: UITableViewDataSource { // UITableViewDataSourc
         case 0:
             return 5
         case 1:
-            // No room at all for the removed title: the first source sits right
-            // under the "all packages" row.
-            return 0
+            return 44
         default:
             return 0
         }
@@ -1478,8 +1474,7 @@ extension SourcesViewController: UITableViewDataSource { // UITableViewDataSourc
     }
     
     func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        // Nothing between the "all packages" row and the first source.
-        return (section == 0) ? 0 : 30
+        return (section == 0) ? 2 : 30
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
