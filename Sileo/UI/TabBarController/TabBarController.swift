@@ -791,7 +791,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             : container.bounds.width / CGFloat(itemCount)
         // The same sliver all round: the height leaves it above and below, and
         // the first and last tabs keep it from the capsule's own ends. In
-        // between, the pill is centred on its tab.
+        // between, the pill is centred on its tab. The items' side margin is
+        // chosen so the end tabs sit on the middle of those end pills.
         let gap: CGFloat = 3
         let width = min(max(30, pitch * 1.35), container.bounds.width - gap * 2)
         let height = max(20, container.bounds.height - gap * 2)
@@ -981,7 +982,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // and correct itemWidth until five items evenly fill the capsule with a small side margin
         let count = CGFloat(max(self.tabBar.items?.count ?? 1, 1))
         let spacing: CGFloat = 0
-        let sideMargin: CGFloat = 20
+        // The end tabs are meant to sit in the middle of the end pills, which
+        // are pinned to the capsule's ends: 14 points of side margin does that
+        // for five items, where 20 left them too far in.
+        let sideMargin: CGFloat = 14
         let targetPitch = (frame.width - sideMargin * 2) / count
         // Skip correction while a previous change has not been laid out yet, otherwise it would overshoot
         guard !floatingRefreshPending else { return }
