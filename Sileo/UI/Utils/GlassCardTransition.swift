@@ -137,10 +137,7 @@ final class GlassCardAnimator: NSObject, UIViewControllerAnimatedTransitioning {
     }
 
     func animateTransition(using context: UIViewControllerContextTransitioning) {
-        guard let container = context.containerView else {
-            context.completeTransition(false)
-            return
-        }
+        let container = context.containerView
 
         if presenting {
             guard let to = context.view(forKey: .to), let from = context.view(forKey: .from) else {
