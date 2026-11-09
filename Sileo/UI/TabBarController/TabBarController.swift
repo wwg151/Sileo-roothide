@@ -429,6 +429,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private static var popupBarLayoutHooked = false
+    private static var popupDumped = false
 
     /// Temporary: records the whole view tree once the window is open.
     static func dumpWindow(_ view: UIView) {
@@ -600,6 +601,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             UserDefaults.standard.set(Double(floatingReferenceWidth), forKey: floatingBarWidthKey)
         }
         // The window covers the tab bar; it must not fade back in over it.
+        guard !TabBarController.popupIsOpen else { return }
         guard self.tabBar.alpha < 1 else { return }
         UIView.animate(withDuration: 0.2) { self.tabBar.alpha = 1 }
     }
@@ -783,7 +785,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         floatingRetryCount = 0
-        container.isHidden = false
+        container.isHidden = TabBarController.popupIsOpen
         let itemMidY = rowMids.reduce(0, +) / CGFloat(rowMids.count)
         let frame = CGRect(x: floatingInset, y: itemMidY - barHeight / 2, width: self.tabBar.bounds.width - floatingInset * 2, height: barHeight)
         container.frame = frame
@@ -938,6 +940,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 TabBarController.popupIsOpen = true
                 if !popupBar.isHidden {
                     popupBar.isHidden = true
+                }
+                if !TabBarController.popupDumped {
+                    TabBarController.popupDumped = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                        guard let self = self else { return }
+                        TabBarController.dumpWindow(self.view)
+                    }
                 }
             } else if popupBar.isHidden, let hiddenAt = popupBarHiddenAt,
                       Date().timeIntervalSince(hiddenAt) > 1 {
