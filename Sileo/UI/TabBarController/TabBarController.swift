@@ -255,23 +255,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         
         // The window closes onto the bar, so the bar has to be there while it
         // lands; without it the window keeps its last frame at the bottom. It
-        // is invisible meanwhile, and shown only once it is in its place, so
-        // nothing of the way back is seen.
+        // The window closes instantly, so the bar never goes through a moving
+        // state: it is put back in one step, already the capsule it was drawn
+        // as when the queue first appeared.
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
         tabBar.isHidden = false
-        popupBar.alpha = 0
         applyFloatingStyle()
 
-        self.closePopup(animated: true, completion: {
-            // The chevron at the top of the window closes it through here, and
-            // the bar has to come back with it.
+        self.closePopup(animated: false, completion: {
             TabBarController.popupIsOpen = false
             self.popupBar.isHidden = false
             self.popupBarHiddenAt = nil
             self.applyFloatingStyle()
-            self.schedulePopupBarRefresh()
             self.popupBar.alpha = 1
             completion?()
         })
@@ -964,28 +961,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             guard let self = self, self.popupIsPresented else { return }
             self.updatePopupOpenState()
             guard !TabBarController.popupIsOpen else { return }
-            // The same road the queue took when install was first tapped: the
-            // bar goes away and is presented again, so it comes back the way
-            // it was first drawn — already the capsule, nothing adjusting.
-            guard let downloads = self.downloadsController else { return }
-            TabBarController.popupQueue.async {
-                self.popupQueueLock.wait()
-                DispatchQueue.main.async {
-                    if self.popupBar.isHidden {
-                        self.popupBar.isHidden = false
-                    }
-                    self.popupBar.alpha = 0
-                    self.dismissPopupBar(animated: false, completion: {
-                        self.presentPopupBar(withContentViewController: downloads, animated: false, completion: {
-                            self.popupBar.alpha = 1
-                            self.applyFloatingStyle()
-                            self.applyFloatingPopupShape()
-                            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
-                            self.popupQueueLock.signal()
-                        })
-                    })
-                }
+            self.popupBar.isHidden = false
+            self.popupBar.setNeedsLayout()
+            self.popupBar.layoutIfNeeded()
+            if self.isFloatingEnabled {
+                self.applyPopupCapsule()
             }
+            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
+            self.popupBar.alpha = 1
         }
     }
 
