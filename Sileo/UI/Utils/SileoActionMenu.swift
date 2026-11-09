@@ -13,19 +13,23 @@ struct SileoActionMenuItem {
     let title: String
     let image: UIImage?
     let destructive: Bool
+    /// A row that is shown but cannot be picked, like the system's greyed item.
+    let enabled: Bool
     let handler: () -> Void
 
-    init(title: String, image: UIImage?, destructive: Bool, handler: @escaping () -> Void) {
+    init(title: String, image: UIImage?, destructive: Bool, enabled: Bool = true, handler: @escaping () -> Void) {
         self.title = title
         self.image = image
         self.destructive = destructive
+        self.enabled = enabled
         self.handler = handler
     }
 
-    init(title: String, imageName: String?, destructive: Bool, handler: @escaping () -> Void) {
+    init(title: String, imageName: String?, destructive: Bool, enabled: Bool = true, handler: @escaping () -> Void) {
         self.init(title: title,
                   image: imageName.flatMap { UIImage(systemName: $0) },
                   destructive: destructive,
+                  enabled: enabled,
                   handler: handler)
     }
 }
@@ -201,7 +205,7 @@ final class SileoActionMenu: UIViewController {
     }
 
     private func perform(_ index: Int) {
-        guard items.indices.contains(index) else { return }
+        guard items.indices.contains(index), items[index].enabled else { return }
         let handler = items[index].handler
         dismiss(animated: true) {
             handler()
@@ -231,6 +235,10 @@ final class SileoActionMenuRow: UIControl {
         icon.contentMode = .scaleAspectFit
         icon.translatesAutoresizingMaskIntoConstraints = false
         addSubview(icon)
+        if !item.enabled {
+            title.textColor = .tertiaryLabel
+            icon.tintColor = .tertiaryLabel
+        }
 
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 54),

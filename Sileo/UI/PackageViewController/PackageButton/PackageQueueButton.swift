@@ -59,18 +59,12 @@ class PackageQueueButton: PackageButton {
                                                object: nil)
         
         if #available(iOS 14.0, *) {
-            // UIButton.menu shows a plain popup on long press, without the blurred context-menu backdrop
-            menu = UIMenu(children: [
-                UIDeferredMenuElement.uncached { [weak self] completion in
-                    guard let self = self, let package = self.package, !(package.isProvisional ?? false) else {
-                        completion([])
-                        return
-                    }
-                    completion(self.longPressMenuItems(for: package).map { item in
-                        UIAction(title: item.title, image: UIImage(systemName: item.image), attributes: item.enabled ? (item.destructive ? .destructive : []) : .disabled) { _ in item.handler() }
-                    })
-                }
-            ])
+            // A long press on the button opens Sileo's own card: one list, no
+            // separators, and a highlight that slides between the rows.
+            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(PackageQueueButton.presentActionCard(_:)))
+            longPress.minimumPressDuration = 0.4
+            longPress.cancelsTouchesInView = false
+            addGestureRecognizer(longPress)
         } else if #available(iOS 13.0, *) {
             let menuDelegate = PackageQueueMenuDelegate(button: self)
             contextMenuDelegate = menuDelegate
@@ -84,6 +78,34 @@ class PackageQueueButton: PackageButton {
     @objc func longPressed(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
         showLongPressMenu()
+    }
+
+    /// The button's long press: the same actions, in Sileo's own card.
+    @objc private func presentActionCard(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began,
+              let package = package,
+              !(package.isProvisional ?? false) else { return }
+        let items = longPressMenuItems(for: package).map { item in
+            SileoActionMenuItem(title: item.title,
+                                imageName: item.image,
+                                destructive: item.destructive,
+                                enabled: item.enabled,
+                                handler: item.handler)
+        }
+        guard !items.isEmpty, let host = hostViewController() else { return }
+        let frame = convert(bounds, to: nil)
+        host.present(SileoActionMenu(header: package.name, items: items, sourceFrame: frame), animated: true)
+    }
+
+    /// The controller to present the card from: the first one up the responder
+    /// chain, or the window's own.
+    private func hostViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController { return controller }
+            responder = current.next
+        }
+        return UIApplication.shared.keyWindow?.rootViewController
     }
 
     private func presentSheet(_ sheet: UIAlertController) {

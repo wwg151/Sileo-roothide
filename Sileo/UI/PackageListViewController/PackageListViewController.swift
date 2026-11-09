@@ -236,10 +236,6 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 collectionView.refreshControl = refreshPackages
             }
             collectionView.addGestureRecognizer(tapRecognizer)
-            let menuPress = UILongPressGestureRecognizer(target: self, action: #selector(self.handlePackageMenuPress(_:)))
-            menuPress.minimumPressDuration = 0.4
-            menuPress.cancelsTouchesInView = false
-            collectionView.addGestureRecognizer(menuPress)
             collectionView.register(UINib(nibName: "PackageCollectionViewCell", bundle: nil),
                                     forCellWithReuseIdentifier: "PackageListViewCellIdentifier")
         
@@ -477,36 +473,6 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             }
         ]
         return UIMenu(title: String(localizationKey: "Backup_Restore"), children: actions)
-    }
-
-    /// The package menu, from a long press on a row: Sileo's own card, anchored
-    /// where the finger is, with the same actions the package page offers.
-    @objc private func handlePackageMenuPress(_ recognizer: UILongPressGestureRecognizer) {
-        guard recognizer.state == .began, let collectionView = collectionView else { return }
-        let point = recognizer.location(in: collectionView)
-        guard let indexPath = collectionView.indexPathForItem(at: point),
-              findWhatFuckingSectionThisIs(indexPath.section) != .searchHistoryList,
-              let pvc = controller(indexPath: indexPath) else {
-            return
-        }
-        (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
-        let actions = pvc.actions()
-        guard !actions.isEmpty else { return }
-        let items = actions.map { action in
-            SileoActionMenuItem(title: action.title,
-                                image: action.image,
-                                destructive: action.attributes.contains(.destructive),
-                                handler: {
-                                    // UIMenuLeaf's own way to run an action, which is
-                                    // what the system menu does when the row is picked.
-                                    _ = action.perform(NSSelectorFromString("performWithSender:target:"),
-                                                       with: nil,
-                                                       with: nil)
-                                })
-        }
-        let windowPoint = collectionView.convert(point, to: nil)
-        let source = CGRect(x: windowPoint.x - 22, y: windowPoint.y - 10, width: 44, height: 20)
-        present(SileoActionMenu(header: pvc.title, items: items, sourceFrame: source), animated: true)
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {
@@ -1211,9 +1177,19 @@ extension PackageListViewController {
         guard let pvc = self.controller(indexPath: indexPath) else {
             return nil
         }
-        // The package menu is drawn by Sileo itself, from a long press; the
-        // system menu is not used for these rows.
-        return nil
+        (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
+
+        let menuItems = pvc.actions()
+        // a compact, centered preview leaves room for the menu instead of the full-height page covering it
+        let previewWidth = min(collectionView.bounds.width - 48, 360)
+        let config = UIContextMenuConfiguration(identifier: nil, previewProvider: {
+            pvc.preferredContentSize = CGSize(width: previewWidth, height: min(collectionView.bounds.height * 0.4, 320))
+            return pvc
+        }, actionProvider: { _ in
+            UIMenu(title: "", options: .displayInline, children: menuItems)
+        })
+
+        return config
     }
     
     func collectionView(_ collectionView: UICollectionView, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
