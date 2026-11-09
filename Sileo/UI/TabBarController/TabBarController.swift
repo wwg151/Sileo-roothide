@@ -562,11 +562,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         applyFloatingPopupShape()
         // Measure without the shift applied, or repeated passes would stack it
+        let previous = popupBar.transform
         popupBar.transform = .identity
         let capsuleTop = container.convert(CGPoint.zero, to: nil).y
         let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
         let shift = max(0, barBottom - capsuleTop)
-        popupBar.transform = CGAffineTransform(translationX: 0, y: -shift)
+        // Only move when it is not already where it belongs: re-setting the
+        // same translation after the window closed was the visible adjustment.
+        if abs(previous.ty + shift) > 0.5 {
+            popupBar.transform = CGAffineTransform(translationX: 0, y: -shift)
+        } else {
+            popupBar.transform = previous
+        }
     }
     private var floatingRetryCount = 0
     private var floatingBackground: UIView?
