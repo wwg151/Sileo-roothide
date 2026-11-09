@@ -487,23 +487,29 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             capsule.clipsToBounds = true
             bar.insertSubview(capsule, at: 0)
             popupCapsuleView = capsule
-            // The bar's own full-width material and its hairlines step aside
-            // while we draw the capsule.
-            func hideMaterial(in view: UIView) {
-                for sub in view.subviews {
-                    if sub === capsule { continue }
-                    let name = String(describing: type(of: sub))
-                    if sub is UIVisualEffectView || name.contains("Shadow") {
-                        popupHiddenMaterialViews.append(sub)
-                        sub.isHidden = true
-                    } else {
-                        hideMaterial(in: sub)
-                    }
-                }
-            }
-            hideMaterial(in: bar)
         }
         guard let capsule = popupCapsuleView else { return }
+        // The bar's own full-width material and its hairlines step aside while
+        // we draw. This runs every time: the bar builds a fresh material when
+        // it comes back from the open window.
+        func hideMaterial(in view: UIView) {
+            for sub in view.subviews {
+                if sub === capsule { continue }
+                let name = String(describing: type(of: sub))
+                if sub is UIVisualEffectView || name.contains("Shadow") {
+                    if !popupHiddenMaterialViews.contains(where: { $0 === sub }) {
+                        popupHiddenMaterialViews.append(sub)
+                    }
+                    sub.isHidden = true
+                } else {
+                    hideMaterial(in: sub)
+                }
+            }
+        }
+        hideMaterial(in: bar)
+        if capsule.superview !== bar {
+            bar.insertSubview(capsule, at: 0)
+        }
         let frame = bar.bounds.insetBy(dx: floatingInset, dy: 0)
         if capsule.frame != frame {
             capsule.frame = frame
@@ -955,6 +961,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             self.popupBar.isHidden = false
             self.popupBar.setNeedsLayout()
             self.popupBar.layoutIfNeeded()
+            if let container = self.floatingBackground {
+                container.isHidden = false
+            }
             self.applyFloatingStyle()
             self.applyFloatingPopupShape()
             TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
