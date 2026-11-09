@@ -48,12 +48,9 @@ final class SourcesViewController: SileoViewController {
         if indexPath.section == 0 {
             return false
         }
-        
-        let repo = sortedRepoList[indexPath.row]
-        if Jailbreak.bootstrap == .procursus {
-            return repo.entryFile.hasSuffix("/sileo.sources")
-        }
-        return repo.url?.host != "apt.bingner.com"
+        // Every source can be removed now, the ones that came with the
+        // jailbreak included: the record kept in the add menu puts them back.
+        return true
     }
     
     func controller(indexPath: IndexPath) -> CategoryViewController {
