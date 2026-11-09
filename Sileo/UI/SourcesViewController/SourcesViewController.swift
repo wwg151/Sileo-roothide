@@ -809,7 +809,13 @@ final class SourcesViewController: SileoViewController {
                 self?.removeBrokenSources()
             }
         ]
-        let frame = sender.view?.superview?.convert(sender.view?.frame ?? .zero, to: nil)
+        var frame: CGRect?
+        if let bar = navigationController?.navigationBar {
+            let rect = bar.convert(bar.bounds, to: nil)
+            // The bar button has no public view, so the menu drops from the
+            // right end of the navigation bar, where the button sits.
+            frame = CGRect(x: rect.maxX - 44, y: rect.maxY, width: 44, height: 0)
+        }
         let menu = SileoActionMenu(header: String(localizationKey: "Add_Source.Title"),
                                    items: items,
                                    sourceFrame: frame)
