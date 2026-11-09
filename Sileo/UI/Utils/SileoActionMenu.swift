@@ -76,8 +76,8 @@ final class SileoActionMenu: UIViewController {
         super.viewDidLayoutSubviews()
         positionCard()
         if highlighted == nil, let first = rowViews.indices.first {
-            pill.frame = rowViews[first].frame.insetBy(dx: 4, dy: 3)
-            pill.layer.cornerRadius = 12
+            pill.frame = rowViews[first].frame.insetBy(dx: 3, dy: 2)
+            pill.layer.cornerRadius = 10
             pill.isHidden = true
         }
     }
@@ -115,10 +115,10 @@ final class SileoActionMenu: UIViewController {
             label.translatesAutoresizingMaskIntoConstraints = false
             wrapper.addSubview(label)
             NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 20),
+                label.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 16),
                 label.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -20),
-                label.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 14),
-                label.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -6)
+                label.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 12),
+                label.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -4)
             ])
             arranged.append(wrapper)
         }
@@ -146,22 +146,22 @@ final class SileoActionMenu: UIViewController {
         NSLayoutConstraint.activate([
             leading,
             top,
-            card.widthAnchor.constraint(equalToConstant: 300),
+            card.widthAnchor.constraint(equalToConstant: 264),
             rowsStack.topAnchor.constraint(equalTo: card.topAnchor, constant: 4),
             rowsStack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             rowsStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
-            rowsStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -6)
+            rowsStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -4)
         ])
     }
 
     private func positionCard() {
         guard let source = sourceFrame else { return }
         view.layoutIfNeeded()
-        let size = card.systemLayoutSizeFitting(CGSize(width: 300, height: UIView.layoutFittingCompressedSize.height))
+        let size = card.systemLayoutSizeFitting(CGSize(width: 264, height: UIView.layoutFittingCompressedSize.height))
         var originY = source.maxY + 8
         let maxY = view.bounds.height - view.safeAreaInsets.bottom - size.height - 12
         originY = min(originY, max(maxY, 60))
-        let originX = min(max(16, source.midX - 150), view.bounds.width - 16 - 300)
+        let originX = min(max(16, source.midX - 132), view.bounds.width - 16 - 264)
         cardTop?.constant = originY - view.safeAreaInsets.top
         cardLeading?.constant = originX
     }
@@ -189,9 +189,9 @@ final class SileoActionMenu: UIViewController {
         pill.backgroundColor = selectionColor()
         // No slide between rows: the highlight is simply there, on the row
         // under the finger.
-        let target = rowViews[index].frame.insetBy(dx: 4, dy: 3)
+        let target = rowViews[index].frame.insetBy(dx: 3, dy: 2)
         pill.frame = target
-        pill.layer.cornerRadius = 12
+        pill.layer.cornerRadius = 10
     }
 
     // MARK: - Actions
@@ -239,13 +239,13 @@ final class SileoActionMenuRow: UIControl {
         }
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 54),
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            heightAnchor.constraint(equalToConstant: 44),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             title.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            icon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 22),
-            icon.heightAnchor.constraint(equalToConstant: 22),
+            icon.widthAnchor.constraint(equalToConstant: 20),
+            icon.heightAnchor.constraint(equalToConstant: 20),
             title.trailingAnchor.constraint(lessThanOrEqualTo: icon.leadingAnchor, constant: -12)
         ])
 
