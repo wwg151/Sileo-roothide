@@ -80,11 +80,13 @@ class PackageQueueButton: PackageButton {
         showLongPressMenu()
     }
 
-    /// The button's long press: the same actions, in Sileo's own card.
-    @objc private func presentActionCard(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began,
-              let package = package,
-              !(package.isProvisional ?? false) else { return }
+    /// The actions for a package, in Sileo's own card: one list without
+    /// separators, with a highlight that slides between the rows. Used both by
+    /// a tap on an installed package's button and by a long press on any.
+    private func showActionCard() {
+        guard let package = package, !(package.isProvisional ?? false) else {
+            return
+        }
         let items = longPressMenuItems(for: package).map { item in
             SileoActionMenuItem(title: item.title,
                                 imageName: item.image,
@@ -92,9 +94,15 @@ class PackageQueueButton: PackageButton {
                                 enabled: item.enabled,
                                 handler: item.handler)
         }
-        guard !items.isEmpty, let host = hostViewController() else { return }
+        guard !items.isEmpty, let host = viewControllerForPresentation ?? hostViewController() else { return }
         let frame = convert(bounds, to: nil)
         host.present(SileoActionMenu(header: package.name, items: items, sourceFrame: frame), animated: true)
+    }
+
+    /// The button's long press: the same actions, in Sileo's own card.
+    @objc private func presentActionCard(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        showActionCard()
     }
 
     /// The controller to present the card from: the first one up the responder
@@ -509,8 +517,9 @@ class PackageQueueButton: PackageButton {
                 
         } else if installedPackage != nil {
             NSLog("SileoLog: \(package.package) commercial=\(package.commercial) purchased=\(paymentInfo?.purchased) price=\(paymentInfo?.price) available=\(paymentInfo?.available)")
-            // road clear to modify an installed package: show the same menu as long press
-            self.showLongPressMenu()
+            // road clear to modify an installed package: the same actions the
+            // long press shows, in Sileo's own card
+            self.showActionCard()
         } else if package.sourceRepo != nil || package.local_deb != nil {
             self.requestQueuePackage(package: package, queue: .installations)
         } else {
