@@ -271,7 +271,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         self.closePopup(animated: false, completion: {
             TabBarController.popupIsOpen = false
             self.popupBarHiddenAt = nil
-            self.applyFloatingStyle()
+            self.restoreFloatingTabBarAfterClose()
             self.popupBar.isHidden = false
             self.popupBar.alpha = 1
             // Nothing of the window is left at the bottom of the screen.
@@ -541,6 +541,19 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     static var popupBarLift: CGFloat?
     static var popupBarLiftSize: CGSize = .zero
 
+    /// Puts the floating tab bar's capsule back once the window is gone: while
+    /// it was open the capsule was kept hidden, and the pass that hid it can be
+    /// the last one to run.
+    private func restoreFloatingTabBarAfterClose() {
+        floatingRetryCount = 0
+        applyFloatingStyle()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self = self, !TabBarController.popupIsOpen else { return }
+            self.floatingRetryCount = 0
+            self.applyFloatingStyle()
+        }
+    }
+
     private func updateFloatingPopupOffset() {
         func reset() {
             if self.popupBar.transform != .identity {
@@ -548,9 +561,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             }
         }
         guard popupIsPresented else { return }
-        if popupPresentationState == .open {
-            TabBarController.popupIsOpen = true
-        }
+        // The framework's own state stays `.open` for a moment after the window
+        // has gone, and believing it is what kept the tab bar's capsule hidden.
+        // The window is measured by its top edge instead.
         guard isFloatingEnabled else {
             reset()
             resetFloatingPopupShape()
@@ -964,7 +977,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = false
         popupBarHiddenAt = nil
         tabBar.isHidden = false
-        applyFloatingStyle()
+        restoreFloatingTabBarAfterClose()
         popupBar.isHidden = false
         popupBar.alpha = 1
         // Whatever the window's landing left behind at the bottom of the
@@ -997,10 +1010,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             // Present but unseen, so the window has something to land on.
             popupBar.isHidden = false
             popupBar.alpha = 0
-            applyFloatingStyle()
+            restoreFloatingTabBarAfterClose()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 guard let self = self, !TabBarController.popupIsOpen else { return }
-                self.applyFloatingStyle()
+                self.restoreFloatingTabBarAfterClose()
                 self.popupBar.isHidden = false
                 self.popupBar.alpha = 1
             }
