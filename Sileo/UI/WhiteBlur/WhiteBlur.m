@@ -48,6 +48,7 @@ hook(_UIVisualEffectSubview)
             if (glass) {
                 _orig(void, filters);
                 [self setBackgroundColor:SileoGlassTint(0.45)];
+                NSLog(@"SileoLog: glass blur tinted");
                 return;
             }
             NSMutableArray *filtersMutable = [filters mutableCopy];

@@ -232,6 +232,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // With the floating tab bar the queue bar is a capsule over the content,
         // so it takes the glass material; without it, the plain white blur.
         self.popupBar.toolbar.tag = isFloatingEnabled ? GLASS_BLUR_TAG : WHITE_BLUR_TAG
+        // The toolbar built its material before it was tagged; setting the style
+        // again here rebuilds it under the tag it now carries.
+        self.popupBar.barStyle = .default
         self.popupBar.barStyle = .prominent
         self.updateSileoColors()
         self.popupBar.toolbar.setBackgroundImage(nil, forToolbarPosition: .any, barMetrics: .default)
@@ -812,11 +815,17 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             container.layer.shadowOpacity = 0.2
             container.layer.shadowRadius = 10
             container.layer.shadowOffset = CGSize(width: 0, height: 4)
-            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
             blur.tag = 1
             blur.clipsToBounds = true
             blur.layer.cornerCurve = .continuous
             container.addSubview(blur)
+            // The effect view builds its backdrop while it is being created,
+            // before it sits inside the glass-tagged container; giving it its
+            // effect again here lets the glass tint reach that backdrop.
+            let effect = blur.effect
+            blur.effect = nil
+            blur.effect = effect
             self.tabBar.insertSubview(container, at: 0)
             floatingBackground = container
         }
