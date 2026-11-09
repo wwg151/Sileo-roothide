@@ -964,14 +964,28 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             guard let self = self, self.popupIsPresented else { return }
             self.updatePopupOpenState()
             guard !TabBarController.popupIsOpen else { return }
-            self.popupBar.isHidden = false
-            self.popupBar.setNeedsLayout()
-            self.popupBar.layoutIfNeeded()
-            if self.isFloatingEnabled {
-                self.applyPopupCapsule()
+            // The same road the queue took when install was first tapped: the
+            // bar goes away and is presented again, so it comes back the way
+            // it was first drawn — already the capsule, nothing adjusting.
+            guard let downloads = self.downloadsController else { return }
+            TabBarController.popupQueue.async {
+                self.popupQueueLock.wait()
+                DispatchQueue.main.async {
+                    if self.popupBar.isHidden {
+                        self.popupBar.isHidden = false
+                    }
+                    self.popupBar.alpha = 0
+                    self.dismissPopupBar(animated: false, completion: {
+                        self.presentPopupBar(withContentViewController: downloads, animated: false, completion: {
+                            self.popupBar.alpha = 1
+                            self.applyFloatingStyle()
+                            self.applyFloatingPopupShape()
+                            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
+                            self.popupQueueLock.signal()
+                        })
+                    })
+                }
             }
-            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
-            self.popupBar.alpha = 1
         }
     }
 
