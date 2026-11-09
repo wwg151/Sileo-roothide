@@ -742,16 +742,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let pitch = count > 1
             ? (buttons[count - 1].frame.midX - buttons[0].frame.midX) / CGFloat(count - 1)
             : buttons[index].frame.width
-        // One size for every tab. The bar's own pitch is narrow (five items on
-        // a phone), so the height is kept well under the capsule's — that is
-        // what turns the highlight into a horizontal ellipse rather than a
-        // circle.
-        let width = max(30, pitch)
+        // One size for every tab, and wider than one item's room: that is what
+        // makes it read as a wide flat ellipse, and lets it ride over the
+        // neighbours while it moves, like the reference app's.
+        let width = min(max(30, pitch * 1.35), container.bounds.width - 8)
         let item = container.convert(buttons[index].frame, from: tabBar)
-        let height = min(container.bounds.height * 0.64, container.bounds.height - 6)
+        let height = min(container.bounds.height * 0.9, container.bounds.height - 4)
         guard width > 30, height > 10 else { return }
         var y = item.midY - height / 2
-        y = max(3, min(container.bounds.height - height - 3, y))
+        y = max(2, min(container.bounds.height - height - 2, y))
         let target = CGRect(x: item.midX - width / 2, y: y, width: width, height: height)
         pill.backgroundColor = selectionPillColor()
         if animated {
@@ -870,7 +869,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             floatingBackground = container
         }
         guard let container = floatingBackground, let blur = container.viewWithTag(1) else { return }
-        let barHeight: CGFloat = 78
+        // Scaled down so the highlight pill can nearly fill the bar: a tall bar
+        // is what squeezed the pill into a circle.
+        let barHeight: CGFloat = 64
         // Center the capsule on the visible icon+label row so top/bottom spacing is equal
         var rowMids: [CGFloat] = []
         var colMids: [CGFloat] = []
