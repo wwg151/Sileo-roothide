@@ -56,7 +56,7 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          make clean package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=iphoneos-arm64e 2>&1 | tee build.log
+          make clean package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=iphoneos-arm64e V=1 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             # Surface the compiler errors as annotations: the run page shows
