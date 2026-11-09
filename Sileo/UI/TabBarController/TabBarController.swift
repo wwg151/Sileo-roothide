@@ -628,6 +628,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private var floatingBackground: UIView?
     /// The highlight that rides with the selected tab, drawn over the capsule.
     private var selectionPill: UIView?
+    /// Where the pill is heading, so a layout pass does not cut its slide short.
+    private var selectionPillTarget: CGRect?
     private var floatingAppearance: UITabBarAppearance?
     private var floatingItemWidth: CGFloat = 0
     private var floatingRefreshPending = false
@@ -697,11 +699,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
 
     private func animateSelectedIcon() {
         guard isFloatingEnabled else { return }
+        // The pill always follows the tab, whether or not an icon view can be
+        // found for the animation below.
+        positionSelectionPill(animated: true)
         let buttons = buttonsSortedByX()
         let index = self.selectedIndex
         guard index < buttons.count, let icon = iconImageView(in: buttons[index]) else { return }
         playIconAnimation(for: index, on: icon)
-        positionSelectionPill(animated: true)
     }
 
     /// The highlight behind the selected tab: a pill of our own, drawn over the
@@ -756,6 +760,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let target = CGRect(x: x, y: gap, width: width, height: height)
         pill.backgroundColor = selectionPillColor()
         if animated {
+            selectionPillTarget = target
             UIView.animate(withDuration: 0.45,
                            delay: 0,
                            usingSpringWithDamping: 0.8,
@@ -765,6 +770,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 pill.layer.cornerRadius = target.height / 2
             }
         } else {
+            // A layout pass lands while the pill is still on its way: leave it
+            // alone, or the slide is cut short and the pill jumps to the end.
+            let inFlight = !(pill.layer.animationKeys()?.isEmpty ?? true)
+            if inFlight, selectionPillTarget == target {
+                return
+            }
+            selectionPillTarget = target
             pill.frame = target
             pill.layer.cornerRadius = target.height / 2
         }
