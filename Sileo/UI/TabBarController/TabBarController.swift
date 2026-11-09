@@ -739,13 +739,33 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
               container.bounds.width > 0 else {
             return
         }
-        let buttons = buttonsSortedByX()
         let index = selectedIndex
-        let count = buttons.count
-        guard index < count, count > 0 else { return }
-        let pitch = count > 1
-            ? (buttons[count - 1].frame.midX - buttons[0].frame.midX) / CGFloat(count - 1)
-            : buttons[index].frame.width
+        // The item centres, measured from the buttons that are there. The search
+        // tab is a control of the app's own, not a tab bar button, so a missing
+        // one is worked out from the bar's own item width and centred layout —
+        // otherwise the pill has nowhere to slide to.
+        let buttons = buttonsSortedByX()
+        let itemCount = max(tabBar.items?.count ?? buttons.count, buttons.count)
+        guard itemCount > 0, index < itemCount else { return }
+        var centres: [CGFloat]
+        if buttons.count == itemCount {
+            centres = buttons.map { container.convert($0.frame, from: tabBar).midX }
+        } else if floatingItemWidth > 0 {
+            let pitch = floatingItemWidth
+            let middle = container.bounds.midX
+            centres = (0..<itemCount).map { middle + (CGFloat($0) - CGFloat(itemCount - 1) / 2) * pitch }
+        } else if buttons.count > 1 {
+            let pitch = (buttons[buttons.count - 1].frame.midX - buttons[0].frame.midX) / CGFloat(buttons.count - 1)
+            centres = buttons.map { container.convert($0.frame, from: tabBar).midX }
+            let first = centres[0]
+            centres = (0..<itemCount).map { first + CGFloat($0) * pitch }
+        } else {
+            return
+        }
+        guard index < centres.count else { return }
+        let pitch = centres.count > 1
+            ? (centres[centres.count - 1] - centres[0]) / CGFloat(centres.count - 1)
+            : container.bounds.width / CGFloat(itemCount)
         // The same sliver all round: the height leaves it above and below, and
         // the first and last tabs keep it from the capsule's own ends. In
         // between, the pill is centred on its tab.
@@ -753,10 +773,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let width = min(max(30, pitch * 1.35), container.bounds.width - gap * 2)
         let height = max(20, container.bounds.height - gap * 2)
         guard width > 30, height > 10 else { return }
-        let item = container.convert(buttons[index].frame, from: tabBar)
-        var x = item.midX - width / 2
+        var x = centres[index] - width / 2
         if index == 0 { x = gap }
-        if index == count - 1 { x = container.bounds.width - gap - width }
+        if index == itemCount - 1 { x = container.bounds.width - gap - width }
         let target = CGRect(x: x, y: gap, width: width, height: height)
         pill.backgroundColor = selectionPillColor()
         if animated {
