@@ -258,7 +258,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
-        tabBar.alpha = 1
+        tabBar.isHidden = false
         applyFloatingStyle()
 
         self.closePopup(animated: true, completion: {
@@ -892,7 +892,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
-        tabBar.alpha = 1
+        tabBar.isHidden = false
         applyFloatingStyle()
     }
 
@@ -902,6 +902,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
+        tabBar.isHidden = false
         applyFloatingStyle()
         schedulePopupBarRefresh()
     }
@@ -919,46 +920,33 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         guard open != TabBarController.popupIsOpen else { return }
         TabBarController.popupIsOpen = open
         popupBar.isHidden = open
-        tabBar.alpha = open ? 0 : 1
+        // Hidden outright, without fading: a fade over the floating tab bar is
+        // what showed it transparent for a moment before its capsule came back.
+        tabBar.isHidden = open
         if open {
             popupBarHiddenAt = Date()
             removePopupCapsule()
         } else {
             popupBarHiddenAt = nil
-            revealFloatingTabBar()
             schedulePopupBarRefresh()
         }
     }
 
-    /// The window and the bar are laid out again once the closing animation is
-    /// over: both are measured while their frames are still moving, which is
-    /// why the window's controls and the bar's capsule were left behind.
+    /// The bar is laid out again once the closing animation is over: it is
+    /// measured while its frame is still moving, so its capsule can be missing.
+    /// Nothing else is touched — the tab bar keeps the state it had.
     private func schedulePopupBarRefresh() {
-        for delay in [0.45, 1.2] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self = self, self.popupIsPresented else { return }
-                self.updatePopupOpenState()
-                guard !TabBarController.popupIsOpen else { return }
-                self.popupContentView.setNeedsLayout()
-                self.popupContentView.layoutIfNeeded()
-                self.view.setNeedsLayout()
-                self.view.layoutIfNeeded()
-                self.popupBar.isHidden = false
-                self.popupBar.setNeedsLayout()
-                self.popupBar.layoutIfNeeded()
-                if let container = self.floatingBackground {
-                    container.isHidden = false
-                }
-                self.applyFloatingStyle()
-                self.applyFloatingPopupShape()
-                TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
-                // Straight to the capsule: the checks above can still see a bar
-                // that is not laid out yet, and the bar rebuilds its material
-                // after the window closes.
-                if self.isFloatingEnabled {
-                    self.applyPopupCapsule()
-                }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self = self, self.popupIsPresented else { return }
+            self.updatePopupOpenState()
+            guard !TabBarController.popupIsOpen else { return }
+            self.popupBar.isHidden = false
+            self.popupBar.setNeedsLayout()
+            self.popupBar.layoutIfNeeded()
+            if self.popupCapsuleMask == nil, self.isFloatingEnabled {
+                self.applyPopupCapsule()
             }
+            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
         }
     }
 
