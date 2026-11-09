@@ -788,7 +788,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             String(localizationKey: "Package_Wishlist_Remove") : String(localizationKey: "Package_Wishlist_Add")
         items.append(SileoActionMenuItem(title: wishListText,
                                          imageName: WishListManager.shared.isPackageInWishList(package.package) ? "star.slash" : "star",
-                                         destructive: false) { _ in
+                                         destructive: false) {
             if WishListManager.shared.isPackageInWishList(package.package) {
                 WishListManager.shared.removePackageFromWishList(package.package)
             } else {
