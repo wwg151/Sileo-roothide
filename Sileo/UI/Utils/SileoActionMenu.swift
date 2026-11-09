@@ -187,13 +187,11 @@ final class SileoActionMenu: UIViewController {
         highlighted = index
         pill.isHidden = false
         pill.backgroundColor = selectionColor()
+        // No slide between rows: the highlight is simply there, on the row
+        // under the finger.
         let target = rowViews[index].frame.insetBy(dx: 4, dy: 3)
-        UIView.animate(withDuration: 0.22,
-                       delay: 0,
-                       options: [.curveEaseOut, .beginFromCurrentState]) {
-            self.pill.frame = target
-            self.pill.layer.cornerRadius = 12
-        }
+        pill.frame = target
+        pill.layer.cornerRadius = 12
     }
 
     // MARK: - Actions
