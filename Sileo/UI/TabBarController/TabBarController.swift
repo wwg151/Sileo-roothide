@@ -742,12 +742,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let pitch = count > 1
             ? (buttons[count - 1].frame.midX - buttons[0].frame.midX) / CGFloat(count - 1)
             : buttons[index].frame.width
-        // One size for every tab: nearly the full room between two neighbours'
-        // centres, and almost as tall as the capsule — the reference app's pill
-        // leaves only a sliver around it.
-        let width = max(30, pitch - 2)
+        // One size for every tab. The bar's own pitch is narrow (five items on
+        // a phone), so the height is kept well under the capsule's — that is
+        // what turns the highlight into a horizontal ellipse rather than a
+        // circle.
+        let width = max(30, pitch)
         let item = container.convert(buttons[index].frame, from: tabBar)
-        let height = min(container.bounds.height * 0.78, container.bounds.height - 6)
+        let height = min(container.bounds.height * 0.64, container.bounds.height - 6)
         guard width > 30, height > 10 else { return }
         var y = item.midY - height / 2
         y = max(3, min(container.bounds.height - height - 3, y))
