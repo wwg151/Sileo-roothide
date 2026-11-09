@@ -445,10 +445,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
 
     /// True while the queue is open as a window.
     static var popupIsOpen = false
-    /// Our own capsule over the bar's material, so the bar itself keeps the
-    /// framework's full-width frame.
-    private var popupCapsuleView: UIVisualEffectView?
-    private var popupHiddenMaterialViews: [UIView] = []
 
     /// The queue bar lays its content out itself, so the inset above has to
     /// run right after each of those passes.
@@ -479,26 +475,39 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
     }
 
-    private func applyPopupCapsule() {
-        let bar = popupBar
-        if popupCapsuleView == nil {
-            let capsule = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-            capsule.isUserInteractionEnabled = false
-            capsule.clipsToBounds = true
-            bar.insertSubview(capsule, at: 0)
-            popupCapsuleView = capsule
+    /// The capsule lives on the bar itself, so it is drawn again on every one
+    /// of the bar's own layout passes — the bar rebuilds its full-width
+    /// material when it comes back from the open window.
+    private static let popupCapsuleKey = malloc(1)!
+    private static let popupHiddenMaterialKey = malloc(1)!
+
+    static func updatePopupCapsule(for bar: LNPopupBar) {
+        let floating = UIDevice.current.userInterfaceIdiom == .phone
+            && UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false)
+        let shouldShow = floating && !TabBarController.popupIsOpen
+            && bar.bounds.height > 0 && bar.window != nil
+        var hidden = objc_getAssociatedObject(bar, popupHiddenMaterialKey) as? [UIView] ?? []
+        guard shouldShow else {
+            removePopupCapsule(from: bar)
+            return
         }
-        guard let capsule = popupCapsuleView else { return }
-        // The bar's own full-width material and its hairlines step aside while
-        // we draw. This runs every time: the bar builds a fresh material when
-        // it comes back from the open window.
+        var capsule = objc_getAssociatedObject(bar, popupCapsuleKey) as? UIVisualEffectView
+        if capsule == nil {
+            let fresh = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+            fresh.isUserInteractionEnabled = false
+            fresh.clipsToBounds = true
+            bar.insertSubview(fresh, at: 0)
+            capsule = fresh
+            objc_setAssociatedObject(bar, popupCapsuleKey, fresh, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        guard let capsule = capsule else { return }
         func hideMaterial(in view: UIView) {
             for sub in view.subviews {
                 if sub === capsule { continue }
                 let name = String(describing: type(of: sub))
                 if sub is UIVisualEffectView || name.contains("Shadow") {
-                    if !popupHiddenMaterialViews.contains(where: { $0 === sub }) {
-                        popupHiddenMaterialViews.append(sub)
+                    if !hidden.contains(where: { $0 === sub }) {
+                        hidden.append(sub)
                     }
                     sub.isHidden = true
                 } else {
@@ -507,10 +516,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             }
         }
         hideMaterial(in: bar)
+        objc_setAssociatedObject(bar, popupHiddenMaterialKey, hidden, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         if capsule.superview !== bar {
             bar.insertSubview(capsule, at: 0)
         }
-        let frame = bar.bounds.insetBy(dx: floatingInset, dy: 0)
+        let frame = bar.bounds.insetBy(dx: 10, dy: 0)
         if capsule.frame != frame {
             capsule.frame = frame
         }
@@ -521,19 +531,30 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
     }
 
+    static func removePopupCapsule(from bar: LNPopupBar) {
+        if let capsule = objc_getAssociatedObject(bar, popupCapsuleKey) as? UIVisualEffectView {
+            capsule.removeFromSuperview()
+        }
+        objc_setAssociatedObject(bar, popupCapsuleKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if let hidden = objc_getAssociatedObject(bar, popupHiddenMaterialKey) as? [UIView] {
+            for view in hidden {
+                view.isHidden = false
+            }
+        }
+        objc_setAssociatedObject(bar, popupHiddenMaterialKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    private func applyPopupCapsule() {
+        TabBarController.updatePopupCapsule(for: popupBar)
+    }
+
     /// The bar as the framework lays it out: full width, its own material.
     private func resetFloatingPopupShape() {
         removePopupCapsule()
     }
 
     private func removePopupCapsule() {
-        guard popupCapsuleView != nil || !popupHiddenMaterialViews.isEmpty else { return }
-        popupCapsuleView?.removeFromSuperview()
-        popupCapsuleView = nil
-        for view in popupHiddenMaterialViews {
-            view.isHidden = false
-        }
-        popupHiddenMaterialViews.removeAll()
+        TabBarController.removePopupCapsule(from: popupBar)
     }
 
     private func updateFloatingPopupOffset() {
@@ -1002,6 +1023,7 @@ extension LNPopupBar {
     @objc func sileo_layoutSubviews() {
         sileo_layoutSubviews()
         TabBarController.applyFloatingPopupContentInset(to: self)
+        TabBarController.updatePopupCapsule(for: self)
     }
 }
 
