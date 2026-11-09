@@ -429,29 +429,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private static var popupBarLayoutHooked = false
-    private static var popupDumped = false
-
-    /// Temporary: records the whole view tree once the window is open.
-    static func dumpWindow(_ view: UIView) {
-        var lines: [String] = []
-        func walk(_ view: UIView, depth: Int) {
-            guard depth <= 7 else { return }
-            let indent = String(repeating: "  ", count: depth)
-            let background = view.backgroundColor.map { "\($0)" } ?? "nil"
-            lines.append("\(indent)\(String(describing: type(of: view))) \(view.frame) hidden=\(view.isHidden) alpha=\(view.alpha) bg=\(background)")
-            for sub in view.subviews {
-                walk(sub, depth: depth + 1)
-            }
-        }
-        for window in UIApplication.shared.windows {
-            lines.append("window \(String(describing: type(of: window))) \(window.frame) level=\(window.windowLevel.rawValue) hidden=\(window.isHidden)")
-            for sub in window.subviews {
-                walk(sub, depth: 1)
-            }
-        }
-        let url = URL(fileURLWithPath: "/var/mobile/Documents/sileo-popup-debug.txt")
-        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
-    }
     /// When the bar was hidden for the open window, so a close that never
     /// reported itself can still give it back.
     private var popupBarHiddenAt: Date?
@@ -913,10 +890,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
         resetFloatingPopupShape()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self = self else { return }
-            TabBarController.dumpWindow(self.view)
-        }
     }
 
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
@@ -928,35 +901,31 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         applyFloatingStyle()
     }
 
+    /// The popup state the framework reports does not change on every route
+    /// into the window, so the window is measured instead: an open one fills
+    /// the screen, a closed one has no height. The queue bar and the tab bar
+    /// step aside while it is open, and come back when it closes.
+    private func updatePopupOpenState() {
+        let open = popupIsPresented && popupContentView.bounds.height > view.bounds.height * 0.5
+        guard open != TabBarController.popupIsOpen else { return }
+        TabBarController.popupIsOpen = open
+        popupBar.isHidden = open
+        tabBar.isHidden = open
+        if open {
+            popupBarHiddenAt = Date()
+            removePopupCapsule()
+        } else {
+            popupBarHiddenAt = nil
+            revealFloatingTabBar()
+        }
+    }
+
     override func viewDidLayoutSubviews() {
         NSLog("SileoLog: TabBarController.viewDidLayoutSubviews")
         super.viewDidLayoutSubviews()
         
         self.tabBar.itemPositioning = .centered
-        if popupIsPresented {
-            if popupPresentationState == .open {
-                // While the window is open the bar stays hidden, whatever
-                // route the window took to get there.
-                TabBarController.popupIsOpen = true
-                if !popupBar.isHidden {
-                    popupBar.isHidden = true
-                }
-                if !TabBarController.popupDumped {
-                    TabBarController.popupDumped = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                        guard let self = self else { return }
-                        TabBarController.dumpWindow(self.view)
-                    }
-                }
-            } else if popupBar.isHidden, let hiddenAt = popupBarHiddenAt,
-                      Date().timeIntervalSince(hiddenAt) > 1 {
-                // The window was closed without telling us (the chevron at
-                // its top, for one): give the bar back.
-                TabBarController.popupIsOpen = false
-                popupBar.isHidden = false
-                popupBarHiddenAt = nil
-            }
-        }
+        updatePopupOpenState()
         applyFloatingStyle()
         applyFloatingPopupShape()
         if UIDevice.current.userInterfaceIdiom == .pad {
