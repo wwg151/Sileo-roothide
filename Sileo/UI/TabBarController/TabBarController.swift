@@ -229,7 +229,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// back with the height and the style it had when install first showed it.
     private func configurePopupBarForPresentation() {
         self.popupContentView.popupCloseButtonAutomaticallyUnobstructsTopBars = false
-        self.popupBar.toolbar.tag = WHITE_BLUR_TAG
+        // With the floating tab bar the queue bar is a capsule over the content,
+        // so it takes the glass material; without it, the plain white blur.
+        self.popupBar.toolbar.tag = isFloatingEnabled ? GLASS_BLUR_TAG : WHITE_BLUR_TAG
         self.popupBar.barStyle = .prominent
         self.updateSileoColors()
         self.popupBar.toolbar.setBackgroundImage(nil, forToolbarPosition: .any, barMetrics: .default)
@@ -731,7 +733,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
     }
 
+    /// The queue bar's material follows the floating switch. When it changes the
+    /// blur is rebuilt, so the new look is seen at once instead of after a
+    /// relaunch.
+    private func syncPopupBarMaterial() {
+        let tag = isFloatingEnabled ? GLASS_BLUR_TAG : WHITE_BLUR_TAG
+        guard popupBar.toolbar.tag != tag else { return }
+        popupBar.toolbar.tag = tag
+        let style = popupBar.barStyle
+        popupBar.barStyle = (style == .prominent) ? .default : .prominent
+        popupBar.barStyle = style
+    }
+
     private func applyFloatingStyle() {
+        syncPopupBarMaterial()
         guard isFloatingEnabled else {
             if let container = floatingBackground {
                 container.removeFromSuperview()
@@ -750,6 +765,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 self.tabBar.scrollEdgeAppearance = originalScrollEdgeAppearance
                 self.tabBar.itemWidth = 0
                 self.tabBar.itemSpacing = 0
+                // Back to the plain white blur the app came with.
+                self.popupBar.toolbar.tag = WHITE_BLUR_TAG
                 self.popupBar.transform = .identity
                 applyFloatingPopupShape()
             }
@@ -787,6 +804,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             }
 
             let container = UIView()
+            // The capsule's blur is glass while the floating tab bar is on; the
+            // rest of the app keeps the plain white blur.
+            container.tag = GLASS_BLUR_TAG
             container.isUserInteractionEnabled = false
             container.layer.shadowColor = UIColor.black.cgColor
             container.layer.shadowOpacity = 0.2
