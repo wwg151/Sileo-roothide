@@ -11,9 +11,23 @@ import UIKit
 
 struct SileoActionMenuItem {
     let title: String
-    let imageName: String?
+    let image: UIImage?
     let destructive: Bool
     let handler: () -> Void
+
+    init(title: String, image: UIImage?, destructive: Bool, handler: @escaping () -> Void) {
+        self.title = title
+        self.image = image
+        self.destructive = destructive
+        self.handler = handler
+    }
+
+    init(title: String, imageName: String?, destructive: Bool, handler: @escaping () -> Void) {
+        self.init(title: title,
+                  image: imageName.flatMap { UIImage(systemName: $0) },
+                  destructive: destructive,
+                  handler: handler)
+    }
 }
 
 final class SileoActionMenu: UIViewController {
@@ -212,7 +226,7 @@ final class SileoActionMenuRow: UIControl {
         addSubview(title)
 
         let icon = UIImageView()
-        icon.image = item.imageName.flatMap { UIImage(systemName: $0) }
+        icon.image = item.image
         icon.tintColor = item.destructive ? .systemRed : .label
         icon.contentMode = .scaleAspectFit
         icon.translatesAutoresizingMaskIntoConstraints = false
