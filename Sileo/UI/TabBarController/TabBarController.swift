@@ -254,11 +254,14 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         
         // The window closes onto the bar, so the bar has to be there while it
-        // lands; without it the window keeps its last frame at the bottom.
+        // lands; without it the window keeps its last frame at the bottom. It
+        // is invisible meanwhile, and shown only once it is in its place, so
+        // nothing of the way back is seen.
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
         tabBar.isHidden = false
+        popupBar.alpha = 0
         applyFloatingStyle()
 
         self.closePopup(animated: true, completion: {
@@ -269,6 +272,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             self.popupBarHiddenAt = nil
             self.applyFloatingStyle()
             self.schedulePopupBarRefresh()
+            self.popupBar.alpha = 1
             completion?()
         })
     }
@@ -899,11 +903,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     @objc func popupPresentationController(_ popupPresentationController: UIViewController,
                                            willClosePopupWithContentController popupContentController: UIViewController,
                                            animated: Bool) {
-        // Same reason as the chevron: the window lands on the bar.
+        // Same reason as the chevron: the window lands on the bar. The bar is
+        // invisible until it is back in place.
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBarHiddenAt = nil
         tabBar.isHidden = false
+        popupBar.alpha = 0
         applyFloatingStyle()
     }
 
@@ -916,6 +922,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         tabBar.isHidden = false
         applyFloatingStyle()
         schedulePopupBarRefresh()
+        popupBar.alpha = 1
     }
 
     /// The popup state the framework reports does not change on every route
@@ -957,6 +964,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 self.applyPopupCapsule()
             }
             TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
+            self.popupBar.alpha = 1
         }
     }
 
