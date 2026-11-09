@@ -301,6 +301,7 @@
 "Batch_Import_Packages_No_Deb" = "No .deb file was selected.";
 "Batch_Import_Packages_Failed" = "None of the selected packages could be read. %lu file(s) were skipped.";
 "Batch_Import_Packages_Reading" = "Reading packages…";
+"Batch_Import_Packages_Queued" = "%lu package(s) queued";
 
 /* Backup and restore */
 "Backup_Restore" = "Backup & Restore";

@@ -307,6 +307,7 @@
 "Batch_Import_Packages_No_Deb" = "没有选择 .deb 文件。";
 "Batch_Import_Packages_Failed" = "所选插件都无法读取，已跳过 %lu 个文件。";
 "Batch_Import_Packages_Reading" = "正在读取插件…";
+"Batch_Import_Packages_Queued" = "已加入队列 %lu 个插件";
 
 /* 备份恢复 */
 "Backup_Restore" = "备份恢复";

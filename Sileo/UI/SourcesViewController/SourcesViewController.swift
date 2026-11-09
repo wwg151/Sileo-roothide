@@ -680,10 +680,11 @@ final class SourcesViewController: SileoViewController {
     func importPackages(fromURLs urls: [URL]) {
         guard !urls.isEmpty else { return }
 
-        let progressAlert = UIAlertController(title: String(localizationKey: "Batch_Import_Packages"),
-                                              message: String(localizationKey: "Batch_Import_Packages_Reading"),
-                                              preferredStyle: .alert)
-        present(progressAlert, animated: true)
+        let progressAlert = BackupProgressAlert(title: String(localizationKey: "Batch_Import_Packages"),
+                                                message: String(localizationKey: "Batch_Import_Packages_Reading"),
+                                                cancellable: false,
+                                                onCancel: nil)
+        present(progressAlert.alert, animated: true)
 
         DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
@@ -702,8 +703,15 @@ final class SourcesViewController: SileoViewController {
                 return
             }
 
+            let total = Double(debURLs.count)
             var parsed: [String: Package] = [:]
-            for url in debURLs {
+            for (index, url) in debURLs.enumerated() {
+                // The bar walks with the files, the percentage rides its head.
+                DispatchQueue.main.async {
+                    progressAlert.update(fraction: Double(index) / total,
+                                         message: url.lastPathComponent,
+                                         detail: "\(index + 1) / \(debURLs.count)")
+                }
                 let didAccess = url.startAccessingSecurityScopedResource()
                 defer {
                     if didAccess {
@@ -768,8 +776,13 @@ final class SourcesViewController: SileoViewController {
             let packages = parsed.values.sorted { $0.name.lowercased() < $1.name.lowercased() }
             let skippedCount = skipped
             DispatchQueue.main.async {
-                progressAlert.dismiss(animated: true) {
-                    self.enqueueImportedPackages(packages, skipped: skippedCount)
+                progressAlert.update(fraction: 1,
+                                     message: String(format: String(localizationKey: "Batch_Import_Packages_Queued"), packages.count),
+                                     detail: "")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    progressAlert.dismiss(animated: true) {
+                        self.enqueueImportedPackages(packages, skipped: skippedCount)
+                    }
                 }
             }
         }

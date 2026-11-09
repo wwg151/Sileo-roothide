@@ -940,6 +940,22 @@ final class DownloadManager {
                 UIView.animate(withDuration: 0.15) { alert.view.layoutIfNeeded() }
             }
         }
+
+        // A server that sends no length leaves the fraction at zero for the
+        // whole download; the size in the control file is used instead, and
+        // without that the bar walks on its own so it is never frozen.
+        var lastFraction: Double = 0
+        func reportProgress(_ progress: DownloadProgress) {
+            let declared = Int64(package.size ?? "") ?? 0
+            if progress.expected != NSURLSessionTransferSizeUnknown, progress.expected > 0 {
+                lastFraction = max(0, min(1, progress.fractionCompleted))
+            } else if declared > 0 {
+                lastFraction = max(0, min(1, Double(progress.total) / Double(declared)))
+            } else {
+                lastFraction = min(0.95, lastFraction + max(0.01, (0.95 - lastFraction) * 0.08))
+            }
+            updateProgress(lastFraction)
+        }
         
         let cancel = UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel) { _ in
             alert.dismiss(animated: true, completion: nil)
@@ -967,9 +983,21 @@ final class DownloadManager {
         func finishDownload(fileURL: URL) {
             NSLog("SileoLog: finishDownload=\(fileURL.path)")
             DispatchQueue.main.async {
+                // The bar is taken all the way to 100% before the card goes,
+                // so a finished download never just disappears.
+                if showsProgress {
+                    progressView.setProgress(1, animated: true)
+                    percentLabel.text = "100%"
+                    let travel = max(0, progressView.bounds.width - 48)
+                    percentLeading?.constant = travel
+                    alert.view.layoutIfNeeded()
+                }
+                let delay: TimeInterval = showsProgress ? 0.35 : 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     alert.dismiss(animated: true, completion: {
                         handler(package,fileURL)
-                })
+                    })
+                }
             }
         }
         
@@ -998,9 +1026,7 @@ final class DownloadManager {
             NSLog("SileoLog: downloadURL=\(downloadURL)")
             task = RepoManager.shared.queue(from: downloadURL, progress: { task, progress in
                 if showsProgress {
-                    if progress.expected != NSURLSessionTransferSizeUnknown {
-                        updateProgress(progress.fractionCompleted)
-                    }
+                    reportProgress(progress)
                     return
                 }
                 var msg:String
