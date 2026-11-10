@@ -22,9 +22,8 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
 
         // Exactly one row is the version shown now: the same version can sit in
         // several sources. A page from a source marks its own; an installed
-        // package records no source, so the one Sileo would install from now
-        // is marked instead — unless this very version is known to have come
-        // from a local .deb, in which case nothing is marked.
+        // package is matched through the source recorded when it was installed.
+        // Anything the record cannot place is taken as a local install.
         var winner: IndexPath?
         let isLocalInstall = PackageListManager.shared.localPackages[current.package]?.version == current.version
         if let currentRepo = current.sourceRepo {
@@ -37,29 +36,25 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                 if winner != nil { break }
             }
         } else if !isLocalInstall {
-            let canonicalSource = PackageListManager.shared.newestPackage(identifier: current.package)?.sourceRepo?.url
-            var firstCandidate: IndexPath?
-            for (section, entry) in sections.enumerated() {
-                for (row, package) in entry.packages.enumerated() where package.version == current.version {
-                    if firstCandidate == nil {
-                        firstCandidate = IndexPath(row: row, section: section)
-                    }
-                    if package.sourceRepo?.url == canonicalSource {
+            let origin = PackageListManager.shared.installedOrigin(of: current)
+            if !origin.ambiguous, let originPackage = origin.package {
+                let originSource = originPackage.sourceFile
+                for (section, entry) in sections.enumerated() {
+                    for (row, package) in entry.packages.enumerated()
+                        where package.version == current.version && package.sourceFile == originSource {
                         winner = IndexPath(row: row, section: section)
                         break
                     }
+                    if winner != nil { break }
                 }
-                if winner != nil { break }
-            }
-            if winner == nil {
-                winner = firstCandidate
             }
         }
+        let showLocalHint = current.sourceRepo == nil && winner == nil
 
         var items: [SileoPanelTable.Item] = []
-        // An installed package whose source cannot be told: say so, the way
-        // the list opens even when no source offers the package at all.
-        if current.sourceRepo == nil && winner == nil {
+        // Nothing in the install record places this version: it came from a
+        // local .deb, and the list says so.
+        if showLocalHint {
             items.append(SileoPanelTable.Item(
                 SileoPanelViewController.sectionLabel(String(localizationKey: "Version_Current_Local")),
                 height: 34
