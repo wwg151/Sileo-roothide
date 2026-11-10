@@ -177,30 +177,25 @@ extension APTWrapper {
             throw APTParserErrors.blankRequest
         }
         
-        // Taking a package away on its own: apt can say which of the packages it
-        // brought in nothing else needs any more. While installing, it must not
-        // sweep anything up.
-        let autoRemove = installList.isEmpty && !removeList.isEmpty
-
         var queryArguments = [
             "-sqf",
             "--allow-remove-essential",
             "--allow-change-held-packages",
             "--allow-downgrades",
             "-oquiet::NoUpdate=true",
-            "-oApt::Get::HideAutoRemove=\(autoRemove ? "false" : "true")",
+            // The removal's dependencies are worked out in Sileo, from the
+            // package's own dependency chain: apt's autoremove would sweep every
+            // orphan on the device, including tools an app only uses at run time.
+            "-oApt::Get::HideAutoRemove=true",
             "-oquiet::NoProgress=true",
             "-oquiet::NoStatistic=true",
             "-oDir::State::lists=sileolists/",
             "-oAcquire::AllowUnsizedPackages=true",
             "-oAPT::Get::Show-User-Simulation-Note=False",
             "-oAPT::Format::for-sileo=true",
-            "-oAPT::Format::JSON=true"
+            "-oAPT::Format::JSON=true",
+            "install", "--reinstall"
         ]
-        if autoRemove {
-            queryArguments.append("--auto-remove")
-        }
-        queryArguments.append(contentsOf: ["install", "--reinstall"])
         var packageOperations: [String] = []
         for downloadPackage in installList {
                 // APT will take the raw package path for install
