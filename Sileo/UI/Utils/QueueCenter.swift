@@ -155,6 +155,7 @@ final class QueueCenter {
     private(set) var sheetVisible = false
     private(set) var lastItems: [QueueItem] = []
     private var downloadPhase = false
+    private var handoffScheduled = false
     private var origins: [String: ObjectIdentifier] = [:]
 
     private init() {}
@@ -266,27 +267,44 @@ final class QueueCenter {
     /// Downloads are all in: hand the batch to apt. The log sheet opens with
     /// it, because the install phase is the part worth watching.
     private func checkAptHandoff() {
-        guard downloadPhase else { return }
+        guard downloadPhase, !handoffScheduled else { return }
         let manager = DownloadManager.shared
         guard manager.queueRunning, !manager.aptRunning, !manager.aptFinished,
               manager.operationCount() > 0, manager.verifyComplete(),
               manager.downloadingPackages() == 0 else { return }
-        downloadPhase = false
 
-        guard let tab = TabBarController.singleton else { return }
-        var host: UIViewController = tab
-        while let presented = host.presentedViewController { host = presented }
+        // never present while a page or a panel is mid-transition: UIKit
+        // throws and the app dies. Wait a moment, then look again.
+        handoffScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self = self else { return }
+            self.handoffScheduled = false
+            guard self.downloadPhase,
+                  manager.queueRunning, !manager.aptRunning, !manager.aptFinished,
+                  manager.operationCount() > 0, manager.verifyComplete() else { return }
 
-        let controller = manager.viewController
-        controller.modalPresentationStyle = .pageSheet
-        if let presentation = controller.sheetPresentationController {
-            presentation.detents = [.large()]
-            presentation.prefersGrabberVisible = true
-        }
-        manager.currentDownloadSession = 0
-        if host === controller {
-            controller.confirmQueued(nil)
-        } else {
+            guard let tab = TabBarController.singleton, tab.view.window != nil else { return }
+            var host: UIViewController = tab
+            while let presented = host.presentedViewController { host = presented }
+            guard host.viewIfLoaded?.window != nil,
+                  !host.isBeingPresented, !host.isBeingDismissed else { return }
+
+            let controller = manager.viewController
+            manager.currentDownloadSession = 0
+            self.downloadPhase = false
+            if host === controller {
+                controller.confirmQueued(nil)
+                return
+            }
+            guard controller.presentingViewController == nil else {
+                controller.confirmQueued(nil)
+                return
+            }
+            controller.modalPresentationStyle = .pageSheet
+            if let presentation = controller.sheetPresentationController {
+                presentation.detents = [.large()]
+                presentation.prefersGrabberVisible = true
+            }
             host.present(controller, animated: true) {
                 controller.confirmQueued(nil)
             }
