@@ -256,7 +256,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             collectionView.register(SearchHistoryCollectionViewCell.self,
                                     forCellWithReuseIdentifier: "HistoryViewCellIdentifier")
             
-            self.registerForPreviewing(with: self, sourceView: collectionView)
+            // No peek registration: a long press belongs to the card now. The
+            // system's preview turned the actions into a list with a line
+            // between every pair of them.
         }
         DispatchQueue.global(qos: .userInteractive).async {
             let packageMan = PackageListManager.shared
