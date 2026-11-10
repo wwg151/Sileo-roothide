@@ -7,7 +7,6 @@
 //
 
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 #import "ZKSwizzle.h"
 #import "WhiteBlur.h"
 #import "Sileo-Swift.h"
@@ -16,59 +15,11 @@
 - (NSString *)filterName;
 @end
 
-// A system menu brings its own material, and that is the whole point of using
-// one: it stays translucent whatever the app does to its own blurs. A backdrop
-// inside the menu's hierarchy is left alone, so the wash never reaches it.
-static BOOL ApelinInsideContextMenu(UIView *view) {
-    for (UIView *search = view; search; search = search.superview) {
-        if ([NSStringFromClass([search class]) containsString:@"ContextMenu"]) {
-            return YES;
-        }
-    }
-    return NO;
-}
-
-// What the system asked for before the wash replaced it. The backdrop of a menu
-// is usually configured before the menu takes it in, so the check above misses
-// it there; what it had is kept here and put back once it arrives.
-static char ApelinOriginalFiltersKey;
-static char ApelinOriginalBackgroundKey;
-
-static void ApelinKeep(id object, void *key, id value) {
-    if (!objc_getAssociatedObject(object, key)) {
-        objc_setAssociatedObject(object, key, value ?: [NSNull null], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-}
-
-// The system's menu material carries two filters that lift it towards white.
-// Without them the menu is a clear frosted glass: the blur stays, the white
-// does not.
-static NSArray *ApelinMenuFilters(NSArray *filters) {
-    NSMutableArray *kept = [NSMutableArray array];
-    for (_UIVisualEffectFilterEntry *filter in filters) {
-        NSString *name = [filter filterName];
-        if ([name isEqualToString:@"luminanceCurveMap"] ||
-            [name isEqualToString:@"colorBrightness"]) {
-            continue;
-        }
-        [kept addObject:filter];
-    }
-    return kept;
-}
-
-@interface NSObject (ApelinVisualEffect)
-- (void)setFilters:(NSArray *)filters;
-@end
-
 hook(_UIVisualEffectSubview)
 
 - (void)setFilters:(NSArray *)filters {
     if (@available(iOS 13, *)){
         if ([self isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) {
-            ApelinKeep(self, &ApelinOriginalFiltersKey, filters);
-            // What the backdrop has before this call is the system's; whatever
-            // this method paints over it is not, so it must be kept first.
-            ApelinKeep(self, &ApelinOriginalBackgroundKey, [(UIView *)self backgroundColor]);
             // A glass blur keeps the system's own material: no wash, no filters
             // taken away, so what is behind it really shows through.
             for (UIView *search = (UIView *)self; search; search = search.superview) {
@@ -76,10 +27,6 @@ hook(_UIVisualEffectSubview)
                     _orig(void, filters);
                     return;
                 }
-            }
-            if (ApelinInsideContextMenu((UIView *)self)) {
-                _orig(void, ApelinMenuFilters(filters));
-                return;
             }
             NSMutableArray *filtersMutable = [filters mutableCopy];
             for (_UIVisualEffectFilterEntry *filter in filters){
@@ -116,6 +63,7 @@ hook(_UIVisualEffectSubview)
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
     if (@available(iOS 13, *)){
+        
     } else {
         // don't hook the blur applying view itself, only the view in front of it
         if (![self isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) {
@@ -142,23 +90,6 @@ hook(_UIVisualEffectSubview)
         }
     }
     _orig(void, backgroundColor);
-}
-
-// A menu's backdrop that was washed before the menu took it in: once it is in
-// the menu, ask for what the system originally wanted.
-- (void)didMoveToWindow {
-    _orig(void);
-    if (@available(iOS 13, *)) {
-        UIView *view = (UIView *)self;
-        if (![view isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) return;
-        if (!ApelinInsideContextMenu(view)) return;
-        NSArray *filters = objc_getAssociatedObject(self, &ApelinOriginalFiltersKey);
-        if (filters) [self setFilters:filters];
-        id background = objc_getAssociatedObject(self, &ApelinOriginalBackgroundKey);
-        if (background) {
-            [self setBackgroundColor:[background isKindOfClass:[NSNull class]] ? nil : background];
-        }
-    }
 }
 
 endhook
