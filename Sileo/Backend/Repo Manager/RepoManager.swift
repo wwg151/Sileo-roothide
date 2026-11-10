@@ -840,7 +840,7 @@ final class RepoManager {
                     
                     guard let releaseFile = optReleaseFile else {
                         NSLog("SileoLog: optReleaseFile=\(optReleaseFile)")
-                        log(String(format: String(localizationKey: "Source_No_Release"), repo.repoURL.absoluteString), type: .error)
+                        log(String(format: String(localizationKey: "Source_No_Release"), repo.repoURL), type: .error)
                         errorsFound = true
 //                        reposUpdated += 1
                         self.checkUpdatesInBackground(repo)
@@ -922,7 +922,7 @@ final class RepoManager {
                     }
 
                     if repo.isFlat==false && preferredArch==nil {
-                        log(String(format: String(localizationKey: "Source_No_Preferred_Arch"), repo.repoURL.absoluteString), type: .error)
+                        log(String(format: String(localizationKey: "Source_No_Preferred_Arch"), repo.repoURL), type: .error)
                         errorsFound = true
 //                        reposUpdated += 1
                         self.checkUpdatesInBackground(repo)
@@ -1023,7 +1023,7 @@ final class RepoManager {
                         if !isReleaseGPGValid {
                             repo.packageDict = [:]
                             errorsFound = true
-                            log(String(format: String(localizationKey: "Source_No_Signature"), repo.repoURL.absoluteString), type: .error)
+                            log(String(format: String(localizationKey: "Source_No_Signature"), repo.repoURL), type: .error)
 //                            reposUpdated += 1
                             self.checkUpdatesInBackground(repo)
                             continue
@@ -1043,7 +1043,7 @@ final class RepoManager {
                     var skipPackages = false
                     if !breakOff {
                         guard var packagesFile = optPackagesFile else {
-                            log(String(format: String(localizationKey: "Source_No_Packages"), repo.repoURL.absoluteString), type: .error)
+                            log(String(format: String(localizationKey: "Source_No_Packages"), repo.repoURL), type: .error)
                             errorsFound = true
 //                            reposUpdated += 1
                             self.checkUpdatesInBackground()
@@ -1058,7 +1058,7 @@ final class RepoManager {
                         let hashToSave: RepoHashType = supportedHashTypes.contains(where: { $0.0.hashType == .sha512 })
                             ? .sha512 : .sha256
                         if releaseFileContainsHashes && !isPackagesFileValid {
-                            log(String(format: String(localizationKey: "Source_Bad_Hash"), packagesFile.name, repo.repoURL.absoluteString), type: .error)
+                            log(String(format: String(localizationKey: "Source_Bad_Hash"), packagesFile.name, repo.repoURL), type: .error)
                             errorsFound = true
                         }
                         let (shouldSkip, hash) = self.ignorePackages(repo: repo, packagesURL: packagesFile.url, type: succeededExtension, destinationPath: packagesFileDst, hashtype: hashToSave)
@@ -1117,7 +1117,7 @@ final class RepoManager {
                                         self.ignorePackage(repo: repo.repoURL, type: succeededExtension, hash: hash, hashtype: hashToSave)
                                     }
                                 } catch {
-                                    log(String(format: String(localizationKey: "Source_Decompress_Failed"), repo.repoURL.absoluteString, succeededExtension, error.localizedDescription), type: .error)
+                                    log(String(format: String(localizationKey: "Source_Decompress_Failed"), repo.repoURL, succeededExtension, error.localizedDescription), type: .error)
                                     isPackagesFileValid = false
                                     errorsFound = true
                                 }
