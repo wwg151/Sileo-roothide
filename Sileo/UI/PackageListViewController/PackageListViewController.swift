@@ -1090,8 +1090,23 @@ extension PackageListViewController: UICollectionViewDataSource {
                 case .size: headerView.sortHeader?.text = String(localizationKey: "Sort_Install_Size")
                 }
                 if #available(iOS 14.0, *) {
-                    headerView.sortContainer?.menu = self.sortMenu()
-                    headerView.sortContainer?.showsMenuAsPrimaryAction = true
+                    // UIControl carries no menu of its own, so a clear button on
+                    // top of it opens the sort menu where the control sits.
+                    if let container = headerView.sortContainer {
+                        container.viewWithTag(0x5A07)?.removeFromSuperview()
+                        let sortButton = UIButton(type: .custom)
+                        sortButton.translatesAutoresizingMaskIntoConstraints = false
+                        sortButton.tag = 0x5A07
+                        sortButton.menu = self.sortMenu()
+                        sortButton.showsMenuAsPrimaryAction = true
+                        container.addSubview(sortButton)
+                        NSLayoutConstraint.activate([
+                            sortButton.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                            sortButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                            sortButton.topAnchor.constraint(equalTo: container.topAnchor),
+                            sortButton.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+                        ])
+                    }
                 } else {
                     headerView.sortContainer?.addTarget(self, action: #selector(self.sortPopup(sender:)), for: .touchUpInside)
                 }
