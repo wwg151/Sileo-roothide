@@ -629,6 +629,17 @@ final class RepoManager {
             }
         }
 
+        /// The word shown in the refresh log, in the app's language.
+        var localizedDescription: String {
+            guard APTLogTranslator.isChinese else { return description }
+            switch self {
+            case .error:
+                return "错误"
+            case .warning:
+                return "警告"
+            }
+        }
+
         var color: UIColor {
             switch self {
             case .error:
@@ -654,9 +665,10 @@ final class RepoManager {
         let errorOutput = NSMutableAttributedString()
         func log(_ message: String, type: LogType) {
             NSLog("SileoLog: \(type)=\(message)")
+            let text = APTLogTranslator.localize(message)
             loglock.lock()
             errorOutput.append(NSAttributedString(
-                string: "\(type): \(message)\n",
+                string: "\(type.localizedDescription): \(text)\n",
                 attributes: [.foregroundColor: type.color])
             )
             loglock.unlock()

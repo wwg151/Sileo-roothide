@@ -994,6 +994,19 @@ enum APTLogTranslator {
         ("(?m)^  Package (.+) is not configured yet\\.$", "  软件包 $1 尚未配置。"),
         ("(?m)^  Package (.+) is not installed$", "  软件包 $1 尚未安装"),
 
+        // what Sileo itself says about a source it could not read
+        ("(?m)^Could not parse release file from (.+)$", "无法解析 Release 文件：$1"),
+        ("(?m)^Could not parse release file: (.+)$", "无法解析 Release 文件：$1"),
+        ("(?m)^Could not parse release file\\.$", "无法解析 Release 文件。"),
+        ("(?m)^Didn't find any architectures in (.+)$", "Release 文件里没有架构信息：$1"),
+        ("(?m)^Didn't find availabile architectures in (.+)$", "Release 文件里没有可用架构：$1"),
+        ("(?m)^Could not find preferredArch for (.+)$", "找不到 $1 的首选架构"),
+        ("(?m)^Invalid GPG signature at (.+)$", "GPG 签名无效：$1"),
+        ("(?m)^(.+) had no valid GPG signature$", "$1 没有有效的 GPG 签名"),
+        ("(?m)^Hash for (.+) from (.+) is invalid!$", "$2 里 $1 的哈希校验失败！"),
+        ("(?m)^Could not decompress packages from (.+) \\((.+)\\): (.+)$", "无法解压 $1 的软件包列表（$2）：$3"),
+        ("(?m)^(.+) returned status (\\d+)\\.\\s*(.*)$", "$1 返回状态 $2。$3"),
+
         // the first word of an apt error or warning line
         ("(?m)^E: ", "错误："),
         ("(?m)^W: ", "警告："),
