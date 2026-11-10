@@ -303,17 +303,18 @@ class PackageQueueButton: PackageButton {
                 addSubview(overlay)
                 NSLayoutConstraint.activate([
                     overlay.centerXAnchor.constraint(equalTo: centerXAnchor),
-                    overlay.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -14),
-                    overlay.widthAnchor.constraint(equalToConstant: 96),
-                    overlay.heightAnchor.constraint(equalToConstant: 118)
+                    overlay.centerYAnchor.constraint(equalTo: centerYAnchor),
+                    overlay.widthAnchor.constraint(equalTo: widthAnchor),
+                    overlay.heightAnchor.constraint(equalTo: heightAnchor)
                 ])
                 queueRingOverlay = overlay
             }
             // the ring replaces the button's own look while a task runs
-            if queueRingOverlay?.isHidden != false {
+            if savedButtonBackground == nil {
                 savedButtonBackground = backgroundColor
-                backgroundColor = .clear
             }
+            backgroundColor = .clear
+            self.alpha = 1
             bringSubviewToFront(queueRingOverlay!)
             titleLabel?.layer.opacity = 0
             queueRingOverlay?.configure(percent: percent, caption: caption, fraction: fraction, failed: failed)
@@ -331,6 +332,7 @@ class PackageQueueButton: PackageButton {
             backgroundColor = saved
             savedButtonBackground = nil
         }
+        alpha = isEnabled ? customAlpha : customAlpha * 0.45
         updateStyle()
     }
 
