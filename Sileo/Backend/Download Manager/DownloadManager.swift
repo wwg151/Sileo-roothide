@@ -1338,14 +1338,17 @@ final class DownloadManager {
         "ldid", "ncurses-bin", "ncurses-term", "p7zip", "procursus-keyring",
         "profile.d", "roothide", "rootless-compat", "sed", "shell-cmds",
         "snaputil", "sudo", "system-cmds", "tar", "uikittools", "unrar", "unzip",
-        "vi", "xz-utils", "zip", "zsh", "com.roothide.patchloader"
+        "vi", "xz-utils", "zip", "zsh", "com.roothide.patchloader",
+        // What every tweak on the device stands on.
+        "mobilesubstrate", "substrate", "libhooker", "org.coolstar.libhooker",
+        "preferenceloader", "sileo", "org.coolstar.sileo"
     ]
 
     static func isSystemPackage(_ package: Package) -> Bool {
         if package.essential == "yes" {
             return true
         }
-        if (package.rawControl["Priority"] ?? "").lowercased() == "required" {
+        if (package.rawControl["priority"] ?? "").lowercased() == "required" {
             return true
         }
         return DownloadManager.systemPackages.contains(package.package)
@@ -1435,7 +1438,8 @@ enum OrphanDependencies {
     /// wanted.
     static func dependencyNames(of package: Package) -> Set<String> {
         var names = Set<String>()
-        for key in ["Depends", "Pre-Depends"] {
+        // Control fields are kept with lowercased keys.
+        for key in ["depends", "pre-depends"] {
             guard let raw = package.rawControl[key] else { continue }
             for clause in raw.components(separatedBy: ",") {
                 for alternative in clause.components(separatedBy: "|") {
@@ -1457,14 +1461,17 @@ enum OrphanDependencies {
     }
 
     /// What would be left behind, and unwanted, if these packages went.
+    ///
+    /// A package installed from a local file never reaches apt's record of what
+    /// came in automatically, so that record is not what decides here: being a
+    /// dependency of the package that goes, and being wanted by nothing else
+    /// installed, is enough.
     static func orphaned(by removing: [Package], installed: [String: Package]) -> [Package] {
         guard !removing.isEmpty else { return [] }
         let automatic = autoInstalled()
-        guard !automatic.isEmpty else { return [] }
         let removedIdentifiers = Set(removing.map { $0.package })
 
-        // Everything those packages pulled in, and what that pulled in, as long
-        // as apt brought it in as a dependency.
+        // Everything those packages pulled in, and what that pulled in.
         var candidates = Set<String>()
         var visited = removedIdentifiers
         var queue = Array(removedIdentifiers)
@@ -1472,8 +1479,7 @@ enum OrphanDependencies {
             let identifier = queue.removeFirst()
             guard let package = installed[identifier] else { continue }
             for dependency in dependencyNames(of: package) {
-                guard automatic.contains(dependency),
-                      installed[dependency] != nil,
+                guard installed[dependency] != nil,
                       !removedIdentifiers.contains(dependency),
                       candidates.insert(dependency).inserted else {
                     continue
