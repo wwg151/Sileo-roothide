@@ -327,17 +327,30 @@ class PackageQueueButton: PackageButton {
             backgroundColor = saved
             savedButtonBackground = nil
         }
+        updateStyle()
     }
 
-    /// The style pass repaints the button's tint; keep it clear while a task
-    /// is drawn as a ring instead.
+    /// While the ring is up the button is only a canvas for it: a filled pill
+    /// behind a ring of the same colour hides the ring completely.
+    private var isShowingQueueRing: Bool {
+        queueRingOverlay?.isHidden == false
+    }
+
     override func updateStyle() {
-        super.updateStyle()
-        guard queueRingOverlay?.isHidden == false else { return }
-        if savedButtonBackground == nil {
-            savedButtonBackground = backgroundColor
+        if isShowingQueueRing {
+            backgroundColor = .clear
+            setTitleColor(.clear, for: .normal)
+            return
         }
-        backgroundColor = .clear
+        super.updateStyle()
+    }
+
+    override func updateSileoColors() {
+        if isShowingQueueRing {
+            backgroundColor = .clear
+            return
+        }
+        super.updateSileoColors()
     }
 
     private func useVisiblePresenter() {

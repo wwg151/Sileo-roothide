@@ -150,6 +150,7 @@ final class QueueCenter {
     private var capsule: QueueCapsuleView?
     private var window: UIWindow?
     private var timer: Timer?
+    private var timerInterval: TimeInterval = 0
     private var doneShownAt: Date?
     private var installFailed = false
     private(set) var sheetVisible = false
@@ -401,14 +402,25 @@ final class QueueCenter {
     }
 
     private func restartTimer() {
-        let busy = capsule?.isHidden == false || sheetVisible
-        if busy, timer == nil {
-            let timer = Timer(timeInterval: 0.7, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
-            RunLoop.main.add(timer, forMode: .common)
-            self.timer = timer
-        } else if !busy, let timer = self.timer {
-            timer.invalidate()
-            self.timer = nil
+        // keep polling while anything is queued, even when the capsule is
+        // hidden: the button on the page draws its own ring from these ticks
+        let busy = !lastItems.isEmpty || sheetVisible || capsule?.isHidden == false
+        let downloading = lastItems.contains {
+            if case .downloading = $0.state { return true }
+            return false
+        }
+        let interval: TimeInterval = downloading ? 0.35 : 0.8
+        if busy {
+            if timer == nil || timerInterval != interval {
+                timer?.invalidate()
+                let fresh = Timer(timeInterval: interval, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+                RunLoop.main.add(fresh, forMode: .common)
+                timer = fresh
+                timerInterval = interval
+            }
+        } else if let running = timer {
+            running.invalidate()
+            timer = nil
         }
     }
 
@@ -687,30 +699,46 @@ final class QueueRingOverlay: UIView {
         }
         ringLayer.strokeColor = ringColor.cgColor
         trackLayer.strokeColor = (onFilled ? UIColor.white.withAlphaComponent(0.35)
-                                           : UIColor.label.withAlphaComponent(0.15)).cgColor
-        self.fraction = fraction ?? 1
+                                           : UIColor.label.withAlphaComponent(0.12)).cgColor
         textLayer.string = text
+        textLayer.fontSize = 15
         textLayer.foregroundColor = (onFilled ? UIColor.white : (failed ? UIColor.systemRed : UIColor.label)).cgColor
+        let target = fraction ?? 1
+        if target != fraction {
+            // a download moves smoothly instead of jumping between polls
+            let animation = CABasicAnimation(keyPath: "strokeEnd")
+            animation.fromValue = ringLayer.presentation()?.strokeEnd ?? fraction
+            animation.toValue = target
+            animation.duration = 0.3
+            animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ringLayer.add(animation, forKey: "strokeEnd")
+        }
+        fraction = target
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         // a ring that fills the button's height, with the label beside it
-        let diameter = max(14, bounds.height - 8)
-        let radius = diameter / 2
-        let center = CGPoint(x: radius + 4, y: bounds.midY)
-        let path = UIBezierPath(arcCenter: center, radius: radius - 1.5,
+        let diameter = max(16, floor(bounds.height - 4))
+        let lineWidth: CGFloat = 4
+        let radius = diameter / 2 - lineWidth / 2
+        let center = CGPoint(x: radius + lineWidth / 2 + 2, y: bounds.midY)
+        let path = UIBezierPath(arcCenter: center, radius: radius,
                                 startAngle: -.pi / 2, endAngle: .pi * 3 / 2,
                                 clockwise: true).cgPath
         trackLayer.frame = bounds
         ringLayer.frame = bounds
+        trackLayer.lineWidth = lineWidth
+        ringLayer.lineWidth = lineWidth
+        trackLayer.contentsScale = UIScreen.main.scale
+        ringLayer.contentsScale = UIScreen.main.scale
         trackLayer.path = path
         ringLayer.path = path
         ringLayer.strokeEnd = fraction
         let textX = diameter + 10
         textLayer.frame = CGRect(x: textX, y: center.y - 9,
-                                 width: max(0, bounds.width - textX - 6), height: 18)
+                                 width: max(0, bounds.width - textX - 4), height: 18)
     }
 }
 
