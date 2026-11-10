@@ -137,6 +137,7 @@ final class QueueCenter {
     static let queueChangedNotification = Notification.Name("QueueCenterQueueChanged")
 
     private var capsule: QueueCapsuleView?
+    private var window: UIWindow?
     private var timer: Timer?
     private var doneShownAt: Date?
     private var installFailed = false
@@ -147,22 +148,33 @@ final class QueueCenter {
 
     // MARK: wiring
 
-    /// The capsule rides above the floating tab bar of the root controller.
-    func attach(to view: UIView, tabBar: UIView) {
-        guard capsule == nil else { return }
+    /// The capsule lives in its own window: always centred, above the app's
+    /// content, and it cannot be buried by a pushed page.
+    func activate() {
+        guard window == nil else { return }
+        guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive })
+                as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        let queueWindow = UIWindow(windowScene: scene)
+        queueWindow.windowLevel = .normal + 1
+        queueWindow.backgroundColor = .clear
+        queueWindow.rootViewController = UIViewController()
+        // touches that miss the capsule fall through to the app below
+        queueWindow.rootViewController?.view.isUserInteractionEnabled = false
+
         let capsuleView = QueueCapsuleView(frame: .zero)
         capsuleView.onTap = { [weak self] in self?.presentSheet() }
         capsuleView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(capsuleView)
+        queueWindow.rootViewController?.view.addSubview(capsuleView)
         NSLayoutConstraint.activate([
-            capsuleView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            capsuleView.centerXAnchor.constraint(equalTo: queueWindow.rootViewController!.view.centerXAnchor),
             // the floating pill sits 12pt above the safe area and is 64pt tall;
             // the capsule keeps 8pt of air above its top edge
-            capsuleView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -84),
+            capsuleView.bottomAnchor.constraint(equalTo: queueWindow.rootViewController!.view.safeAreaLayoutGuide.bottomAnchor, constant: -84),
             capsuleView.heightAnchor.constraint(equalToConstant: 44)
         ])
+        queueWindow.isHidden = false
+        window = queueWindow
         capsule = capsuleView
-        view.bringSubviewToFront(capsuleView)
     }
 
     // MARK: states
@@ -194,6 +206,48 @@ final class QueueCenter {
         }
     }
 
+    // MARK: execution
+
+    /// Everything queued waits and nothing runs it yet: start the downloads.
+    private func startQueueIfNeeded(_ items: [QueueItem]) {
+        let manager = DownloadManager.shared
+        guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning, !manager.aptFinished else { return }
+        manager.queueRunning = true
+        manager.currentDownloads = 0
+        manager.aptRunning = false
+        manager.aptFinished = false
+        NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
+        manager.startDownloads()
+    }
+
+    /// Downloads are all in: hand the batch to apt. The log sheet opens with
+    /// it, because the install phase is the part worth watching.
+    private func checkAptHandoff() {
+        let manager = DownloadManager.shared
+        guard manager.queueRunning, !manager.aptRunning, !manager.aptFinished,
+              manager.operationCount() > 0, manager.verifyComplete(),
+              manager.downloadingPackages() == 0 else { return }
+
+        guard let tab = TabBarController.singleton else { return }
+        var host: UIViewController = tab
+        while let presented = host.presentedViewController { host = presented }
+
+        let controller = manager.viewController
+        controller.modalPresentationStyle = .pageSheet
+        if let presentation = controller.sheetPresentationController {
+            presentation.detents = [.large()]
+            presentation.prefersGrabberVisible = true
+        }
+        manager.currentDownloadSession = 0
+        if host === controller {
+            controller.confirmQueued(nil)
+        } else {
+            host.present(controller, animated: true) {
+                controller.confirmQueued(nil)
+            }
+        }
+    }
+
     func state(for identifier: String) -> QueueItemState? {
         lastItems.first { $0.identifier == identifier }?.state
     }
@@ -204,6 +258,11 @@ final class QueueCenter {
             origins[item.identifier] = QueueCenter.currentPageIdentifier()
         }
         let hasFailure = installFailed || items.contains { $0.isFailed }
+
+        // The legacy popup carried the 开始 button that started the queue;
+        // the queue now starts itself the moment something is queued.
+        startQueueIfNeeded(items)
+        checkAptHandoff()
 
         if !items.isEmpty {
             // a new run supersedes the previous result
@@ -227,6 +286,8 @@ final class QueueCenter {
         } else if doneShownAt != nil {
             showCapsule = true
         }
+        // an open sheet already carries the same information
+        showCapsule = showCapsule && !sheetVisible
 
         // Without entries the failure note stands alone until the queue runs again.
         if items.isEmpty && installFailed {
@@ -644,6 +705,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
 
     private func openLog() {
         let controller = DownloadManager.shared.viewController
+        guard controller.presentingViewController == nil else { return }
         controller.modalPresentationStyle = .pageSheet
         if let presentation = controller.sheetPresentationController {
             presentation.detents = [.large()]

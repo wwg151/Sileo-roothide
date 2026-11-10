@@ -534,7 +534,7 @@ class PackageQueueButton: PackageButton {
             }
         }
         if DownloadManager.shared.queueRunning {
-            TabBarController.singleton?.presentPopupController()
+            QueueCenter.shared.presentSheet()
             return
         }
         self.hapticResponse()
@@ -543,7 +543,7 @@ class PackageQueueButton: PackageButton {
         
         if(checkQueued(package: package)) {
             // but it's a already queued! user changed their mind about installing this new package => nuke it from the queue
-            TabBarController.singleton?.presentPopupController()
+            QueueCenter.shared.presentSheet()
             downloadManager.reloadData(recheckPackages: true)
             
             NotificationCenter.default.post(name: PackageQueueButton.actionPerformedNotification, object: nil)

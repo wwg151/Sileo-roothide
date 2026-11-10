@@ -72,7 +72,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         self.tabBar.layoutIfNeeded()
         applyFloatingStyle()
         
-        QueueCenter.shared.attach(to: self.view, tabBar: self.tabBar)
+        QueueCenter.shared.activate()
         self.updatePopup()
     }
     
