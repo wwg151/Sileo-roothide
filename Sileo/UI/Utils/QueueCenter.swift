@@ -27,6 +27,8 @@ struct QueueItem {
     let version: String
     let isRemoval: Bool
     let state: QueueItemState
+    /// 0…1 while apt works through the batch
+    var aptFraction: CGFloat = 0
 
     var isFailed: Bool {
         if case .failed = state { return true }
@@ -46,6 +48,8 @@ struct QueueItem {
 
     var progress: CGFloat? {
         if case .downloading(let fraction) = state { return fraction }
+        if case .installing = state { return aptFraction }
+        if case .uninstalling = state { return aptFraction }
         return nil
     }
 }
@@ -79,6 +83,7 @@ extension DownloadManager {
             allDownloaded = downloads.values.allSatisfy { $0.success || $0.progress >= 1 }
         }
 
+        let aptFraction = QueueCenter.shared.aptFraction
         func add(_ set: Set<DownloadPackage>, removal: Bool) {
             for entry in set {
                 let package = entry.package
@@ -106,7 +111,8 @@ extension DownloadManager {
                                        name: package.name ?? identifier,
                                        version: package.version,
                                        isRemoval: removal,
-                                       state: state))
+                                       state: state,
+                                       aptFraction: aptActive ? aptFraction : 0))
             }
         }
 
@@ -170,6 +176,10 @@ final class QueueCenter {
     private var downloadPhaseSince: Date?
     private var handoffScheduled = false
     private var suspended = false
+    private var aptTotal = 0
+    private var aptCounted: Set<String> = []
+    private var aptPartial: [String: CGFloat] = [:]
+    private(set) var aptFraction: CGFloat = 0
     private var origins: [String: ObjectIdentifier] = [:]
 
     private init() {}
@@ -251,6 +261,10 @@ final class QueueCenter {
             // the snapshot, and new work can be queued straight away
             manager.removeAllItems()
             self.downloadPhase = false
+            self.aptFraction = ok ? 1 : self.aptFraction
+            self.aptTotal = 0
+            self.aptCounted.removeAll()
+            self.aptPartial.removeAll()
             self.syncNow()
         }
     }
@@ -260,6 +274,30 @@ final class QueueCenter {
         DispatchQueue.main.async {
             self.installFailed = false
             self.doneShownAt = nil
+            self.aptTotal = max(DownloadManager.shared.operationCount(), 1)
+            self.aptCounted.removeAll()
+            self.aptPartial.removeAll()
+            self.aptFraction = 0
+            self.syncNow()
+        }
+    }
+
+    /// dpkg's own percentage for one package of the batch (0…1).
+    func aptPackageProgress(_ identifier: String, fraction: CGFloat) {
+        DispatchQueue.main.async {
+            guard !identifier.isEmpty else { return }
+            let clamped = max(0, min(1, fraction))
+            if clamped >= 0.999 {
+                self.aptPartial.removeValue(forKey: identifier)
+                self.aptCounted.insert(identifier)
+            } else {
+                self.aptPartial[identifier] = clamped
+            }
+            let done = CGFloat(self.aptCounted.count) + self.aptPartial.values.reduce(0, +)
+            let next = min(0.99, done / CGFloat(max(self.aptTotal, 1)))
+            // dpkg reports very often: only redraw when the ring moves visibly
+            guard abs(next - self.aptFraction) >= 0.005 else { return }
+            self.aptFraction = next
             self.syncNow()
         }
     }
@@ -727,7 +765,8 @@ final class QueueCapsuleView: UIView {
                 if case .downloading = $0.state { return true }
                 return false
             }
-            let progress = downloading.map { $0.progress ?? 0 }.reduce(0, +) / CGFloat(max(downloading.count, 1))
+            let fractions = items.compactMap { $0.progress }
+            let progress = fractions.isEmpty ? 0 : fractions.reduce(0, +) / CGFloat(fractions.count)
             let title: String
             if items.contains(where: { if case .installing = $0.state { return true }; return false }) {
                 title = String(localizationKey: "Queue_Installing")
@@ -741,12 +780,12 @@ final class QueueCapsuleView: UIView {
                 title = String(localizationKey: "Queue_Waiting")
             }
             titleLabel.text = title + " " + String(format: String(localizationKey: "Queue_Items"), items.count)
-            percentLabel.text = downloading.isEmpty ? nil : String(format: "%.0f%%", progress * 100)
+            percentLabel.text = fractions.isEmpty ? nil : String(format: "%.0f%%", progress * 100)
             percentLabel.textColor = .secondaryLabel
             ringColor = .tintColor
-            // a waiting queue shows the bare track; a busy one a full ring
-            if !downloading.isEmpty {
-                setRing(progress, ringColor)
+            // a waiting queue shows the bare track; a busy one the real share
+            if !fractions.isEmpty {
+                setRing(max(0.02, min(1, progress)), ringColor)
             } else if title == String(localizationKey: "Queue_Waiting") {
                 setRing(0.12, ringColor)
             } else {
