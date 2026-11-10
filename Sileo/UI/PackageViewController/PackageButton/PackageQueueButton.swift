@@ -300,28 +300,47 @@ class PackageQueueButton: PackageButton {
             if queueRingOverlay == nil {
                 guard let host = superview else { return }
                 let overlay = QueueRingOverlay()
-                overlay.translatesAutoresizingMaskIntoConstraints = false
-                // beside the button, not inside it: the button hides itself
-                // and the ring hangs from the same top edge, downwards
+                // positioned by frame in layoutSubviews, so it always sits on
+                // the button whatever the container's layout does
+                overlay.translatesAutoresizingMaskIntoConstraints = true
                 host.addSubview(overlay)
-                NSLayoutConstraint.activate([
-                    overlay.centerXAnchor.constraint(equalTo: centerXAnchor),
-                    overlay.topAnchor.constraint(equalTo: topAnchor),
-                    overlay.widthAnchor.constraint(equalToConstant: 84),
-                    overlay.heightAnchor.constraint(equalToConstant: 68)
-                ])
                 queueRingOverlay = overlay
             }
             isHidden = true
             titleLabel?.layer.opacity = 0
-            if let overlay = queueRingOverlay, let host = overlay.superview {
-                host.bringSubviewToFront(overlay)
-            }
+            positionQueueRing()
             queueRingOverlay?.configure(percent: percent, caption: caption, fraction: fraction, failed: failed)
             queueRingOverlay?.isHidden = false
         } else {
             endQueueRing()
         }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        positionQueueRing()
+    }
+
+    private func positionQueueRing() {
+        guard let overlay = queueRingOverlay, let host = overlay.superview else { return }
+        let size = CGSize(width: 84, height: 68)
+        let topCenter = convert(CGPoint(x: bounds.midX, y: 0), to: host)
+        var frame = CGRect(x: topCenter.x - size.width / 2,
+                           y: topCenter.y,
+                           width: size.width,
+                           height: size.height)
+        // keep the whole ring inside its container, even a small one
+        let hostBounds = host.bounds
+        if hostBounds.width > 0 {
+            if frame.maxX > hostBounds.maxX - 2 { frame.origin.x = hostBounds.maxX - 2 - frame.width }
+            if frame.minX < 2 { frame.origin.x = 2 }
+        }
+        if hostBounds.height > 0 {
+            if frame.maxY > hostBounds.maxY - 2 { frame.origin.y = hostBounds.maxY - 2 - frame.height }
+            if frame.minY < 2 { frame.origin.y = 2 }
+        }
+        overlay.frame = frame
+        host.bringSubviewToFront(overlay)
     }
 
     private func endQueueRing() {
