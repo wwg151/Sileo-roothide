@@ -100,12 +100,34 @@ final class PackageRepacker {
         }
 
         var lines: [String] = []
+        var skippingContinuation = false
         for line in output.components(separatedBy: "\n") {
+            // A field's value can go on over lines that start with a space; they
+            // belong to the field above them, and go with it when it is dropped.
+            if line.hasPrefix(" ") || line.hasPrefix("\t") {
+                if !skippingContinuation {
+                    lines.append(line)
+                }
+                continue
+            }
+            skippingContinuation = false
             let lowered = line.lowercased()
             if lowered.hasPrefix("status:") || lowered.hasPrefix("conffiles:")
                 || lowered.hasPrefix("config-version:") || lowered.hasPrefix("triggers-pending:")
                 || lowered.hasPrefix("triggers-awaited:") {
+                skippingContinuation = true
                 continue
+            }
+            // A field with nothing after its colon says nothing, and one at the
+            // end of the file stops dpkg-deb: it waits for a value that never
+            // comes. `Homepage:` is the one that shows up.
+            if let colon = line.firstIndex(of: ":") {
+                let name = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+                let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty && value.isEmpty {
+                    skippingContinuation = true
+                    continue
+                }
             }
             lines.append(line)
         }
@@ -116,6 +138,14 @@ final class PackageRepacker {
         }
         if !lowered.contains("description:") {
             text += "\nDescription: Repacked from the installed package"
+        }
+        // Whatever came before, the file ends on a whole field.
+        if let last = text.components(separatedBy: "\n").last {
+            let trimmed = last.trimmingCharacters(in: .whitespaces)
+            let isContinuation = last.hasPrefix(" ") || last.hasPrefix("\t")
+            if !isContinuation, trimmed.hasSuffix(":") {
+                text += "\nDescription: Repacked from the installed package"
+            }
         }
         try (text + "\n").write(
             to: directory.appendingPathComponent("control"),
