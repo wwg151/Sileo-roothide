@@ -792,7 +792,8 @@ extension SileoPanelViewController {
         block.spacing = 8
         block.alignment = .center
         block.isLayoutMarginsRelativeArrangement = true
-        block.layoutMargins = UIEdgeInsets(top: 20, left: 8, bottom: 4, right: 8)
+        // no button under it: a tap outside closes, so the text has room
+        block.layoutMargins = UIEdgeInsets(top: 24, left: 8, bottom: 24, right: 8)
 
         NSLayoutConstraint.activate([
             icon.widthAnchor.constraint(equalToConstant: 40),
@@ -804,10 +805,7 @@ extension SileoPanelViewController {
         ])
 
         panel.table.setItems([
-            SileoPanelTable.Item(block),
-            SileoPanelTable.Item(row(title: String(localizationKey: "OK")) { [weak panel] in
-                panel?.close()
-            })
+            SileoPanelTable.Item(block)
         ])
         return panel
     }
