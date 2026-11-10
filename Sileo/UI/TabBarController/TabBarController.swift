@@ -392,12 +392,28 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         return saved > 0 ? CGFloat(saved) : 20
     }
     private let floatingContentInsetKey = "FloatingTabBarContentInset"
+    /// The queue bar's height for the floating tab bar, worked out once and kept
+    /// for the size it was worked out on. Following the capsule's frame made it
+    /// change whenever the tab bar was laid out again, and the framework animates
+    /// every height it is given, which showed as the bar bouncing into place.
+    private var floatingPopupTabBarHeightCache: CGFloat?
+    private var floatingPopupTabBarHeightCacheSize: CGSize = .zero
     private var floatingPopupTabBarHeight: CGFloat {
-        // Popup bottom edge should touch the capsule's top edge
-        if isFloatingEnabled, let container = floatingBackground, !container.isHidden, container.frame.height > 0 {
-            return max(self.tabBar.frame.height, self.tabBar.bounds.height - container.frame.minY)
+        guard isFloatingEnabled else { return self.tabBar.frame.height }
+        // The saved height stands even while the capsule is hidden with the
+        // window open: a different value there would be put back on the bar as
+        // it reappears, which is the bounce again.
+        if let cached = floatingPopupTabBarHeightCache,
+           floatingPopupTabBarHeightCacheSize == view.bounds.size {
+            return cached
         }
-        return self.tabBar.frame.height
+        guard let container = floatingBackground, container.frame.height > 0 else {
+            return self.tabBar.frame.height
+        }
+        let height = max(self.tabBar.frame.height, self.tabBar.bounds.height - container.frame.minY)
+        floatingPopupTabBarHeightCache = height
+        floatingPopupTabBarHeightCacheSize = view.bounds.size
+        return height
     }
 
     /// The capsule reaches above the tab bar, into the queue bar that sits on
@@ -684,6 +700,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     @objc private func floatingTabBarChanged() {
+        // The capsule's size may have changed with the style: the bar's height
+        // is worked out again for it.
+        floatingPopupTabBarHeightCache = nil
+        floatingPopupTabBarHeightCacheSize = .zero
         if popupIsPresented {
             self.popupBar.tabBarHeight = floatingPopupTabBarHeight
         }
