@@ -21,22 +21,14 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                    icon: "arrow.triangle.branch")
 
         // Exactly one row is the version shown now: the same version can sit in
-        // several sources, and an installed package carries no source of its
-        // own, so the first source that offers it is the one marked.
+        // several sources, and an installed package records no source of its
+        // own (it may have come from a local .deb), so nothing is marked then
+        // and the first pick is the user's.
         var winner: IndexPath?
         if let currentRepo = current.sourceRepo {
             for (section, entry) in sections.enumerated() {
                 for (row, package) in entry.packages.enumerated()
                     where package.version == current.version && package.sourceRepo?.url == currentRepo.url {
-                    winner = IndexPath(row: row, section: section)
-                    break
-                }
-                if winner != nil { break }
-            }
-        }
-        if winner == nil {
-            for (section, entry) in sections.enumerated() {
-                for (row, package) in entry.packages.enumerated() where package.version == current.version {
                     winner = IndexPath(row: row, section: section)
                     break
                 }
