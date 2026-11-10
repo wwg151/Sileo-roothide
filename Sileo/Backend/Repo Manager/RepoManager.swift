@@ -985,7 +985,7 @@ final class RepoManager {
                                 defer {
                                     PackagesFileSemaphore.signal()
                                 }
-                                log(String(format: String(localizationKey: "Source_Status"), packagesUrl.absoluteString, status, error?.localizedDescription ?? ""), type: .error)
+                                log(String(format: String(localizationKey: "Source_Status"), packagesUrl?.absoluteString ?? repo.repoURL, status, error?.localizedDescription ?? ""), type: .error)
                                 errorsFound = true
 //                                repo.packagesProgress = 0
 //                                self.postProgressNotification(repo)
