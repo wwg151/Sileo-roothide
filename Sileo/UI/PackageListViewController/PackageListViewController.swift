@@ -899,6 +899,23 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
     }
     
+    /// The sort choices as the system's own menu, anchored on the header,
+    /// instead of a sheet from the bottom of the screen.
+    @available(iOS 14.0, *)
+    private func sortMenu() -> UIMenu {
+        func action(_ key: String, _ value: String) -> UIAction {
+            UIAction(title: String(localizationKey: key)) { [weak self] _ in
+                UserDefaults.standard.set(value, forKey: "InstallSortType")
+                self?.updatePackageList()
+            }
+        }
+        return UIMenu(children: [
+            action("Sort_Name", "name"),
+            action("Sort_Date", "installdate"),
+            action("Sort_Install_Size", "size")
+        ])
+    }
+
     @objc func sortPopup(sender: UIView?) {
         let alert = UIAlertController(title: String(localizationKey: "Sort_By"), message: nil, preferredStyle: .actionSheet)
         alert.modalPresentationStyle = .popover
@@ -1072,7 +1089,12 @@ extension PackageListViewController: UICollectionViewDataSource {
                 case .installdate: headerView.sortHeader?.text = String(localizationKey: "Sort_Date")
                 case .size: headerView.sortHeader?.text = String(localizationKey: "Sort_Install_Size")
                 }
-                headerView.sortContainer?.addTarget(self, action: #selector(self.sortPopup(sender:)), for: .touchUpInside)
+                if #available(iOS 14.0, *) {
+                    headerView.sortContainer?.menu = self.sortMenu()
+                    headerView.sortContainer?.showsMenuAsPrimaryAction = true
+                } else {
+                    headerView.sortContainer?.addTarget(self, action: #selector(self.sortPopup(sender:)), for: .touchUpInside)
+                }
 //                headerView.separatorView?.isHidden = false
                 return headerView
             } else if showProvisional && loadProvisional {
