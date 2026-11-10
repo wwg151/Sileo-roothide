@@ -131,11 +131,11 @@ class FeaturedPackageView: FeaturedBaseView, PackageQueueButtonDataProvider {
         tap.delaysTouchesBegan = false
         self.addGestureRecognizer(tap)
 
-        // A long press opens Sileo's own card, not the system's list with a line
-        // between every pair of rows.
-        let card = UILongPressGestureRecognizer(target: self, action: #selector(FeaturedPackageView.presentCard(_:)))
-        card.minimumPressDuration = 0.4
-        self.addGestureRecognizer(card)
+        viewController.registerForPreviewing(with: self, sourceView: self)
+        if #available(iOS 13, *) {
+            let interaction = UIContextMenuInteraction(delegate: self)
+            self.addInteraction(interaction)
+        }
         
         self.reloadPackage()
         
@@ -271,17 +271,6 @@ class FeaturedPackageView: FeaturedBaseView, PackageQueueButtonDataProvider {
 }
 
 extension FeaturedPackageView: UIViewControllerPreviewingDelegate {
-    /// The package's actions, in Sileo's own card dropped from this view.
-    @objc private func presentCard(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began, let package = packageObject else { return }
-        let controller = NativePackageViewController.viewController(for: package)
-        let items = controller.cardActions()
-        guard !items.isEmpty, let host = parentViewController else { return }
-        host.present(SileoActionMenu(header: nil,
-                                     items: items,
-                                     sourceFrame: convert(bounds, to: nil)),
-                     animated: true)
-    }
 
     func previewingContext(_ previewingContext: UIViewControllerPreviewing, viewControllerForLocation location: CGPoint) -> UIViewController? {
         if let package = self.packageObject {

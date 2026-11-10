@@ -64,11 +64,7 @@ class NewsViewController: SileoViewController, UICollectionViewDataSource, UICol
         collectionView.register(NewsArticlesHeader.self,
                                 forCellWithReuseIdentifier: "NewsArticlesHeader")
 
-        // A long press on a package row opens Sileo's own card: the system's
-        // menu put a line between every pair of rows.
-        let packageCard = UILongPressGestureRecognizer(target: self, action: #selector(self.presentPackageCard(_:)))
-        packageCard.minimumPressDuration = 0.4
-        collectionView.addGestureRecognizer(packageCard)
+        self.registerForPreviewing(with: self, sourceView: self.collectionView)
         
         weak var weakSelf = self
         NotificationCenter.default.addObserver(weakSelf as Any,
@@ -394,20 +390,26 @@ extension NewsViewController { // 3D Touch
 
 @available(iOS 13.0, *)
 extension NewsViewController {
-    /// The package row's actions, in Sileo's own card dropped from the row.
-    @objc func presentPackageCard(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began, let collectionView = self.collectionView else { return }
-        let point = gesture.location(in: collectionView)
-        guard let indexPath = collectionView.indexPathForItem(at: point),
-              currentSection(indexPath.section) == .packages,
-              let cell = collectionView.cellForItem(at: indexPath),
-              let packageViewController = self.controller(indexPath: indexPath) else { return }
-        let items = packageViewController.cardActions()
-        guard !items.isEmpty else { return }
-        present(SileoActionMenu(header: nil,
-                                items: items,
-                                sourceFrame: cell.convert(cell.bounds, to: nil)),
-                animated: true)
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        if currentSection(indexPath.section) != .packages { return nil }
+        guard let packageViewController = self.controller(indexPath: indexPath) else { return nil }
+        let menuItems = packageViewController.actions()
+        
+        return UIContextMenuConfiguration(identifier: nil,
+                                          previewProvider: {
+                                            packageViewController
+                                          },
+                                          actionProvider: { _ in
+                                            UIMenu(title: "", options: .displayInline, children: menuItems)
+                                          })
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
+        if let controller = animator.previewViewController {
+            animator.addAnimations {
+                self.show(controller, sender: self)
+            }
+        }
     }
 }
 

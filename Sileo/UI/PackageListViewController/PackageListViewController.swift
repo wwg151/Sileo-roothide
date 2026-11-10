@@ -147,12 +147,6 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // A long press on a row opens Sileo's own card: the system's context menu
-        // draws a line between every pair of rows.
-        let rowCard = UILongPressGestureRecognizer(target: self, action: #selector(self.presentRowCard(_:)))
-        rowCard.minimumPressDuration = 0.4
-        collectionView?.addGestureRecognizer(rowCard)
-        
         if showUpdates {
             shouldShowUpdates = true
         }
@@ -256,9 +250,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             collectionView.register(SearchHistoryCollectionViewCell.self,
                                     forCellWithReuseIdentifier: "HistoryViewCellIdentifier")
             
-            // No peek registration: a long press belongs to the card now. The
-            // system's preview turned the actions into a list with a line
-            // between every pair of them.
+            self.registerForPreviewing(with: self, sourceView: collectionView)
         }
         DispatchQueue.global(qos: .userInteractive).async {
             let packageMan = PackageListManager.shared
@@ -1180,32 +1172,43 @@ extension PackageListViewController: UIViewControllerPreviewingDelegate {
     }
 }
 
+@available(iOS 13.0, *)
 extension PackageListViewController {
-    /// The row's actions, in Sileo's own card dropped from the row. The system's
-    /// context menu put a line between every pair of rows.
-    @objc func presentRowCard(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began, let collectionView = self.collectionView else { return }
-        let point = gesture.location(in: collectionView)
-        guard let indexPath = collectionView.indexPathForItem(at: point),
-              let cell = collectionView.cellForItem(at: indexPath) else { return }
-
-        var items: [SileoActionMenuItem] = []
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         if findWhatFuckingSectionThisIs(indexPath.section) == .searchHistoryList {
-            guard let text = searchHistory[safe: indexPath.row] else { return }
-            items = [SileoActionMenuItem(title: String(localizationKey: "Copy"),
-                                         imageName: "doc.on.doc") {
-                UIPasteboard.general.string = text
-            }]
-        } else {
-            guard let pvc = controller(indexPath: indexPath) else { return }
-            (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
-            items = pvc.cardActions()
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+                let copyItemAction = UIAction(title: String(localizationKey: "Copy"), image: UIImage(systemName: "doc.on.doc")) { _ in
+                    UIPasteboard.general.string = searchHistory[safe: indexPath.row]
+                }
+                
+                return UIMenu(children: [copyItemAction])
+            }
         }
-        guard !items.isEmpty else { return }
-        present(SileoActionMenu(header: nil,
-                                items: items,
-                                sourceFrame: cell.convert(cell.bounds, to: nil)),
-                animated: true)
+        
+        guard let pvc = self.controller(indexPath: indexPath) else {
+            return nil
+        }
+        (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
+
+        let menuItems = pvc.actions()
+        // a compact, centered preview leaves room for the menu instead of the full-height page covering it
+        let previewWidth = min(collectionView.bounds.width - 48, 360)
+        let config = UIContextMenuConfiguration(identifier: nil, previewProvider: {
+            pvc.preferredContentSize = CGSize(width: previewWidth, height: min(collectionView.bounds.height * 0.4, 320))
+            return pvc
+        }, actionProvider: { _ in
+            UIMenu(title: "", options: .displayInline, children: menuItems)
+        })
+
+        return config
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
+        if let previewController = animator.previewViewController {
+            animator.addAnimations {
+                self.show(previewController, sender: self)
+            }
+        }
     }
 }
 
