@@ -262,11 +262,11 @@ class PackageQueueButton: PackageButton {
     // MARK: the task ring lives on this very button
 
     private var queueRingOverlay: QueueRingOverlay?
+    private var savedButtonBackground: UIColor?
 
     override func queueChanged() {
         guard let package = self.package else {
-            queueRingOverlay?.isHidden = true
-            titleLabel?.layer.opacity = 1
+            endQueueRing()
             return
         }
         let state = QueueCenter.shared.state(for: package.package)
@@ -284,7 +284,7 @@ class PackageQueueButton: PackageButton {
         case .uninstalling:
             text = String(localizationKey: "Queue_Uninstalling")
         case .waiting:
-            text = String(localizationKey: "Queue_Waiting")
+            text = "…"
         case .failed:
             text = "!"
             failed = true
@@ -305,14 +305,39 @@ class PackageQueueButton: PackageButton {
                 ])
                 queueRingOverlay = overlay
             }
+            // the ring replaces the button's own look while a task runs
+            if queueRingOverlay?.isHidden != false {
+                savedButtonBackground = backgroundColor
+                backgroundColor = .clear
+            }
             bringSubviewToFront(queueRingOverlay!)
             titleLabel?.layer.opacity = 0
-            queueRingOverlay?.configure(text: text, fraction: fraction, failed: failed, onFilled: isProminent)
+            queueRingOverlay?.configure(text: text, fraction: fraction, failed: failed, onFilled: false)
             queueRingOverlay?.isHidden = false
         } else {
-            titleLabel?.layer.opacity = 1
-            queueRingOverlay?.isHidden = true
+            endQueueRing()
         }
+    }
+
+    private func endQueueRing() {
+        titleLabel?.layer.opacity = 1
+        guard queueRingOverlay?.isHidden == false else { return }
+        queueRingOverlay?.isHidden = true
+        if let saved = savedButtonBackground {
+            backgroundColor = saved
+            savedButtonBackground = nil
+        }
+    }
+
+    /// The style pass repaints the button's tint; keep it clear while a task
+    /// is drawn as a ring instead.
+    override func updateStyle() {
+        super.updateStyle()
+        guard queueRingOverlay?.isHidden == false else { return }
+        if savedButtonBackground == nil {
+            savedButtonBackground = backgroundColor
+        }
+        backgroundColor = .clear
     }
 
     private func useVisiblePresenter() {

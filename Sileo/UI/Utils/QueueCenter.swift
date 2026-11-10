@@ -651,9 +651,11 @@ final class QueueRingOverlay: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let side = min(bounds.width, bounds.height) - 10
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        let path = UIBezierPath(arcCenter: center, radius: side / 2,
+        // a ring that fills the button's height, with the label beside it
+        let diameter = max(14, bounds.height - 8)
+        let radius = diameter / 2
+        let center = CGPoint(x: radius + 4, y: bounds.midY)
+        let path = UIBezierPath(arcCenter: center, radius: radius - 1.5,
                                 startAngle: -.pi / 2, endAngle: .pi * 3 / 2,
                                 clockwise: true).cgPath
         trackLayer.frame = bounds
@@ -661,7 +663,9 @@ final class QueueRingOverlay: UIView {
         trackLayer.path = path
         ringLayer.path = path
         ringLayer.strokeEnd = fraction
-        textLayer.frame = CGRect(x: 0, y: center.y - 9, width: bounds.width, height: 18)
+        let textX = diameter + 10
+        textLayer.frame = CGRect(x: textX, y: center.y - 9,
+                                 width: max(0, bounds.width - textX - 6), height: 18)
     }
 }
 
