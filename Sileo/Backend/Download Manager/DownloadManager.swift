@@ -683,6 +683,27 @@ final class DownloadManager {
             && !uninstallDeps.contains(where: { $0.package.package == orphan.package }) {
             uninstallDeps.insert(DownloadPackage(package: orphan))
         }
+
+        // apt's own list is put through the same question: nothing a package
+        // that stays still needs goes along with it, and once something is kept
+        // what it needs is kept too.
+        let removingIdentifiers = Set(uninstallations.map { $0.package.package })
+        var changed = true
+        while changed {
+            let identifiers = Set(uninstallDeps.map { $0.package.package })
+            let needed = OrphanDependencies.neededByStaying(identifiers,
+                                                            removing: removingIdentifiers,
+                                                            installed: PackageListManager.shared.installedPackages)
+            changed = false
+            if !needed.isEmpty {
+                let before = uninstallDeps.count
+                uninstallDeps = Set(uninstallDeps.filter { !needed.contains($0.package.package) })
+                changed = uninstallDeps.count != before
+                if changed {
+                    OrphanLog.write("kept because still needed=\(needed.sorted())")
+                }
+            }
+        }
         OrphanLog.write("final removals=\(uninstallations.map { $0.package.package }) + deps=\(uninstallDeps.map { $0.package.package })")
   
         self.vars.upgrades.setTo(upgrades)
@@ -1466,11 +1487,12 @@ enum OrphanDependencies {
     ///
     /// A package installed from a local file never reaches apt's record of what
     /// came in automatically, so that record is not what decides here: being a
-    /// dependency of the package that goes, and being wanted by nothing else
-    /// installed, is enough.
+    /// dependency of the package that goes, and being wanted by nothing that
+    /// stays, is enough. Wanted is counted again after each package is dropped,
+    /// because what a kept package needs must stay as well: libpam2 needs
+    /// libpam-modules, and sudo needs libpam2.
     static func orphaned(by removing: [Package], installed: [String: Package]) -> [Package] {
         guard !removing.isEmpty else { return [] }
-        let automatic = autoInstalled()
         let removedIdentifiers = Set(removing.map { $0.package })
 
         // Everything those packages pulled in, and what that pulled in.
@@ -1492,24 +1514,89 @@ enum OrphanDependencies {
             }
         }
         guard !candidates.isEmpty else { return [] }
+        let found = candidates.count
 
-        // Anything another installed package still asks for stays, whether that
-        // package is being removed as well or not.
-        var wanted = Set<String>()
-        for (identifier, package) in installed
-        where !removedIdentifiers.contains(identifier) && !candidates.contains(identifier) {
-            for dependency in dependencyNames(of: package) where candidates.contains(dependency) {
-                wanted.insert(dependency)
+        // Which package carries each name, its own and the ones it provides: a
+        // dependency on a virtual name keeps whatever provides it.
+        var providers = [String: Set<String>]()
+        for (identifier, package) in installed {
+            providers[identifier, default: []].insert(identifier)
+            for provided in providedNames(of: package) {
+                providers[provided, default: []].insert(identifier)
             }
         }
-        OrphanLog.write("automatic=\(automatic.count) candidates=\(candidates.sorted()) still wanted=\(wanted.sorted())")
-        candidates.subtract(wanted)
+
+        // Drop what anything that stays still needs, and look again, since what
+        // that needs must stay too.
+        var dropped = Set<String>()
+        var changed = true
+        while changed {
+            changed = false
+            for (identifier, package) in installed
+            where !removedIdentifiers.contains(identifier) && !candidates.contains(identifier) {
+                for dependency in dependencyNames(of: package) {
+                    guard let carriers = providers[dependency] else { continue }
+                    for carrier in carriers where candidates.remove(carrier) != nil {
+                        dropped.insert(carrier)
+                        changed = true
+                    }
+                }
+            }
+        }
+        OrphanLog.write("found=\(found) candidates=\(candidates.sorted()) kept because still needed=\(dropped.sorted())")
 
         // A dependency is never taken along if the device cannot do without it.
         return candidates.compactMap { identifier in
             guard let package = installed[identifier] else { return nil }
             return DownloadManager.isSystemPackage(package) ? nil : package
         }
+    }
+
+    /// Of these packages, the ones a package that stays still needs, directly or
+    /// through a name they provide.
+    static func neededByStaying(_ identifiers: Set<String>,
+                                removing: Set<String>,
+                                installed: [String: Package]) -> Set<String> {
+        guard !identifiers.isEmpty else { return [] }
+        var providers = [String: Set<String>]()
+        for (identifier, package) in installed where identifiers.contains(identifier) {
+            providers[identifier, default: []].insert(identifier)
+            for provided in providedNames(of: package) {
+                providers[provided, default: []].insert(identifier)
+            }
+        }
+        var needed = Set<String>()
+        for (identifier, package) in installed
+        where !removing.contains(identifier) && !identifiers.contains(identifier) {
+            for dependency in dependencyNames(of: package) {
+                for carrier in providers[dependency] ?? [] {
+                    needed.insert(carrier)
+                }
+            }
+        }
+        return needed
+    }
+
+    /// The names a package answers to besides its own, from Provides.
+    static func providedNames(of package: Package) -> Set<String> {
+        var names = Set<String>()
+        for key in ["provides", "Provides"] {
+            guard let raw = package.rawControl[key] else { continue }
+            for clause in raw.components(separatedBy: ",") {
+                var name = clause.trimmingCharacters(in: .whitespaces)
+                if let bracket = name.firstIndex(of: "(") {
+                    name = String(name[..<bracket])
+                }
+                if let colon = name.firstIndex(of: ":") {
+                    name = String(name[..<colon])
+                }
+                name = name.trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty {
+                    names.insert(name)
+                }
+            }
+        }
+        return names
     }
 }
 
