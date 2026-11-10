@@ -109,6 +109,8 @@ final class RepoManager {
     }
 
     @discardableResult func addRepos(with urls: [URL]) -> [Repo] {
+        // Adding them on purpose takes them off the list of removed sources.
+        RemovedSourcesStore.shared.forget(urls: urls)
         var repos = [Repo]()
         func handleDistRepo(_ url: URL) -> Bool {
             let host = url.host?.lowercased()
@@ -221,6 +223,9 @@ final class RepoManager {
         
         guard shouldAddRepo(normalizedURL, suites, componentsArray) else { return nil }
 
+        // Adding it on purpose takes it off the list of removed sources.
+        RemovedSourcesStore.shared.forget(urls: [normalizedURL])
+
         repoListLock.wait()
         let repo = Repo()
         repo.rawURL = normalizedURL.absoluteString
@@ -307,6 +312,13 @@ final class RepoManager {
 
         for repoURL in uris {
             guard let _repoURL = URL(string: repoURL), ["http","https"].contains(_repoURL.scheme?.lowercased()), _repoURL.host != nil else {
+                continue
+            }
+
+            // A source the user took off the list stays off. The file that
+            // carries it can still be there (the bootstrap's default.sources is
+            // never rewritten by Sileo), so the record is what decides.
+            guard !RemovedSourcesStore.shared.isRemoved(url: repoURL) else {
                 continue
             }
             
