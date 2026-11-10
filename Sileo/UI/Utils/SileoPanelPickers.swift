@@ -17,17 +17,40 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
          current: Package,
          onPick: @escaping (Package) -> Void) {
         super.init(title: String(localizationKey: "Package_Select_Version"),
-                   subtitle: current.name,
+                   subtitle: current.name + " · " + current.version,
                    icon: "arrow.triangle.branch")
 
-        var items: [SileoPanelTable.Item] = []
-        for section in sections {
-            if sections.count > 1 {
-                items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(section.title), height: 34))
+        // Exactly one row is the version shown now: the same version can sit in
+        // several sources, and an installed package carries no source of its
+        // own, so the first source that offers it is the one marked.
+        var winner: IndexPath?
+        if let currentRepo = current.sourceRepo {
+            for (section, entry) in sections.enumerated() {
+                for (row, package) in entry.packages.enumerated()
+                    where package.version == current.version && package.sourceRepo?.url == currentRepo.url {
+                    winner = IndexPath(row: row, section: section)
+                    break
+                }
+                if winner != nil { break }
             }
-            for package in section.packages {
-                let selected = package.version == current.version
-                    && (current.sourceRepo == nil || package.sourceRepo == current.sourceRepo)
+        }
+        if winner == nil {
+            for (section, entry) in sections.enumerated() {
+                for (row, package) in entry.packages.enumerated() where package.version == current.version {
+                    winner = IndexPath(row: row, section: section)
+                    break
+                }
+                if winner != nil { break }
+            }
+        }
+
+        var items: [SileoPanelTable.Item] = []
+        for (section, entry) in sections.enumerated() {
+            if sections.count > 1 {
+                items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(entry.title), height: 34))
+            }
+            for (row, package) in entry.packages.enumerated() {
+                let selected = winner == IndexPath(row: row, section: section)
                 let row = SileoPanelViewController.choiceRow(title: package.version,
                                                              detail: nil,
                                                              selected: selected) { [weak self] in
