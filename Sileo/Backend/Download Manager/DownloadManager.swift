@@ -582,6 +582,13 @@ final class DownloadManager {
             throw APTParserErrors.blankJsonOutput(error: String(localizationKey: "APT_Uninstall_Mismatch", type: .error))
         }
         var uninstallDeps = Set<DownloadPackage>(rawUninstalls.compactMap { DownloadPackage(package: $0) })
+        // apt says which dependencies nothing else needs any more. Only those
+        // are checked against the system list: a package the user asked to
+        // remove goes whatever it is, that is their call.
+        let askedFor = Set(self.vars.uninstallations.raw.map { $0.package.package })
+        uninstallDeps = Set(uninstallDeps.filter { downloadPackage in
+            askedFor.contains(downloadPackage.package.package) || !DownloadManager.isSystemPackage(downloadPackage.package)
+        })
         
         // Get the list of packages to be installed, including depends
         var installDepOperation = [String: (String, [String])]()
@@ -1297,6 +1304,30 @@ final class DownloadManager {
         }
     }
     
+    /// Packages a jailbreak cannot live without: the bootstrap's own, and
+    /// whatever its control file marks essential or required. A dependency
+    /// nothing else needs is still never taken along if it is one of these.
+    private static let systemPackages: Set<String> = [
+        "apt", "base", "bash", "ca-certificates", "chariz-keyring", "coreutils",
+        "dash", "darwintools", "debianutils", "diffutils", "diskdev-cmds", "dpkg",
+        "dopamine-basebin-link", "ellekit", "essential", "file-cmds", "findutils",
+        "firmware", "gawk", "gpgv", "grep", "gzip", "havoc-keyring", "launchctl",
+        "ldid", "ncurses-bin", "ncurses-term", "p7zip", "procursus-keyring",
+        "profile.d", "roothide", "rootless-compat", "sed", "shell-cmds",
+        "snaputil", "sudo", "system-cmds", "tar", "uikittools", "unrar", "unzip",
+        "vi", "xz-utils", "zip", "zsh", "com.roothide.patchloader"
+    ]
+
+    static func isSystemPackage(_ package: Package) -> Bool {
+        if package.essential == "yes" {
+            return true
+        }
+        if (package.rawControl["Priority"] ?? "").lowercased() == "required" {
+            return true
+        }
+        return DownloadManager.systemPackages.contains(package.package)
+    }
+
     public func isEssential(_ package: Package) -> Bool {
         // Check for essential
         var allowedHosts = [String]()
