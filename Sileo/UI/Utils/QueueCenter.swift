@@ -705,18 +705,18 @@ final class QueueRingOverlay: UIView {
         percentLayer.string = percent
         percentLayer.foregroundColor = accent.cgColor
         captionLayer.string = caption
-        captionLayer.foregroundColor = failed ? UIColor.systemRed : UIColor.secondaryLabel
+        captionLayer.foregroundColor = (failed ? UIColor.systemRed : UIColor.secondaryLabel).cgColor
 
         let target = fraction ?? 0
-        if abs(target - fraction) > 0.001 {
+        if abs(target - self.fraction) > 0.001 {
             let animation = CABasicAnimation(keyPath: "strokeEnd")
-            animation.fromValue = ringLayer.presentation()?.strokeEnd ?? fraction
+            animation.fromValue = ringLayer.presentation()?.strokeEnd ?? self.fraction
             animation.toValue = target
             animation.duration = 0.3
             animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
             ringLayer.add(animation, forKey: "strokeEnd")
         }
-        fraction = target
+        self.fraction = target
         setNeedsLayout()
     }
 
