@@ -532,7 +532,6 @@ final class DownloadManager {
     //running in aptQueue
     private func recheckTotalOps() throws {
         NSLog("SileoLog: recheckTotalOps")
-        OrphanLog.write("recheck start installs=\(vars.installations.count) upgrades=\(vars.upgrades.count) removals=\(vars.uninstallations.count)")
         if Thread.isMainThread {
             fatalError("This cannot be called from the main thread!")
         }
@@ -548,20 +547,16 @@ final class DownloadManager {
         let pendingConversion = allInstalls.filter { DownloadManager.needsConversion($0.package) }
         let installationsAndUpgrades = allInstalls.subtracting(pendingConversion)
         guard !(installationsAndUpgrades.isEmpty && self.vars.uninstallations.isEmpty) else {
-            OrphanLog.write("nothing queued, stopping")
             return
         }
-        OrphanLog.write("past the guard, installs to do=\(installationsAndUpgrades.count)")
 
         do {
             // Run the dep accelerator for any packages that have not already been cared about
             try DependencyResolverAccelerator.shared.getDependencies(packages: installationsAndUpgrades.map { $0.package })
         } catch {
-            OrphanLog.write("dependency accelerator failed: \(error)")
             throw error
         }
         #if TARGET_SANDBOX || targetEnvironment(simulator)
-        OrphanLog.write("sandbox build, stopping before apt")
         return
         #endif
         // What the removal would take with it, worked out before apt is asked,
@@ -571,7 +566,6 @@ final class DownloadManager {
             let removing = self.vars.uninstallations.raw.map { $0.package }
             orphaned = OrphanDependencies.orphaned(by: removing,
                                                    installed: PackageListManager.shared.installedPackages)
-            OrphanLog.write("queue remove=\(removing.map { $0.package }) worked out=\(orphaned.map { $0.package })")
         }
 
         var aptOutput: APTOutput
@@ -579,9 +573,7 @@ final class DownloadManager {
             // Get the full list of packages to be installed and removed from apt
             aptOutput = try APTWrapper.operationList(installList: installationsAndUpgrades, removeList: self.vars.uninstallations.raw)
             NSLog("SileoLog: aptOutput=\(aptOutput.operations), \(aptOutput.conflicts)")
-            OrphanLog.write("apt answered, \(aptOutput.operations.count) operations, \(aptOutput.conflicts.count) conflicts")
         } catch {
-            OrphanLog.write("apt failed: \(error)")
             if !orphaned.isEmpty {
                 self.vars.uninstalldeps.setTo(Set(orphaned.map { DownloadPackage(package: $0) }))
             }
@@ -705,11 +697,9 @@ final class DownloadManager {
                 uninstallDeps = Set(uninstallDeps.filter { !needed.contains($0.package.package) })
                 changed = uninstallDeps.count != before
                 if changed {
-                    OrphanLog.write("kept because still needed=\(needed.sorted())")
                 }
             }
         }
-        OrphanLog.write("final removals=\(uninstallations.map { $0.package.package }) + deps=\(uninstallDeps.map { $0.package.package })")
   
         self.vars.upgrades.setTo(upgrades)
         self.vars.installations.setTo(installations)
@@ -1532,12 +1522,10 @@ enum OrphanDependencies {
             }
         }
         guard !candidates.isEmpty else { return [] }
-        let found = candidates.count
         let carriers = providers(among: Set(installed.keys), installed: installed)
 
         // Drop what anything that stays still needs, and look again, since what
         // that needs must stay too.
-        var dropped = Set<String>()
         var changed = true
         while changed {
             changed = false
@@ -1551,14 +1539,12 @@ enum OrphanDependencies {
                     guard !met else { continue }
                     for name in clause {
                         for carrier in carriers[name] ?? [] where candidates.remove(carrier) != nil {
-                            dropped.insert(carrier)
                             changed = true
                         }
                     }
                 }
             }
         }
-        OrphanLog.write("found=\(found) candidates=\(candidates.sorted()) kept because still needed=\(dropped.sorted())")
 
         // A dependency is never taken along if the device cannot do without it.
         return candidates.compactMap { identifier in
@@ -1590,22 +1576,5 @@ enum OrphanDependencies {
             }
         }
         return needed
-    }
-}
-
-/// What the uninstall worked out, written where it can be read from outside
-/// while the feature is being tried on a device.
-enum OrphanLog {
-    static func write(_ text: String) {
-        let path = "/tmp/apelin_orphans.txt"
-        let line = "\(text)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if let handle = FileHandle(forWritingAtPath: path) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            handle.closeFile()
-        } else {
-            try? data.write(to: URL(fileURLWithPath: path))
-        }
     }
 }
