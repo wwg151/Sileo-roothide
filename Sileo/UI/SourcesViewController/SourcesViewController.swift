@@ -111,7 +111,7 @@ final class SourcesViewController: SileoViewController {
         #if targetEnvironment(macCatalyst)
         let nav = self.navigationItem
         nav.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addSource(_:)))
-        nav.leftBarButtonItem = UIBarButtonItem(title: "Refresh", style: .done, target: self, action: #selector(refreshSources(_:)))
+        nav.leftBarButtonItem = UIBarButtonItem(title: String(localizationKey: "Refresh"), style: .done, target: self, action: #selector(refreshSources(_:)))
         #endif
     
         NotificationCenter.default.addObserver(weakSelf as Any, selector: #selector(handleImageUpdate(_:)), name: SourcesTableViewCell.repoImageUpdate, object: nil)

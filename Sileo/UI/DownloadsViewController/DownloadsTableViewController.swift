@@ -449,15 +449,16 @@ class DownloadsTableViewController: SileoViewController {
         }
         guard let action = actions.first(where: { $0.package.package == package }) else { return }
         action.progressCounter += 1
+        let shown = APTLogTranslator.localize(status)
         let ending = "(\(DPKGArchitecture.Architecture.roothide.rawValue))"
-        if action.package.tags.contains(.roothide) && status.hasSuffix(ending) {
+        if action.package.tags.contains(.roothide) && shown.hasSuffix(ending) {
             if var origArch = action.package.origArchitecture {
-                action.status = status.replacingOccurrences(of: ending, with: "(\(origArch))")
+                action.status = shown.replacingOccurrences(of: ending, with: "(\(origArch))")
             } else {
-                action.status = status.replacingOccurrences(of: ending, with: "")
+                action.status = shown.replacingOccurrences(of: ending, with: "")
             }
         } else {
-            action.status = status
+            action.status = shown
         }
         NSLog("SileoLog: action=\(action) cell=\(action.cell)")
         action.cell?.updateStatus()
@@ -976,6 +977,7 @@ enum APTLogTranslator {
         ("(?m)^Removing (.+) \\((.+)\\) \\.\\.\\.$", "Log_Dpkg_Remove"),
         ("(?m)^Purging configuration files for (.+) \\((.+)\\) \\.\\.\\.$", "Log_Dpkg_Purge"),
         ("(?m)^Processing triggers for (.+) \\((.+)\\) \\.\\.\\.$", "Log_Dpkg_Triggers"),
+        ("(?m)^dpkg: warning: downgrading (.+) from (.+) to (.+)$", "Log_Dpkg_Downgrade"),
         ("(?m)^dpkg: warning: ", "Log_Dpkg_Warning"),
         ("(?m)^dpkg: error processing package (.+) \\(--(\\w+)\\):$", "Log_Dpkg_Error"),
         ("(?m)^dpkg: dependency problems prevent configuration of (.+):$", "Log_Dpkg_Dep_Config"),

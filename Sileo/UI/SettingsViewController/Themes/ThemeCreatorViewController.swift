@@ -124,7 +124,7 @@ class ThemeCreatorViewController: BaseSettingsViewController {
         }
         
         let resetButton = UIButton(type: .system)
-        resetButton.setTitle("Reset", for: .normal)
+        resetButton.setTitle(String(localizationKey: "Reset"), for: .normal)
         resetButton.translatesAutoresizingMaskIntoConstraints = false
         resetButton.addTarget(self, action: #selector(resetToDefaults), for: .touchUpInside)
         original.addSubview(resetButton)

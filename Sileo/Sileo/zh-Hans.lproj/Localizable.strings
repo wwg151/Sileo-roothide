@@ -430,3 +430,6 @@
 "Log_E" = "错误：";
 "Log_W" = "警告：";
 "Log_Error_Prefix" = "错误：";
+
+"Reset" = "重置";
+"Log_Dpkg_Downgrade" = "dpkg：警告：正在降级 $1，从 $2 到 $3";

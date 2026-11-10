@@ -424,3 +424,6 @@
 "Log_E" = "E: ";
 "Log_W" = "W: ";
 "Log_Error_Prefix" = "Error: ";
+
+"Reset" = "Reset";
+"Log_Dpkg_Downgrade" = "dpkg: warning: downgrading $1 from $2 to $3";
