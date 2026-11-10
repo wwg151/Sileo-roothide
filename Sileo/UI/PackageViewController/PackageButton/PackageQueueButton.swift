@@ -307,7 +307,7 @@ class PackageQueueButton: PackageButton {
             }
             bringSubviewToFront(queueRingOverlay!)
             titleLabel?.layer.opacity = 0
-            queueRingOverlay?.configure(text: text, fraction: fraction, failed: failed)
+            queueRingOverlay?.configure(text: text, fraction: fraction, failed: failed, onFilled: isProminent)
             queueRingOverlay?.isHidden = false
         } else {
             titleLabel?.layer.opacity = 1

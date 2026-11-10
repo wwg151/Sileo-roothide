@@ -575,7 +575,14 @@ final class QueueCapsuleView: UIView {
             percentLabel.text = downloading.isEmpty ? nil : String(format: "%.0f%%", progress * 100)
             percentLabel.textColor = .secondaryLabel
             ringColor = .tintColor
-            setRing(downloading.isEmpty ? 1 : progress, ringColor)
+            // a waiting queue shows the bare track; a busy one a full ring
+            if !downloading.isEmpty {
+                setRing(progress, ringColor)
+            } else if title == String(localizationKey: "Queue_Waiting") {
+                setRing(0.12, ringColor)
+            } else {
+                setRing(1, ringColor)
+            }
         }
     }
 
@@ -589,6 +596,7 @@ final class QueueCapsuleView: UIView {
 
 final class QueueRingOverlay: UIView {
 
+    private let trackLayer = CAShapeLayer()
     private let ringLayer = CAShapeLayer()
     private let textLayer = CATextLayer()
 
@@ -596,11 +604,19 @@ final class QueueRingOverlay: UIView {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         backgroundColor = .clear
+
+        // the track makes the ring readable even before any progress
+        trackLayer.fillColor = UIColor.clear.cgColor
+        trackLayer.lineWidth = 3
+        trackLayer.strokeColor = UIColor.label.withAlphaComponent(0.15).cgColor
+        layer.addSublayer(trackLayer)
+
         ringLayer.fillColor = UIColor.clear.cgColor
         ringLayer.strokeColor = UIColor.tintColor.cgColor
         ringLayer.lineWidth = 3
         ringLayer.lineCap = .round
         layer.addSublayer(ringLayer)
+
         textLayer.string = ""
         textLayer.fontSize = 12
         textLayer.alignmentMode = .center
@@ -615,12 +631,21 @@ final class QueueRingOverlay: UIView {
 
     private var fraction: CGFloat = 0
 
-    func configure(text: String, fraction: CGFloat?, failed: Bool) {
-        let color: UIColor = failed ? .systemRed : .tintColor
-        ringLayer.strokeColor = color.cgColor
+    /// `onFilled` is for a button that is already a solid tint: its ring and
+    /// text have to be white to be seen at all.
+    func configure(text: String, fraction: CGFloat?, failed: Bool, onFilled: Bool) {
+        let ringColor: UIColor
+        if failed {
+            ringColor = onFilled ? .white : .systemRed
+        } else {
+            ringColor = onFilled ? .white : .tintColor
+        }
+        ringLayer.strokeColor = ringColor.cgColor
+        trackLayer.strokeColor = (onFilled ? UIColor.white.withAlphaComponent(0.35)
+                                           : UIColor.label.withAlphaComponent(0.15)).cgColor
         self.fraction = fraction ?? 1
         textLayer.string = text
-        textLayer.foregroundColor = (failed ? UIColor.systemRed : UIColor.label).cgColor
+        textLayer.foregroundColor = (onFilled ? UIColor.white : (failed ? UIColor.systemRed : UIColor.label)).cgColor
         setNeedsLayout()
     }
 
@@ -628,10 +653,13 @@ final class QueueRingOverlay: UIView {
         super.layoutSubviews()
         let side = min(bounds.width, bounds.height) - 10
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let path = UIBezierPath(arcCenter: center, radius: side / 2,
+                                startAngle: -.pi / 2, endAngle: .pi * 3 / 2,
+                                clockwise: true).cgPath
+        trackLayer.frame = bounds
         ringLayer.frame = bounds
-        ringLayer.path = UIBezierPath(arcCenter: center, radius: side / 2,
-                                      startAngle: -.pi / 2, endAngle: .pi * 3 / 2,
-                                      clockwise: true).cgPath
+        trackLayer.path = path
+        ringLayer.path = path
         ringLayer.strokeEnd = fraction
         textLayer.frame = CGRect(x: 0, y: center.y - 9, width: bounds.width, height: 18)
     }
