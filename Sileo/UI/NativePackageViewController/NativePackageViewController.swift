@@ -11,6 +11,7 @@ import UIKit
 protocol PackageActions: UIViewController {
     @available (iOS 13.0, *)
     func actions() -> [UIAction]
+    func cardActions() -> [SileoActionMenuItem]
 }
 
 class NativePackageViewController {

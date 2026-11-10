@@ -11,17 +11,20 @@ import UIKit
 struct SileoActionMenuItem {
     let title: String
     let imageName: String?
+    let image: UIImage?
     let destructive: Bool
     let enabled: Bool
     let handler: () -> Void
 
     init(title: String,
          imageName: String? = nil,
+         image: UIImage? = nil,
          destructive: Bool = false,
          enabled: Bool = true,
          handler: @escaping () -> Void) {
         self.title = title
         self.imageName = imageName
+        self.image = image
         self.destructive = destructive
         self.enabled = enabled
         self.handler = handler
@@ -180,7 +183,9 @@ final class SileoActionMenu: UIViewController {
         label.textColor = item.enabled ? (item.destructive ? .systemRed : .label) : .tertiaryLabel
 
         let imageView = UIImageView()
-        if let name = item.imageName {
+        if let image = item.image {
+            imageView.image = image.withRenderingMode(.alwaysTemplate)
+        } else if let name = item.imageName {
             imageView.image = UIImage(systemName: name)
         }
         imageView.tintColor = label.textColor

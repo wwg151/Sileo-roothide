@@ -996,6 +996,17 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         return downloadButton.actionItems().map({ $0.action() })
     }
 
+    /// The same actions for Sileo's own card, which has no separators.
+    func cardActions() -> [SileoActionMenuItem] {
+        _ = self.view
+        return downloadButton.actionItems().map { item in
+            SileoActionMenuItem(title: item.title,
+                                image: item.image,
+                                destructive: item.style == .destructive,
+                                handler: item.handler)
+        }
+    }
+
     func configureVersionSelectionNavigationController(_ navigationController: UINavigationController?) {
         // the outlets only exist once the view has loaded
         loadViewIfNeeded()

@@ -147,6 +147,12 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        // A long press on a row opens Sileo's own card: the system's context menu
+        // draws a line between every pair of rows.
+        let rowCard = UILongPressGestureRecognizer(target: self, action: #selector(self.presentRowCard(_:)))
+        rowCard.minimumPressDuration = 0.4
+        collectionView?.addGestureRecognizer(rowCard)
+        
         if showUpdates {
             shouldShowUpdates = true
         }
@@ -883,15 +889,15 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     /// The sort choices, in Sileo's own card opened from the header.
     @objc private func presentSortCard(_ sender: UIButton) {
         let items = [
-            SileoActionMenuItem(title: String(localizationKey: "Sort_Name")) { [weak self] in
+            SileoActionMenuItem(title: String(localizationKey: "Sort_Name"), imageName: "textformat.abc") { [weak self] in
                 UserDefaults.standard.set("name", forKey: "InstallSortType")
                 self?.updatePackageList()
             },
-            SileoActionMenuItem(title: String(localizationKey: "Sort_Date")) { [weak self] in
+            SileoActionMenuItem(title: String(localizationKey: "Sort_Date"), imageName: "calendar") { [weak self] in
                 UserDefaults.standard.set("installdate", forKey: "InstallSortType")
                 self?.updatePackageList()
             },
-            SileoActionMenuItem(title: String(localizationKey: "Sort_Install_Size")) { [weak self] in
+            SileoActionMenuItem(title: String(localizationKey: "Sort_Install_Size"), imageName: "internaldrive") { [weak self] in
                 UserDefaults.standard.set("size", forKey: "InstallSortType")
                 self?.updatePackageList()
             }
@@ -1172,45 +1178,35 @@ extension PackageListViewController: UIViewControllerPreviewingDelegate {
     }
 }
 
-@available(iOS 13.0, *)
 extension PackageListViewController {
-    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+    /// The row's actions, in Sileo's own card dropped from the row. The system's
+    /// context menu put a line between every pair of rows.
+    @objc func presentRowCard(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, let collectionView = self.collectionView else { return }
+        let point = gesture.location(in: collectionView)
+        guard let indexPath = collectionView.indexPathForItem(at: point),
+              let cell = collectionView.cellForItem(at: indexPath) else { return }
+
+        var items: [SileoActionMenuItem] = []
         if findWhatFuckingSectionThisIs(indexPath.section) == .searchHistoryList {
-            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-                let copyItemAction = UIAction(title: String(localizationKey: "Copy"), image: UIImage(systemName: "doc.on.doc")) { _ in
-                    UIPasteboard.general.string = searchHistory[safe: indexPath.row]
-                }
-                
-                return UIMenu(children: [copyItemAction])
-            }
+            guard let text = searchHistory[safe: indexPath.row] else { return }
+            items = [SileoActionMenuItem(title: String(localizationKey: "Copy"),
+                                         imageName: "doc.on.doc") {
+                UIPasteboard.general.string = text
+            }]
+        } else {
+            guard let pvc = controller(indexPath: indexPath) else { return }
+            (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
+            items = pvc.cardActions()
         }
-        
-        guard let pvc = self.controller(indexPath: indexPath) else {
-            return nil
-        }
-        (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
-
-        let menuItems = pvc.actions()
-        // a compact, centered preview leaves room for the menu instead of the full-height page covering it
-        let previewWidth = min(collectionView.bounds.width - 48, 360)
-        let config = UIContextMenuConfiguration(identifier: nil, previewProvider: {
-            pvc.preferredContentSize = CGSize(width: previewWidth, height: min(collectionView.bounds.height * 0.4, 320))
-            return pvc
-        }, actionProvider: { _ in
-            UIMenu(title: "", options: .displayInline, children: menuItems)
-        })
-
-        return config
-    }
-    
-    func collectionView(_ collectionView: UICollectionView, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
-        if let previewController = animator.previewViewController {
-            animator.addAnimations {
-                self.show(previewController, sender: self)
-            }
-        }
+        guard !items.isEmpty else { return }
+        present(SileoActionMenu(header: nil,
+                                items: items,
+                                sourceFrame: cell.convert(cell.bounds, to: nil)),
+                animated: true)
     }
 }
+
 
 extension PackageListViewController: UISearchBarDelegate {
     
