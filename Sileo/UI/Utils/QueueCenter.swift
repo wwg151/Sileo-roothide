@@ -69,7 +69,15 @@ extension DownloadManager {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
-        let allDownloaded = downloads.values.allSatisfy { $0.success || $0.progress >= 1 }
+        // an empty download map means the downloads have not been queued yet —
+        // only an uninstall-only batch is truly ready at that point
+        let installCount = vars.installations.raw.count + vars.upgrades.raw.count + vars.installdeps.raw.count
+        let allDownloaded: Bool
+        if downloads.isEmpty {
+            allDownloaded = installCount == 0
+        } else {
+            allDownloaded = downloads.values.allSatisfy { $0.success || $0.progress >= 1 }
+        }
 
         func add(_ set: Set<DownloadPackage>, removal: Bool) {
             for entry in set {
@@ -159,6 +167,7 @@ final class QueueCenter {
     private(set) var sheetVisible = false
     private(set) var lastItems: [QueueItem] = []
     private var downloadPhase = false
+    private var downloadPhaseSince: Date?
     private var handoffScheduled = false
     private var origins: [String: ObjectIdentifier] = [:]
 
@@ -264,6 +273,7 @@ final class QueueCenter {
         manager.aptRunning = false
         manager.aptFinished = false
         downloadPhase = true
+        downloadPhaseSince = Date()
         NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
         manager.startDownloads()
     }
@@ -272,6 +282,10 @@ final class QueueCenter {
     /// it, because the install phase is the part worth watching.
     private func checkAptHandoff(allDownloaded: Bool) {
         guard downloadPhase, !handoffScheduled, allDownloaded else { return }
+        // a stale, fully-finished download map from the previous batch must not
+        // hand off before this batch's downloads are even queued
+        guard let since = downloadPhaseSince,
+              Date().timeIntervalSince(since) >= 1.2 else { return }
         let manager = DownloadManager.shared
         guard manager.queueRunning, !manager.aptRunning, !manager.aptFinished,
               manager.operationCount() > 0 else { return }
@@ -291,6 +305,13 @@ final class QueueCenter {
             while let presented = host.presentedViewController { host = presented }
             guard host.viewIfLoaded?.window != nil,
                   !host.isBeingPresented, !host.isBeingDismissed else { return }
+            // a page or a sheet still animating in would make UIKit throw
+            guard host.transitionCoordinator == nil, tab.transitionCoordinator == nil else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                    self?.checkAptHandoff(allDownloaded: allDownloaded)
+                }
+                return
+            }
 
             let controller = manager.viewController
             self.downloadPhase = false
