@@ -1353,21 +1353,13 @@ final class DownloadManager {
         }
     }
     
-    /// Packages a jailbreak cannot live without: the bootstrap's own, and
-    /// whatever its control file marks essential or required. A dependency
-    /// nothing else needs is still never taken along if it is one of these.
+    /// Packages that are never taken along, whatever the control files say.
+    /// Everything else the control files answer for themselves: `Essential: yes`
+    /// or `Priority: required` is the device's own word on what it needs, and a
+    /// compression tool that came in with Filza is not on that list.
     private static let systemPackages: Set<String> = [
-        "apt", "base", "bash", "ca-certificates", "chariz-keyring", "coreutils",
-        "dash", "darwintools", "debianutils", "diffutils", "diskdev-cmds", "dpkg",
-        "dopamine-basebin-link", "ellekit", "essential", "file-cmds", "findutils",
-        "firmware", "gawk", "gpgv", "grep", "gzip", "havoc-keyring", "launchctl",
-        "ldid", "ncurses-bin", "ncurses-term", "p7zip", "procursus-keyring",
-        "profile.d", "roothide", "rootless-compat", "sed", "shell-cmds",
-        "snaputil", "sudo", "system-cmds", "tar", "uikittools", "unrar", "unzip",
-        "vi", "xz-utils", "zip", "zsh", "com.roothide.patchloader",
-        // What every tweak on the device stands on.
-        "mobilesubstrate", "substrate", "libhooker", "org.coolstar.libhooker",
-        "preferenceloader", "sileo", "org.coolstar.sileo"
+        "sileo", "org.coolstar.sileo", "roothide", "ellekit", "com.roothide.patchloader",
+        "rootless-compat", "mobilesubstrate", "substrate", "libhooker", "org.coolstar.libhooker"
     ]
 
     static func isSystemPackage(_ package: Package) -> Bool {
