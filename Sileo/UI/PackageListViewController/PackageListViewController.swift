@@ -170,8 +170,14 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             backupButton.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
             backupButton.accessibilityLabel = String(localizationKey: "Backup_Restore")
             backupButton.addTarget(self, action: #selector(self.pressBackupButton(_:)), for: .touchDown)
-            // Still Sileo's own card for now.
-            backupButton.addTarget(self, action: #selector(self.presentBackupMenu(_:)), for: .touchUpInside)
+            if #available(iOS 14.0, *) {
+                // A tap opens the menu anchored on the button, not a sheet from
+                // the bottom of the screen.
+                backupButton.menu = backupMenu()
+                backupButton.showsMenuAsPrimaryAction = true
+            } else {
+                backupButton.addTarget(self, action: #selector(self.presentBackupMenu(_:)), for: .touchUpInside)
+            }
             self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: backupButton)
         }
         
