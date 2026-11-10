@@ -281,9 +281,8 @@ class PackageQueueButton: PackageButton {
     }
 
     private func showPackageInfo(_ package: Package) {
-        let controller = PackageControlInfoViewController(package: package)
-        let navigation = UINavigationController(rootViewController: controller)
-        viewControllerForPresentation?.present(navigation, animated: true, completion: nil)
+        guard let presenter = viewControllerForPresentation else { return }
+        SileoPackageInfoPanel(package: package).present(from: presenter)
     }
 
     @objc func showVersionPrompt(_ sender: Any?) {
@@ -311,7 +310,7 @@ class PackageQueueButton: PackageButton {
         // capture strongly: the long-press preview (and this button) may be released before a version is picked
         let listNavigationController = self.versionSelectionNavigationController
         let presenter = self.viewControllerForPresentation
-        let picker = PackageVersionPickerController(sections: sections, current: package) { selected in
+        let panel = SileoVersionPickerPanel(sections: sections, current: package) { selected in
             guard let viewController = presenter else { return }
             if let navigationController = listNavigationController {
                 navigationController.pushViewController(
@@ -332,13 +331,9 @@ class PackageQueueButton: PackageButton {
                 )
             }
         }
-        let navigationController = UINavigationController(rootViewController: picker)
-        navigationController.modalPresentationStyle = .pageSheet
-        if #available(iOS 15.0, *), let sheet = navigationController.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
+        if let presenter = viewControllerForPresentation {
+            panel.present(from: presenter)
         }
-        viewControllerForPresentation?.present(navigationController, animated: true)
     }
     
     func checkQueued(package: Package) -> Bool

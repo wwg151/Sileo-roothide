@@ -443,3 +443,7 @@
 "Log_Dpkg_Prepare_Configure" = "正在准备配置 $1（$2）...";
 "Log_Dpkg_Configuring" = "正在配置 $1（$2）...";
 "Log_Dpkg_Error_Prefix" = "dpkg：错误：";
+
+"Copy_All" = "复制全部";
+"Copied" = "已复制";
+"Backup_Select_Count" = "%lu 个插件";

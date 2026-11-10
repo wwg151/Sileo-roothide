@@ -853,17 +853,10 @@ final class SourcesViewController: SileoViewController {
     }
 
     private func presentRemovedSources() {
-        let picker = RemovedSourcesViewController()
-        picker.onAdd = { [weak self] sources in
+        let panel = SileoRemovedSourcesPanel(items: RemovedSourcesStore.shared.items) { [weak self] sources in
             self?.restoreRemovedSources(sources)
         }
-        let nav = UINavigationController(rootViewController: picker)
-        nav.modalPresentationStyle = .pageSheet
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
-        present(nav, animated: true)
+        panel.present(from: self)
     }
 
     /// Adds the picked sources back and shows them straight away.

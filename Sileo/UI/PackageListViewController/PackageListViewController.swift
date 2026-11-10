@@ -517,13 +517,11 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                               message: String(localizationKey: "Backup_No_Packages"))
             return
         }
-        let picker = BackupPackagesViewController(packages: packages)
-        picker.onConfirm = { [weak self] chosen in
+        let picker = SileoBackupPickerPanel(packages: packages) { [weak self] chosen in
             guard !chosen.isEmpty else { return }
             self?.startPackageBackup(chosen)
         }
-        let navigation = UINavigationController(rootViewController: picker)
-        present(navigation, animated: true)
+        picker.present(from: self)
     }
 
     private func startPackageBackup(_ packages: [Package]) {
@@ -748,11 +746,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     private func presentClearBackupsMenu() {
-        let alert = UIAlertController(
-            title: String(localizationKey: "Backup_Clear"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
+        let panel = SileoPanelViewController()
         let options: [(String, BackupManager.BackupKind?)] = [
             ("Clear_Packages", .packages),
             ("Clear_Configuration", .configuration),
@@ -760,15 +754,15 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             ("Clear_All", nil)
         ]
         for (key, kind) in options {
-            alert.addAction(UIAlertAction(title: String(localizationKey: key), style: .destructive) { [weak self] _ in
-                self?.confirmClearBackups(kind: kind, title: String(localizationKey: key))
+            panel.contentStack.addArrangedSubview(SileoPanelViewController.row(title: String(localizationKey: key),
+                                                                               iconName: "trash",
+                                                                               destructive: true) { [weak self, weak panel] in
+                panel?.close {
+                    self?.confirmClearBackups(kind: kind, title: String(localizationKey: key))
+                }
             })
         }
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            popover.barButtonItem = navigationItem.rightBarButtonItem
-        }
-        present(alert, animated: true)
+        panel.present(from: self)
     }
 
     private func confirmClearBackups(kind: BackupManager.BackupKind?, title: String) {
@@ -777,13 +771,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             showBackupMessage(title: title, message: String(localizationKey: "Clear_None"))
             return
         }
-        let alert = UIAlertController(
-            title: title,
-            message: String(format: String(localizationKey: "Clear_Confirm_Message"), folders.count),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Clear_Confirm_Button"), style: .destructive) { [weak self] _ in
+        SileoPanelViewController.confirm(title: title,
+                                         message: String(format: String(localizationKey: "Clear_Confirm_Message"), folders.count),
+                                         confirmTitle: String(localizationKey: "Clear_Confirm_Button")) { [weak self] in
             DispatchQueue.global(qos: .userInitiated).async {
                 let removed = BackupManager.shared.deleteBackups(kind: kind)
                 DispatchQueue.main.async {
@@ -791,8 +781,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                                             message: String(format: String(localizationKey: "Clear_Done"), removed))
                 }
             }
-        })
-        present(alert, animated: true)
+        }.present(from: self)
     }
 
     @objc private func pressBackupButton(_ sender: UIButton) {
@@ -811,12 +800,11 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     private func confirmRestore(title: String, message: String, completion: @escaping () -> Void) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Restore_Confirm_Button"), style: .destructive) { _ in
+        SileoPanelViewController.confirm(title: title,
+                                         message: message,
+                                         confirmTitle: String(localizationKey: "Restore_Confirm_Button")) {
             completion()
-        })
-        present(alert, animated: true)
+        }.present(from: self)
     }
 
     private func chooseBackupFolder(
@@ -829,27 +817,35 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             showBackupMessage(title: title, message: String(localizationKey: "Backup_No_Backup"))
             return
         }
-        let alert = UIAlertController(
-            title: title,
-            message: String(localizationKey: "Backup_Choose_Folder"),
-            preferredStyle: .actionSheet
-        )
+        let panel = SileoPanelViewController(title: title,
+                                            subtitle: String(localizationKey: "Backup_Choose_Folder"),
+                                            icon: "folder")
         for folder in folders.prefix(20) {
-            alert.addAction(UIAlertAction(title: folder.name, style: .default) { _ in
-                completion(folder)
+            panel.contentStack.addArrangedSubview(SileoPanelViewController.choiceRow(title: folder.name,
+                                                                                     detail: Self.backupDateText(folder),
+                                                                                     selected: false) { [weak panel] in
+                panel?.close {
+                    completion(folder)
+                }
             })
         }
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            popover.barButtonItem = navigationItem.rightBarButtonItem
+        panel.present(from: self)
+    }
+
+    /// The day a backup was made, shown beside its name.
+    private static func backupDateText(_ folder: BackupManager.BackupFolder) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: folder.url.path),
+              let date = attributes[.modificationDate] as? Date else {
+            return nil
         }
-        present(alert, animated: true)
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     private func showBackupMessage(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default))
-        present(alert, animated: true)
+        SileoPanelViewController.message(title: title, message: message).present(from: self)
     }
     
     private func hapticResponse() {
