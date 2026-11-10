@@ -881,7 +881,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
     
     /// The sort choices, in Sileo's own card opened from the header.
-    private func presentSortCard(_ sender: UIButton) {
+    @objc private func presentSortCard(_ sender: UIButton) {
         let items = [
             SileoActionMenuItem(title: String(localizationKey: "Sort_Name")) { [weak self] in
                 UserDefaults.standard.set("name", forKey: "InstallSortType")
