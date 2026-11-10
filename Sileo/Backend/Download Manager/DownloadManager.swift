@@ -559,12 +559,27 @@ final class DownloadManager {
         #if TARGET_SANDBOX || targetEnvironment(simulator)
         return
         #endif
+        // What the removal would take with it, worked out before apt is asked,
+        // so an apt failure cannot leave the dependencies behind.
+        var orphaned: [Package] = []
+        if installationsAndUpgrades.isEmpty && !self.vars.uninstallations.isEmpty {
+            let removing = self.vars.uninstallations.raw.map { $0.package }
+            orphaned = OrphanDependencies.orphaned(by: removing,
+                                                   installed: PackageListManager.shared.installedPackages)
+            OrphanLog.write("queue remove=\(removing.map { $0.package }) worked out=\(orphaned.map { $0.package })")
+        }
+
         var aptOutput: APTOutput
         do {
             // Get the full list of packages to be installed and removed from apt
             aptOutput = try APTWrapper.operationList(installList: installationsAndUpgrades, removeList: self.vars.uninstallations.raw)
             NSLog("SileoLog: aptOutput=\(aptOutput.operations), \(aptOutput.conflicts)")
+            OrphanLog.write("apt answered, \(aptOutput.operations.count) operations, \(aptOutput.conflicts.count) conflicts")
         } catch {
+            OrphanLog.write("apt failed: \(error)")
+            if !orphaned.isEmpty {
+                self.vars.uninstalldeps.setTo(Set(orphaned.map { DownloadPackage(package: $0) }))
+            }
             throw error
         }
         
@@ -662,20 +677,13 @@ final class DownloadManager {
             installDeps.removeAll { upgrades.contains($0) }
         }
 
-        // apt's own answer is not always complete: it only knows a package came
-        // in as a dependency if every one did, which naming each package on the
-        // command line does not leave behind. What nothing else needs is worked
-        // out here as well, and never includes a package the device needs.
-        if installationsAndUpgrades.isEmpty && !uninstallations.isEmpty {
-            let orphans = OrphanDependencies.orphaned(by: uninstallations.map { $0.package },
-                                                      installed: PackageListManager.shared.installedPackages)
-            NSLog("SileoLog: orphaned dependencies=\(orphans.map { $0.package })")
-            for orphan in orphans
-            where !uninstallations.contains(where: { $0.package.package == orphan.package })
-                && !uninstallDeps.contains(where: { $0.package.package == orphan.package }) {
-                uninstallDeps.insert(DownloadPackage(package: orphan))
-            }
+        // The dependencies worked out above join apt's own answer.
+        for orphan in orphaned
+        where !uninstallations.contains(where: { $0.package.package == orphan.package })
+            && !uninstallDeps.contains(where: { $0.package.package == orphan.package }) {
+            uninstallDeps.insert(DownloadPackage(package: orphan))
         }
+        OrphanLog.write("final removals=\(uninstallations.map { $0.package.package }) + deps=\(uninstallDeps.map { $0.package.package })")
   
         self.vars.upgrades.setTo(upgrades)
         self.vars.installations.setTo(installations)
@@ -1486,12 +1494,30 @@ enum OrphanDependencies {
                 wanted.insert(dependency)
             }
         }
+        OrphanLog.write("automatic=\(automatic.count) candidates=\(candidates.sorted()) still wanted=\(wanted.sorted())")
         candidates.subtract(wanted)
 
         // A dependency is never taken along if the device cannot do without it.
         return candidates.compactMap { identifier in
             guard let package = installed[identifier] else { return nil }
             return DownloadManager.isSystemPackage(package) ? nil : package
+        }
+    }
+}
+
+/// What the uninstall worked out, written where it can be read from outside
+/// while the feature is being tried on a device.
+enum OrphanLog {
+    static func write(_ text: String) {
+        let path = "/tmp/apelin_orphans.txt"
+        let line = "\(text)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            handle.closeFile()
+        } else {
+            try? data.write(to: URL(fileURLWithPath: path))
         }
     }
 }
