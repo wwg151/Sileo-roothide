@@ -271,11 +271,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         self.closePopup(animated: false, completion: {
             TabBarController.popupIsOpen = false
             self.popupBarHiddenAt = nil
-            self.restoreFloatingTabBarAfterClose()
-            self.popupBar.isHidden = false
-            self.popupBar.alpha = 1
-            // Nothing of the window is left at the bottom of the screen.
-            self.popupContentView.isHidden = true
+            self.revealPopupBarAfterClose()
             completion?()
         })
     }
@@ -558,27 +554,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     static var popupBarLift: CGFloat?
     static var popupBarLiftSize: CGSize = .zero
 
-    /// Puts the floating tab bar's capsule back once the window is gone: while
-    /// it was open the capsule was kept hidden, and the pass that hid it can be
-    /// the last one to run.
-    private func restoreFloatingTabBarAfterClose() {
-        floatingRetryCount = 0
-        applyFloatingStyle()
-        // The window laid the bar out again while it was open, and its title
-        // view with it: the inset is put back on the bar that is there now.
-        TabBarController.applyFloatingPopupContentInset(to: popupBar)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            guard let self = self, !TabBarController.popupIsOpen else { return }
-            self.floatingRetryCount = 0
-            self.applyFloatingStyle()
-            TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
-        }
-    }
-
     private func updateFloatingPopupOffset() {
+        // The lift is a correction to where the bar sits, not a move to watch:
+        // applied inside the framework's own animation it slid the bar up and
+        // let the animation carry it back down, which is the bounce.
         func reset() {
             if self.popupBar.transform != .identity {
-                self.popupBar.transform = .identity
+                UIView.performWithoutAnimation {
+                    self.popupBar.transform = .identity
+                }
             }
         }
         guard popupIsPresented else { return }
@@ -613,7 +597,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         let target = CGAffineTransform(translationX: 0, y: -(TabBarController.popupBarLift ?? 0))
         if popupBar.transform != target {
-            popupBar.transform = target
+            UIView.performWithoutAnimation {
+                popupBar.transform = target
+            }
         }
         // Written out so the geometry can be read back from outside the app
         // while the bar is wrong; removed once it is right.
@@ -646,6 +632,40 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         return lift
     }
     private var floatingRetryCount = 0
+    private var popupBarRevealWork: DispatchWorkItem?
+
+    /// Gives the queue bar back once the window has landed. It stays transparent
+    /// until then, and the pass that puts its height, lift and capsule in place
+    /// runs without animation just before it is shown: a bar made visible any
+    /// earlier was laid out again by the framework while it could be seen, which
+    /// is the bounce that used to happen as the window closed.
+    private func revealPopupBarAfterClose() {
+        popupBarRevealWork?.cancel()
+        popupBar.isHidden = false
+        popupBar.alpha = 0
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, !TabBarController.popupIsOpen else { return }
+            UIView.performWithoutAnimation {
+                self.floatingRetryCount = 0
+                self.applyFloatingStyle()
+                TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
+                self.popupBar.setNeedsLayout()
+                self.popupBar.layoutIfNeeded()
+                self.popupBar.alpha = 1
+                // Whatever the window's landing left behind at the bottom goes
+                // with it; it is shown again when the queue is opened.
+                self.popupContentView.isHidden = true
+            }
+        }
+        popupBarRevealWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    private func cancelPopupBarReveal() {
+        popupBarRevealWork?.cancel()
+        popupBarRevealWork = nil
+    }
+
     private var floatingBackground: UIView?
     /// Where the first tab's icon and label start, in the coordinates of the
     /// view given. The queue bar's title is put on that line.
@@ -1100,6 +1120,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // The capsule belongs to the collapsed bar; the open window must not
         // keep its inset frame or its rounding. The bar itself is hidden for
         // the duration, or it shows above the window as it is pushed up.
+        cancelPopupBarReveal()
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
@@ -1136,12 +1157,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         TabBarController.popupIsOpen = false
         popupBarHiddenAt = nil
         tabBar.isHidden = false
-        restoreFloatingTabBarAfterClose()
-        popupBar.isHidden = false
-        popupBar.alpha = 1
-        // Whatever the window's landing left behind at the bottom of the
-        // screen goes with it; it is shown again when the queue is opened.
-        popupContentView.isHidden = true
+        revealPopupBarAfterClose()
     }
 
     /// The popup state the framework reports does not change on every route
@@ -1163,19 +1179,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         tabBar.isHidden = open
         popupContentView.isHidden = !open
         if open {
+            cancelPopupBarReveal()
             popupBarHiddenAt = Date()
         } else {
             popupBarHiddenAt = nil
-            // Present but unseen, so the window has something to land on.
-            popupBar.isHidden = false
-            popupBar.alpha = 0
-            restoreFloatingTabBarAfterClose()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                guard let self = self, !TabBarController.popupIsOpen else { return }
-                self.restoreFloatingTabBarAfterClose()
-                self.popupBar.isHidden = false
-                self.popupBar.alpha = 1
-            }
+            // Present but unseen, so the window has something to land on; it is
+            // shown once it has landed and its place is settled.
+            revealPopupBarAfterClose()
         }
     }
     override func viewDidLayoutSubviews() {
