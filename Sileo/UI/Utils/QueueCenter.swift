@@ -60,7 +60,7 @@ extension DownloadManager {
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
 
-        func add(_ set: [DownloadPackage], removal: Bool) {
+        func add(_ set: Set<DownloadPackage>, removal: Bool) {
             for entry in set {
                 let package = entry.package
                 let identifier = package.package
