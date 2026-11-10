@@ -40,85 +40,25 @@ static void ApelinKeep(id object, void *key, id value) {
     }
 }
 
-// Where a menu ends up, for a look from outside.
-static void ApelinAppendMenuLog(NSString *text) {
-    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"apelin_menu_dump.txt"];
-    NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
-        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
-        if (handle) {
-            [handle seekToEndOfFile];
-            [handle writeData:data];
-            [handle closeFile];
-            return;
+// The system's menu material carries two filters that lift it towards white.
+// Without them the menu is a clear frosted glass: the blur stays, the white
+// does not.
+static NSArray *ApelinMenuFilters(NSArray *filters) {
+    NSMutableArray *kept = [NSMutableArray array];
+    for (_UIVisualEffectFilterEntry *filter in filters) {
+        NSString *name = [filter filterName];
+        if ([name isEqualToString:@"luminanceCurveMap"] ||
+            [name isEqualToString:@"colorBrightness"]) {
+            continue;
         }
+        [kept addObject:filter];
     }
-    [data writeToFile:path atomically:YES];
-}
-
-static NSString *ApelinFilterNames(UIView *view) {
-    NSMutableArray *names = [NSMutableArray array];
-    @try {
-        id filters = [view valueForKey:@"filters"];
-        if ([filters isKindOfClass:[NSArray class]]) {
-            for (id filter in (NSArray *)filters) {
-                @try {
-                    [names addObject:[filter valueForKey:@"filterName"] ?: @"?"];
-                } @catch (__unused NSException *exception) {
-                    [names addObject:@"?"];
-                }
-            }
-        }
-    } @catch (__unused NSException *exception) {
-    }
-    return [names componentsJoinedByString:@","];
-}
-
-static void ApelinDumpView(UIView *view, int depth, NSMutableString *out) {
-    if (depth > 10) return;
-    NSString *indent = [@"" stringByPaddingToLength:(NSUInteger)(depth * 2) withString:@" " startingAtIndex:0];
-    [out appendFormat:@"%@%@ frame=%@ alpha=%.2f hidden=%d bg=%@",
-     indent,
-     NSStringFromClass([view class]),
-     NSStringFromCGRect(view.frame),
-     view.alpha,
-     view.hidden,
-     view.backgroundColor];
-    if ([[NSStringFromClass([view class]) lowercaseString] containsString:@"backdrop"]) {
-        [out appendFormat:@" filters=[%@]", ApelinFilterNames(view)];
-    }
-    [out appendString:@"\n"];
-    for (UIView *subview in view.subviews) {
-        ApelinDumpView(subview, depth + 1, out);
-    }
+    return kept;
 }
 
 @interface NSObject (ApelinVisualEffect)
 - (void)setFilters:(NSArray *)filters;
 @end
-
-// What a menu is made of once it has settled, which is when its material and
-// its background are all there.
-hook(_UIContextMenuView)
-
-- (void)layoutSubviews {
-    _orig(void);
-    UIView *menu = (UIView *)self;
-    if (!menu.window) return;
-    static char dumpedKey;
-    if (objc_getAssociatedObject(self, &dumpedKey)) return;
-    objc_setAssociatedObject(self, &dumpedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    __weak UIView *weakMenu = menu;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIView *settled = weakMenu;
-        if (!settled) return;
-        NSMutableString *out = [NSMutableString string];
-        ApelinDumpView(settled, 0, out);
-        ApelinAppendMenuLog([NSString stringWithFormat:@"\n=== menu at %@ ===\n%@", [NSDate date], out]);
-    });
-}
-
-endhook
 
 hook(_UIVisualEffectSubview)
 
@@ -138,7 +78,7 @@ hook(_UIVisualEffectSubview)
                 }
             }
             if (ApelinInsideContextMenu((UIView *)self)) {
-                _orig(void, filters);
+                _orig(void, ApelinMenuFilters(filters));
                 return;
             }
             NSMutableArray *filtersMutable = [filters mutableCopy];
@@ -218,9 +158,6 @@ hook(_UIVisualEffectSubview)
         if (background) {
             [self setBackgroundColor:[background isKindOfClass:[NSNull class]] ? nil : background];
         }
-        ApelinAppendMenuLog([NSString stringWithFormat:@"[menu backdrop] %@ restored, bg=%@\n",
-                             NSStringFromClass([self class]),
-                             [(UIView *)self backgroundColor]]);
     }
 }
 
