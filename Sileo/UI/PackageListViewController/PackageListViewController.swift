@@ -475,43 +475,30 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {
-        let items = [
-            SileoActionMenuItem(title: String(localizationKey: "Backup_All_Packages"), imageName: "archivebox", destructive: false) { [weak self] in
-                self?.backupAllPackages()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Backup_Select_Packages"), imageName: "checkmark.circle", destructive: false) { [weak self] in
-                self?.backupSelectedPackages()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Backup_Configuration"), imageName: "gearshape", destructive: false) { [weak self] in
-                self?.backupConfiguration()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Backup_Sources"), imageName: "tray.and.arrow.down", destructive: false) { [weak self] in
-                self?.backupSources()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Restore_All_Packages"), imageName: "arrow.down.circle", destructive: false) { [weak self] in
-                self?.restoreAllPackages()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Restore_Configuration"), imageName: "arrow.clockwise.circle", destructive: false) { [weak self] in
-                self?.restoreConfiguration()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Restore_Sources"), imageName: "tray.and.arrow.up", destructive: false) { [weak self] in
-                self?.restoreSources()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Backup_View"), imageName: "folder", destructive: false) { [weak self] in
-                self?.openBackupsInFilza()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Backup_Clear"), imageName: "trash", destructive: true) { [weak self] in
-                self?.presentClearBackupsMenu()
-            }
+        let alert = UIAlertController(title: String(localizationKey: "Backup_Restore"),
+                                      message: nil,
+                                      preferredStyle: .actionSheet)
+        let entries: [(String, () -> Void)] = [
+            ("Backup_All_Packages", { [weak self] in self?.backupAllPackages() }),
+            ("Backup_Select_Packages", { [weak self] in self?.backupSelectedPackages() }),
+            ("Backup_Configuration", { [weak self] in self?.backupConfiguration() }),
+            ("Backup_Sources", { [weak self] in self?.backupSources() }),
+            ("Restore_All_Packages", { [weak self] in self?.restoreAllPackages() }),
+            ("Restore_Configuration", { [weak self] in self?.restoreConfiguration() }),
+            ("Restore_Sources", { [weak self] in self?.restoreSources() }),
+            ("Backup_View", { [weak self] in self?.openBackupsInFilza() })
         ]
-        var frame: CGRect?
-        if let button = sender as? UIButton, let superview = button.superview {
-            frame = superview.convert(button.frame, to: nil)
+        for (key, action) in entries {
+            alert.addAction(UIAlertAction(title: String(localizationKey: key), style: .default) { _ in action() })
         }
-        let menu = SileoActionMenu(header: String(localizationKey: "Backup_Restore"),
-                                   items: items,
-                                   sourceFrame: frame)
-        present(menu, animated: true)
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Backup_Clear"), style: .destructive) { [weak self] _ in
+            self?.presentClearBackupsMenu()
+        })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = (sender as? UIView) ?? view
+        }
+        present(alert, animated: true)
     }
 
     private func backupAllPackages() {

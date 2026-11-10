@@ -59,12 +59,24 @@ class PackageQueueButton: PackageButton {
                                                object: nil)
         
         if #available(iOS 14.0, *) {
-            // A long press on the button opens Sileo's own card: one list, no
-            // separators, and a highlight that slides between the rows.
-            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(PackageQueueButton.presentActionCard(_:)))
-            longPress.minimumPressDuration = 0.4
-            longPress.cancelsTouchesInView = false
-            addGestureRecognizer(longPress)
+            // The button's own menu: the system's translucent material, in one
+            // group so there are no separators. A tap opens it on an installed
+            // package, a long press on any.
+            menu = UIMenu(children: [
+                UIDeferredMenuElement.uncached { [weak self] completion in
+                    guard let self = self, let package = self.package, !(package.isProvisional ?? false) else {
+                        completion([])
+                        return
+                    }
+                    completion(self.longPressMenuItems(for: package).map { item in
+                        UIAction(title: item.title,
+                                 image: UIImage(systemName: item.image),
+                                 attributes: item.enabled ? (item.destructive ? .destructive : []) : .disabled) { _ in
+                            item.handler()
+                        }
+                    })
+                }
+            ])
         } else if #available(iOS 13.0, *) {
             let menuDelegate = PackageQueueMenuDelegate(button: self)
             contextMenuDelegate = menuDelegate
@@ -78,42 +90,6 @@ class PackageQueueButton: PackageButton {
     @objc func longPressed(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
         showLongPressMenu()
-    }
-
-    /// The actions for a package, in Sileo's own card: one list without
-    /// separators, with a highlight that slides between the rows. Used both by
-    /// a tap on an installed package's button and by a long press on any.
-    private func showActionCard() {
-        guard let package = package, !(package.isProvisional ?? false) else {
-            return
-        }
-        let items = longPressMenuItems(for: package).map { item in
-            SileoActionMenuItem(title: item.title,
-                                imageName: item.image,
-                                destructive: item.destructive,
-                                enabled: item.enabled,
-                                handler: item.handler)
-        }
-        guard !items.isEmpty, let host = viewControllerForPresentation ?? hostViewController() else { return }
-        let frame = convert(bounds, to: nil)
-        host.present(SileoActionMenu(header: package.name, items: items, sourceFrame: frame), animated: true)
-    }
-
-    /// The button's long press: the same actions, in Sileo's own card.
-    @objc private func presentActionCard(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-        showActionCard()
-    }
-
-    /// The controller to present the card from: the first one up the responder
-    /// chain, or the window's own.
-    private func hostViewController() -> UIViewController? {
-        var responder: UIResponder? = self
-        while let current = responder {
-            if let controller = current as? UIViewController { return controller }
-            responder = current.next
-        }
-        return UIApplication.shared.keyWindow?.rootViewController
     }
 
     private func presentSheet(_ sheet: UIAlertController) {
@@ -517,9 +493,9 @@ class PackageQueueButton: PackageButton {
                 
         } else if installedPackage != nil {
             NSLog("SileoLog: \(package.package) commercial=\(package.commercial) purchased=\(paymentInfo?.purchased) price=\(paymentInfo?.price) available=\(paymentInfo?.available)")
-            // road clear to modify an installed package: the same actions the
-            // long press shows, in Sileo's own card
-            self.showActionCard()
+            // A tap on an installed package's button opens its menu (see
+            // updateInfo); this is the fallback for the paths that skip it.
+            self.showLongPressMenu()
         } else if package.sourceRepo != nil || package.local_deb != nil {
             self.requestQueuePackage(package: package, queue: .installations)
         } else {
