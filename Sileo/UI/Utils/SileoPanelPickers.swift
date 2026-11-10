@@ -20,20 +20,23 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                    subtitle: current.name,
                    icon: "arrow.triangle.branch")
 
+        var items: [SileoPanelTable.Item] = []
         for section in sections {
             if sections.count > 1 {
-                contentStack.addArrangedSubview(SileoPanelViewController.sectionLabel(section.title))
+                items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(section.title), height: 34))
             }
             for package in section.packages {
                 let selected = package.version == current.version
                     && (current.sourceRepo == nil || package.sourceRepo == current.sourceRepo)
-                contentStack.addArrangedSubview(SileoPanelViewController.choiceRow(title: package.version,
-                                                                                   detail: nil,
-                                                                                   selected: selected) { [weak self] in
+                let row = SileoPanelViewController.choiceRow(title: package.version,
+                                                             detail: nil,
+                                                             selected: selected) { [weak self] in
                     self?.close { onPick(package) }
-                })
+                }
+                items.append(SileoPanelTable.Item(row, height: 52))
             }
         }
+        table.setItems(items)
     }
 
     required init?(coder: NSCoder) {
@@ -65,12 +68,19 @@ final class SileoPackageInfoPanel: SileoPanelViewController {
             text += "\n\nFile: \(local)"
         }
 
-        let label = UILabel()
-        label.text = text
-        label.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        label.textColor = .label
-        label.numberOfLines = 0
-        contentStack.addArrangedSubview(label)
+        // A text view of its own: the control file scrolls inside the card
+        // instead of being squeezed into rows.
+        let textView = UITextView()
+        textView.text = text
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textColor = .label
+        textView.backgroundColor = .clear
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.alwaysBounceVertical = true
+        textView.showsVerticalScrollIndicator = true
+        textView.textContainerInset = UIEdgeInsets(top: 8, left: 12, bottom: 16, right: 12)
+        setBody(textView)
 
         let copy = SileoPanelViewController.capsuleButton(title: String(localizationKey: "Copy_All"),
                                                           filled: false) {}
@@ -82,6 +92,7 @@ final class SileoPackageInfoPanel: SileoPanelViewController {
                 copy?.setTitle(String(localizationKey: "Copy_All"), for: .normal)
             }
         }, for: .touchUpInside)
+
         let done = SileoPanelViewController.capsuleButton(title: String(localizationKey: "Done")) { [weak self] in
             self?.close()
         }
@@ -109,7 +120,7 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
     private var checks: [String: UIImageView] = [:]
 
     private let searchField = UITextField()
-    private let rowsStack = UIStackView()
+    private let listTable = SileoPanelTable()
     private var confirmButton: UIButton?
 
     init(packages: [Package], onConfirm: @escaping ([Package]) -> Void) {
@@ -120,13 +131,27 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
                    subtitle: String(format: String(localizationKey: "Backup_Select_Count"), packages.count),
                    icon: "checklist")
 
-        contentStack.addArrangedSubview(makeSearchBar())
-        contentStack.addArrangedSubview(SileoPanelViewController.spacer(8))
+        // the search field stays put while the list under it scrolls
+        let body = UIView()
+        body.translatesAutoresizingMaskIntoConstraints = false
 
-        rowsStack.translatesAutoresizingMaskIntoConstraints = false
-        rowsStack.axis = .vertical
-        rowsStack.spacing = 0
-        contentStack.addArrangedSubview(rowsStack)
+        let searchBar = makeSearchBar()
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        listTable.translatesAutoresizingMaskIntoConstraints = false
+        body.addSubview(searchBar)
+        body.addSubview(listTable)
+        NSLayoutConstraint.activate([
+            searchBar.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: 16),
+            searchBar.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -16),
+            searchBar.topAnchor.constraint(equalTo: body.topAnchor, constant: 4),
+            searchBar.heightAnchor.constraint(equalToConstant: 38),
+
+            listTable.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: 16),
+            listTable.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: -16),
+            listTable.topAnchor.constraint(equalTo: searchBar.bottomAnchor, constant: 8),
+            listTable.bottomAnchor.constraint(equalTo: body.bottomAnchor)
+        ])
+        setBody(body)
 
         let button = SileoPanelViewController.capsuleButton(title: footerTitle()) { [weak self] in
             guard let self = self, !self.selected.isEmpty else { return }
@@ -146,7 +171,6 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
 
     private func makeSearchBar() -> UIView {
         let container = UIView()
-        container.translatesAutoresizingMaskIntoConstraints = false
         container.backgroundColor = .tertiarySystemFill
         container.layer.cornerRadius = 12
         container.layer.cornerCurve = .continuous
@@ -166,12 +190,12 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
         searchField.clearButtonMode = .whileEditing
         searchField.autocorrectionType = .no
         searchField.autocapitalizationType = .none
+        searchField.returnKeyType = .done
         searchField.addTarget(self, action: #selector(searchChanged), for: .editingChanged)
 
         container.addSubview(icon)
         container.addSubview(searchField)
         NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 38),
             icon.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
             icon.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 16),
@@ -195,54 +219,55 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
     }
 
     private func rebuildRows() {
-        for view in rowsStack.arrangedSubviews {
-            rowsStack.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
         checks.removeAll()
-
-        for package in filtered {
-            let row = SileoPanelRow()
-            row.translatesAutoresizingMaskIntoConstraints = false
-            row.addAction(UIAction { [weak self] _ in self?.toggle(package) }, for: .touchUpInside)
-
-            let label = UILabel()
-            label.text = package.name
-            label.font = .systemFont(ofSize: 17)
-            label.textColor = .label
-            label.numberOfLines = 1
-            label.lineBreakMode = .byTruncatingMiddle
-            label.translatesAutoresizingMaskIntoConstraints = false
-
-            let version = UILabel()
-            version.text = package.version
-            version.font = .systemFont(ofSize: 13)
-            version.textColor = .secondaryLabel
-            version.translatesAutoresizingMaskIntoConstraints = false
-
-            let check = UIImageView()
-            check.translatesAutoresizingMaskIntoConstraints = false
-            check.contentMode = .scaleAspectFit
-            checks[package.package] = check
-            update(check: check, selected: selected.contains(package.package))
-
-            row.addSubview(label)
-            row.addSubview(version)
-            row.addSubview(check)
-            NSLayoutConstraint.activate([
-                row.heightAnchor.constraint(equalToConstant: 52),
-                label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
-                label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-                version.trailingAnchor.constraint(equalTo: check.leadingAnchor, constant: -10),
-                version.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-                label.trailingAnchor.constraint(lessThanOrEqualTo: version.leadingAnchor, constant: -12),
-                check.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
-                check.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-                check.widthAnchor.constraint(equalToConstant: 22),
-                check.heightAnchor.constraint(equalToConstant: 22)
-            ])
-            rowsStack.addArrangedSubview(row)
+        let items = filtered.map { package -> SileoPanelTable.Item in
+            SileoPanelTable.Item(makeRow(for: package), height: 60)
         }
+        listTable.setItems(items)
+    }
+
+    private func makeRow(for package: Package) -> UIView {
+        let row = SileoPanelRow()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addAction(UIAction { [weak self] _ in self?.toggle(package) }, for: .touchUpInside)
+
+        let label = UILabel()
+        label.text = package.name
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = .label
+        label.numberOfLines = 2
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let version = UILabel()
+        version.text = package.version
+        version.font = .systemFont(ofSize: 13)
+        version.textColor = .secondaryLabel
+        version.translatesAutoresizingMaskIntoConstraints = false
+
+        let check = UIImageView()
+        check.translatesAutoresizingMaskIntoConstraints = false
+        check.contentMode = .scaleAspectFit
+        checks[package.package] = check
+        update(check: check, selected: selected.contains(package.package))
+
+        row.addSubview(label)
+        row.addSubview(version)
+        row.addSubview(check)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            label.topAnchor.constraint(equalTo: row.topAnchor, constant: 10),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12),
+            version.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            version.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 2),
+            version.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12),
+            version.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -10),
+            check.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
+            check.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            check.widthAnchor.constraint(equalToConstant: 22),
+            check.heightAnchor.constraint(equalToConstant: 22)
+        ])
+        return row
     }
 
     private func update(check: UIImageView, selected: Bool) {
@@ -264,7 +289,7 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
     }
 
     private func footerTitle() -> String {
-        String(format: String(localizationKey: "Backup_Start_Count"), selected.count)
+        String(localizationKey: "Backup_Start") + " (\(selected.count))"
     }
 
     private func updateFooter() {
@@ -282,13 +307,15 @@ final class SileoRemovedSourcesPanel: SileoPanelViewController {
                    subtitle: String(format: String(localizationKey: "Removed_Sources_Header_Count"), items.count),
                    icon: "clock.arrow.circlepath")
 
-        for item in items {
-            contentStack.addArrangedSubview(SileoPanelViewController.choiceRow(title: item.name.isEmpty ? item.url : item.name,
-                                                                               detail: item.url,
-                                                                               selected: false) { [weak self] in
+        let rows = items.map { item -> SileoPanelTable.Item in
+            let row = SileoPanelViewController.choiceRow(title: item.name.isEmpty ? item.url : item.name,
+                                                          detail: item.url,
+                                                          selected: false) { [weak self] in
                 self?.close { onAdd([item]) }
-            })
+            }
+            return SileoPanelTable.Item(row)
         }
+        table.setItems(rows)
 
         if items.count > 1 {
             let button = SileoPanelViewController.capsuleButton(

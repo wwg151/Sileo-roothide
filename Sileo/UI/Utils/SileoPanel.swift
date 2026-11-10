@@ -2,8 +2,8 @@
 //  SileoPanel.swift
 //  Sileo
 //
-//  A centred panel of Sileo's own: a frosted card over a dimmed and blurred
-//  screen, with an optional header, a scrolling body and an optional footer.
+//  A centred panel of Sileo's own: a frosted card over a dimmed screen, with
+//  an optional header, a body that really scrolls and an optional footer.
 //  Rows carry no separators; the card follows the system's light and dark
 //  appearance.
 //
@@ -26,29 +26,112 @@ final class SileoPanelRow: UIControl {
     }
 }
 
+/// The body of a panel: a table without separators, which scrolls whenever its
+/// rows do not fit. A row is any view, with a fixed height or its own.
+final class SileoPanelTable: UITableView, UITableViewDataSource, UITableViewDelegate {
+
+    struct Item {
+        let view: UIView
+        let height: CGFloat?
+
+        init(_ view: UIView, height: CGFloat? = nil) {
+            self.view = view
+            self.height = height
+        }
+    }
+
+    private(set) var items: [Item] = []
+
+    init() {
+        super.init(frame: .zero, style: .plain)
+        backgroundColor = .clear
+        separatorStyle = .none
+        showsVerticalScrollIndicator = true
+        indicatorStyle = .default
+        alwaysBounceVertical = false
+        contentInsetAdjustmentBehavior = .never
+        keyboardDismissMode = .onDrag
+        rowHeight = UITableView.automaticDimension
+        estimatedRowHeight = 64
+        dataSource = self
+        delegate = self
+        register(UITableViewCell.self, forCellReuseIdentifier: "Sileo.PanelCell")
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setItems(_ items: [Item]) {
+        self.items = items
+        reloadData()
+        invalidateIntrinsicContentSize()
+    }
+
+    /// The height every row asks for, once laid out at the given width.
+    func contentHeight(for width: CGFloat) -> CGFloat {
+        items.reduce(0) { total, item in
+            total + (item.height ?? item.view.systemLayoutSizeFitting(
+                CGSize(width: width, height: 0),
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel
+            ).height)
+        }
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        items.count
+    }
+
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        let item = items[indexPath.row]
+        guard let height = item.height else { return UITableView.automaticDimension }
+        return height
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "Sileo.PanelCell", for: indexPath)
+        cell.backgroundColor = .clear
+        cell.selectionStyle = .none
+        cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+
+        let item = items[indexPath.row]
+        let view = item.view
+        view.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
+            view.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
+            view.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor)
+        ])
+        return cell
+    }
+}
+
 class SileoPanelViewController: UIViewController {
 
     // MARK: - Content
 
-    /// Rows and other views go here, top to bottom.
-    let contentStack = UIStackView()
+    /// The rows of the body. Add them before the panel is presented.
+    let table = SileoPanelTable()
+
     private(set) var headerView: UIView?
     private(set) var footerView: UIView?
+    private var customBody: UIView?
 
     // MARK: - Chrome
 
-    private let dimBlur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-    private let dimTint = UIView()
+    private let dimView = UIView()
     private let card = UIView()
     private let cardEffect = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-    private let scroll = UIScrollView()
+    private let bodyContainer = UIView()
     private let rootStack = UIStackView()
-    private let fadeMask = CAGradientLayer()
 
     private var cardWidthConstraint: NSLayoutConstraint!
     private var cardHeightConstraint: NSLayoutConstraint!
-    private var scrollHeightConstraint: NSLayoutConstraint!
-    private var contentWidthConstraint: NSLayoutConstraint!
+    private var cardCenterYConstraint: NSLayoutConstraint!
+    private var bodyHeightConstraint: NSLayoutConstraint!
 
     private let titleText: String?
     private let subtitleText: String?
@@ -56,6 +139,8 @@ class SileoPanelViewController: UIViewController {
 
     private var hasAppeared = false
     private var isClosing = false
+
+    private static let horizontalInset: CGFloat = 16
 
     init(title: String? = nil, subtitle: String? = nil, icon: String? = nil) {
         self.titleText = title
@@ -73,15 +158,12 @@ class SileoPanelViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .clear
 
-        dimBlur.translatesAutoresizingMaskIntoConstraints = false
-        dimBlur.alpha = 0
-        view.addSubview(dimBlur)
-
-        dimTint.translatesAutoresizingMaskIntoConstraints = false
-        dimTint.backgroundColor = UIColor.black.withAlphaComponent(0.18)
-        dimTint.alpha = 0
-        dimTint.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
-        view.addSubview(dimTint)
+        // A dimmed screen only: the card itself is the frosted part.
+        dimView.translatesAutoresizingMaskIntoConstraints = false
+        dimView.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        dimView.alpha = 0
+        dimView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
+        view.addSubview(dimView)
 
         card.translatesAutoresizingMaskIntoConstraints = false
         card.layer.shadowColor = UIColor.black.cgColor
@@ -106,41 +188,47 @@ class SileoPanelViewController: UIViewController {
 
         if let header = makeHeader() {
             headerView = header
-            rootStack.insertArrangedSubview(header, at: 0)
+            rootStack.addArrangedSubview(header)
         }
 
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.showsVerticalScrollIndicator = false
-        scroll.alwaysBounceVertical = false
-        scroll.contentInsetAdjustmentBehavior = .never
+        bodyContainer.translatesAutoresizingMaskIntoConstraints = false
         // the footer may already be in place, so the body goes above it
-        rootStack.insertArrangedSubview(scroll, at: headerView == nil ? 0 : 1)
+        rootStack.insertArrangedSubview(bodyContainer, at: headerView == nil ? 0 : 1)
 
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-        contentStack.axis = .vertical
-        contentStack.spacing = 0
-        scroll.addSubview(contentStack)
+        if let customBody = customBody {
+            customBody.translatesAutoresizingMaskIntoConstraints = false
+            bodyContainer.addSubview(customBody)
+            NSLayoutConstraint.activate([
+                customBody.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
+                customBody.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor),
+                customBody.topAnchor.constraint(equalTo: bodyContainer.topAnchor),
+                customBody.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor)
+            ])
+        } else {
+            table.translatesAutoresizingMaskIntoConstraints = false
+            bodyContainer.addSubview(table)
+            NSLayoutConstraint.activate([
+                table.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: SileoPanelViewController.horizontalInset),
+                table.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -SileoPanelViewController.horizontalInset),
+                table.topAnchor.constraint(equalTo: bodyContainer.topAnchor, constant: 8),
+                table.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -8)
+            ])
+        }
 
         cardWidthConstraint = card.widthAnchor.constraint(equalToConstant: 320)
         cardHeightConstraint = card.heightAnchor.constraint(equalToConstant: 200)
         cardHeightConstraint.priority = UILayoutPriority(999)
-        scrollHeightConstraint = scroll.heightAnchor.constraint(equalToConstant: 120)
-        scrollHeightConstraint.priority = UILayoutPriority(999)
-        contentWidthConstraint = contentStack.widthAnchor.constraint(equalToConstant: 288)
+        cardCenterYConstraint = card.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        bodyHeightConstraint = bodyContainer.heightAnchor.constraint(equalToConstant: 120)
+        bodyHeightConstraint.priority = UILayoutPriority(999)
 
         NSLayoutConstraint.activate([
-            dimBlur.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            dimBlur.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            dimBlur.topAnchor.constraint(equalTo: view.topAnchor),
-            dimBlur.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            dimTint.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            dimTint.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            dimTint.topAnchor.constraint(equalTo: view.topAnchor),
-            dimTint.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            dimView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            dimView.topAnchor.constraint(equalTo: view.topAnchor),
+            dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             cardWidthConstraint,
             cardHeightConstraint,
 
@@ -154,54 +242,64 @@ class SileoPanelViewController: UIViewController {
             rootStack.topAnchor.constraint(equalTo: cardEffect.contentView.topAnchor),
             rootStack.bottomAnchor.constraint(equalTo: cardEffect.contentView.bottomAnchor),
 
-            scrollHeightConstraint,
-
-            contentStack.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 16),
-            contentStack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 12),
-            contentStack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -12),
-            contentWidthConstraint
+            bodyHeightConstraint
         ])
+        cardCenterYConstraint.isActive = true
+
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(keyboardChanged(_:)),
+                                               name: UIResponder.keyboardWillChangeFrameNotification,
+                                               object: nil)
+    }
+
+    /// Keeps the card clear of the keyboard when a search field is in use.
+    @objc private func keyboardChanged(_ notification: Notification) {
+        guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        let overlap = max(0, view.bounds.maxY - view.convert(frame, from: nil).minY)
+        cardCenterYConstraint.constant = -min(overlap / 2, 140)
+        UIView.animate(withDuration: 0.25) {
+            self.view.layoutIfNeeded()
+        }
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
         let width = min(340, view.bounds.width - 40)
-        let inner = width - 32
-        if abs(contentWidthConstraint.constant - inner) > 0.5 {
-            contentWidthConstraint.constant = inner
+        let inner = width - SileoPanelViewController.horizontalInset * 2
+        let maxCardHeight = view.bounds.height * 0.78
+
+        var headerHeight: CGFloat = 0
+        if let header = headerView {
+            headerHeight = header.systemLayoutSizeFitting(
+                CGSize(width: width, height: 0),
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel
+            ).height
+
         }
 
-        let contentHeight = contentStack.systemLayoutSizeFitting(CGSize(width: inner, height: 0),
-                                                                 withHorizontalFittingPriority: .required,
-                                                                 verticalFittingPriority: .fittingSizeLevel).height + 24
-        let headerHeight: CGFloat = headerView == nil ? 0 : 76
-        let footerHeight: CGFloat = footerView.map {
-            $0.systemLayoutSizeFitting(CGSize(width: inner, height: 0),
-                                       withHorizontalFittingPriority: .required,
-                                       verticalFittingPriority: .fittingSizeLevel).height
-        } ?? 0
+        var footerHeight: CGFloat = 0
+        if let footer = footerView {
+            footerHeight = footer.systemLayoutSizeFitting(
+                CGSize(width: width, height: 0),
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel
+            ).height
+        }
 
-        let maxHeight = view.bounds.height * 0.72
-        let cardHeight = min(headerHeight + contentHeight + footerHeight, maxHeight)
-        let scrollHeight = max(0, cardHeight - headerHeight - footerHeight)
+        let wantedBody: CGFloat
+        if customBody != nil {
+            wantedBody = maxCardHeight - headerHeight - footerHeight
+        } else {
+            wantedBody = table.contentHeight(for: inner) + 16
+        }
+        let bodyHeight = max(44, min(wantedBody, maxCardHeight - headerHeight - footerHeight))
+        let cardHeight = headerHeight + bodyHeight + footerHeight
 
         if abs(cardWidthConstraint.constant - width) > 0.5 { cardWidthConstraint.constant = width }
         if abs(cardHeightConstraint.constant - cardHeight) > 0.5 { cardHeightConstraint.constant = cardHeight }
-        if abs(scrollHeightConstraint.constant - scrollHeight) > 0.5 { scrollHeightConstraint.constant = scrollHeight }
-
-        // The edges of a list that scrolls fade out instead of a separator.
-        if contentHeight > scrollHeight + 0.5, scrollHeight > 0 {
-            fadeMask.frame = CGRect(x: 0, y: 0, width: width, height: scrollHeight)
-            fadeMask.colors = [UIColor.clear.cgColor, UIColor.black.cgColor,
-                               UIColor.black.cgColor, UIColor.clear.cgColor]
-            fadeMask.locations = [0, 0.035, 0.965, 1]
-            fadeMask.startPoint = CGPoint(x: 0.5, y: 0)
-            fadeMask.endPoint = CGPoint(x: 0.5, y: 1)
-            scroll.layer.mask = fadeMask
-        } else {
-            scroll.layer.mask = nil
-        }
+        if abs(bodyHeightConstraint.constant - bodyHeight) > 0.5 { bodyHeightConstraint.constant = bodyHeight }
 
         card.layer.shadowPath = UIBezierPath(roundedRect: card.bounds, cornerRadius: 20).cgPath
     }
@@ -231,29 +329,27 @@ class SileoPanelViewController: UIViewController {
         title.text = titleText
         title.font = .systemFont(ofSize: 17, weight: .semibold)
         title.textColor = .label
-        title.numberOfLines = 1
-        title.lineBreakMode = .byTruncatingMiddle
+        title.numberOfLines = 2
 
         let labels = UIStackView(arrangedSubviews: [title])
         labels.translatesAutoresizingMaskIntoConstraints = false
         labels.axis = .vertical
         labels.spacing = 2
-        labels.alignment = .leading
+        labels.alignment = .fill
 
         if let subtitleText = self.subtitleText, !subtitleText.isEmpty {
             let subtitle = UILabel()
             subtitle.text = subtitleText
             subtitle.font = .systemFont(ofSize: 13)
             subtitle.textColor = .secondaryLabel
-            subtitle.numberOfLines = 2
+            subtitle.numberOfLines = 0
             labels.addArrangedSubview(subtitle)
         }
         container.addSubview(labels)
 
         NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 76),
             badge.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            badge.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            badge.topAnchor.constraint(equalTo: container.topAnchor, constant: 18),
             badge.widthAnchor.constraint(equalToConstant: 44),
             badge.heightAnchor.constraint(equalToConstant: 44),
             icon.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
@@ -261,8 +357,10 @@ class SileoPanelViewController: UIViewController {
             icon.widthAnchor.constraint(equalToConstant: 22),
             icon.heightAnchor.constraint(equalToConstant: 22),
             labels.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 12),
-            labels.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16),
-            labels.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+            labels.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            labels.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
+            labels.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
+            badge.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -16)
         ])
         return container
     }
@@ -285,7 +383,12 @@ class SileoPanelViewController: UIViewController {
         ])
         footerView = container
         rootStack.addArrangedSubview(container)
-        view.setNeedsLayout()
+    }
+
+    /// A body of your own instead of rows, filling the card and scrolling
+    /// inside itself. Set it before the panel is presented.
+    func setBody(_ view: UIView) {
+        customBody = view
     }
 
     // MARK: - Presentation
@@ -304,8 +407,7 @@ class SileoPanelViewController: UIViewController {
         UIView.animate(withDuration: 0.34, delay: 0,
                        usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
                        options: [.allowUserInteraction, .curveEaseOut]) {
-            self.dimBlur.alpha = 1
-            self.dimTint.alpha = 1
+            self.dimView.alpha = 1
             self.card.transform = .identity
             self.card.alpha = 1
         }
@@ -315,9 +417,9 @@ class SileoPanelViewController: UIViewController {
     func close(completion: (() -> Void)? = nil) {
         guard !isClosing else { return }
         isClosing = true
+        view.endEditing(true)
         UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseIn]) {
-            self.dimBlur.alpha = 0
-            self.dimTint.alpha = 0
+            self.dimView.alpha = 0
             self.card.alpha = 0
             self.card.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
         } completion: { _ in
@@ -336,9 +438,7 @@ class SileoPanelViewController: UIViewController {
         switch gesture.state {
         case .changed:
             card.transform = CGAffineTransform(translationX: 0, y: translation)
-            let fade = max(0.35, 1 - translation / 260)
-            dimBlur.alpha = fade
-            dimTint.alpha = fade
+            dimView.alpha = max(0.35, 1 - translation / 260)
         case .ended, .cancelled:
             let velocity = gesture.velocity(in: view).y
             if translation > 80 || velocity > 700 {
@@ -348,8 +448,7 @@ class SileoPanelViewController: UIViewController {
                                usingSpringWithDamping: 0.85, initialSpringVelocity: 0,
                                options: [.allowUserInteraction]) {
                     self.card.transform = .identity
-                    self.dimBlur.alpha = 1
-                    self.dimTint.alpha = 1
+                    self.dimView.alpha = 1
                 }
             }
         default:
@@ -407,8 +506,8 @@ extension SileoPanelViewController {
         return row
     }
 
-    /// A row of a list: a title, an optional detail at the right, and a mark
-    /// that shows the current choice.
+    /// A row of a list: a title, an optional second line, and a mark that
+    /// shows the current choice.
     static func choiceRow(title: String,
                           detail: String?,
                           selected: Bool,
@@ -421,8 +520,8 @@ extension SileoPanelViewController {
         label.text = title
         label.font = .systemFont(ofSize: 17)
         label.textColor = .label
-        label.numberOfLines = 1
-        label.lineBreakMode = .byTruncatingMiddle
+        label.numberOfLines = 2
+        label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(label)
 
@@ -433,13 +532,13 @@ extension SileoPanelViewController {
         row.addSubview(check)
 
         var constraints = [
-            row.heightAnchor.constraint(equalToConstant: 52),
             label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
-            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            label.topAnchor.constraint(equalTo: row.topAnchor, constant: 10),
             check.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
             check.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             check.widthAnchor.constraint(equalToConstant: 22),
-            check.heightAnchor.constraint(equalToConstant: 22)
+            check.heightAnchor.constraint(equalToConstant: 22),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12)
         ]
 
         if let detail = detail, !detail.isEmpty {
@@ -447,19 +546,22 @@ extension SileoPanelViewController {
             detailLabel.text = detail
             detailLabel.font = .systemFont(ofSize: 13)
             detailLabel.textColor = .secondaryLabel
-            detailLabel.textAlignment = .right
             detailLabel.numberOfLines = 1
             detailLabel.lineBreakMode = .byTruncatingMiddle
             detailLabel.translatesAutoresizingMaskIntoConstraints = false
             row.addSubview(detailLabel)
             constraints += [
-                detailLabel.trailingAnchor.constraint(equalTo: check.leadingAnchor, constant: -10),
-                detailLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-                detailLabel.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 12),
-                label.trailingAnchor.constraint(lessThanOrEqualTo: detailLabel.leadingAnchor, constant: -12)
+                detailLabel.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+                detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12),
+                detailLabel.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 2),
+                detailLabel.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -10),
+                row.heightAnchor.constraint(greaterThanOrEqualToConstant: 60)
             ]
         } else {
-            constraints.append(label.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12))
+            constraints += [
+                label.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -10),
+                row.heightAnchor.constraint(greaterThanOrEqualToConstant: 52)
+            ]
         }
         NSLayoutConstraint.activate(constraints)
         return row
@@ -474,10 +576,11 @@ extension SileoPanelViewController {
         label.font = .systemFont(ofSize: 11, weight: .semibold)
         label.textColor = .secondaryLabel
         label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingMiddle
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
         NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: 32),
+            container.heightAnchor.constraint(equalToConstant: 34),
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             label.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16),
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4)
@@ -500,12 +603,14 @@ extension SileoPanelViewController {
         button.layer.cornerRadius = 22
         button.layer.cornerCurve = .continuous
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        button.setTitleColor(.tintColor, for: .normal)
-        button.setTitleColor(.tertiaryLabel, for: .disabled)
         if filled {
-            button.backgroundColor = UIColor.tintColor.withAlphaComponent(0.16)
+            button.backgroundColor = .tintColor
+            button.setTitleColor(.white, for: .normal)
+            button.setTitleColor(UIColor.white.withAlphaComponent(0.6), for: .disabled)
         } else {
             button.backgroundColor = .clear
+            button.setTitleColor(.tintColor, for: .normal)
+            button.setTitleColor(.tertiaryLabel, for: .disabled)
             button.layer.borderWidth = 0.5
             button.layer.borderColor = UIColor.tintColor.withAlphaComponent(0.4).cgColor
         }
@@ -549,24 +654,27 @@ extension SileoPanelViewController {
         block.axis = .vertical
         block.spacing = 8
         block.alignment = .center
-        panel.contentStack.addArrangedSubview(block)
-        panel.contentStack.addArrangedSubview(spacer(12))
+        block.isLayoutMarginsRelativeArrangement = true
+        block.layoutMargins = UIEdgeInsets(top: 20, left: 8, bottom: 4, right: 8)
 
         NSLayoutConstraint.activate([
             icon.widthAnchor.constraint(equalToConstant: 40),
             icon.heightAnchor.constraint(equalToConstant: 40),
-            titleLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor),
-            titleLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor),
-            messageLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor),
-            messageLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor)
+            titleLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor, constant: 8),
+            titleLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor, constant: -8),
+            messageLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor, constant: 8),
+            messageLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor, constant: -8)
         ])
 
-        panel.contentStack.addArrangedSubview(row(title: confirmTitle, destructive: destructive) { [weak panel] in
-            panel?.close { onConfirm() }
-        })
-        panel.contentStack.addArrangedSubview(row(title: String(localizationKey: "Cancel")) { [weak panel] in
-            panel?.close()
-        })
+        panel.table.setItems([
+            SileoPanelTable.Item(block),
+            SileoPanelTable.Item(row(title: confirmTitle, destructive: destructive) { [weak panel] in
+                panel?.close { onConfirm() }
+            }),
+            SileoPanelTable.Item(row(title: String(localizationKey: "Cancel")) { [weak panel] in
+                panel?.close()
+            })
+        ])
         return panel
     }
 
@@ -598,21 +706,24 @@ extension SileoPanelViewController {
         block.axis = .vertical
         block.spacing = 8
         block.alignment = .center
-        panel.contentStack.addArrangedSubview(block)
-        panel.contentStack.addArrangedSubview(spacer(12))
+        block.isLayoutMarginsRelativeArrangement = true
+        block.layoutMargins = UIEdgeInsets(top: 20, left: 8, bottom: 4, right: 8)
 
         NSLayoutConstraint.activate([
             icon.widthAnchor.constraint(equalToConstant: 40),
             icon.heightAnchor.constraint(equalToConstant: 40),
-            titleLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor),
-            titleLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor),
-            messageLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor),
-            messageLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor)
+            titleLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor, constant: 8),
+            titleLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor, constant: -8),
+            messageLabel.leadingAnchor.constraint(equalTo: block.leadingAnchor, constant: 8),
+            messageLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor, constant: -8)
         ])
 
-        panel.contentStack.addArrangedSubview(row(title: String(localizationKey: "OK")) { [weak panel] in
-            panel?.close()
-        })
+        panel.table.setItems([
+            SileoPanelTable.Item(block),
+            SileoPanelTable.Item(row(title: String(localizationKey: "OK")) { [weak panel] in
+                panel?.close()
+            })
+        ])
         return panel
     }
 }
