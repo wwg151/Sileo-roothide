@@ -54,20 +54,22 @@ struct QueueItem {
 
 extension DownloadManager {
 
-    /// Every entry of the queue, with the state the new UI shows. The sets
-    /// live on the apt queue, so the snapshot is built off the main thread —
-    /// mid-download that queue can be busy for seconds.
-    func queueSnapshot(_ completion: @escaping ([QueueItem]) -> Void) {
+    /// Every entry of the queue, with the state the new UI shows, and whether
+    /// every download is already in. The sets live on the apt queue, so the
+    /// snapshot is built off the main thread — mid-download that queue can be
+    /// busy for seconds.
+    func queueSnapshot(_ completion: @escaping ([QueueItem], Bool) -> Void) {
         QueueCenter.snapshotQueue.async {
-            let items = self.buildSnapshot()
-            DispatchQueue.main.async { completion(items) }
+            let result = self.buildSnapshot()
+            DispatchQueue.main.async { completion(result.0, result.1) }
         }
     }
 
-    private func buildSnapshot() -> [QueueItem] {
+    private func buildSnapshot() -> ([QueueItem], Bool) {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
+        let allDownloaded = downloads.values.allSatisfy { $0.success || $0.progress >= 1 }
 
         func add(_ set: Set<DownloadPackage>, removal: Bool) {
             for entry in set {
@@ -75,12 +77,12 @@ extension DownloadManager {
                 let identifier = package.package
                 let state: QueueItemState
                 if let download = downloads[identifier] {
-                    if download.completed && download.failureReason != nil {
+                    if download.failureReason != nil {
                         state = .failed(download.failureReason)
                     } else if download.message != nil && !download.completed {
                         // the roothide conversion runs inside the download's slot
                         state = .converting
-                    } else if download.started && !download.completed {
+                    } else if download.started && !download.completed && !download.success {
                         state = .downloading(download.progress)
                     } else if aptActive {
                         state = removal ? .uninstalling : .installing
@@ -110,11 +112,11 @@ extension DownloadManager {
         let known = Set(items.map { $0.identifier })
         for (identifier, download) in downloads where !known.contains(identifier) {
             let state: QueueItemState
-            if download.completed && download.failureReason != nil {
+            if download.failureReason != nil {
                 state = .failed(download.failureReason)
             } else if download.message != nil && !download.completed {
                 state = .converting
-            } else if download.started && !download.completed {
+            } else if download.started && !download.completed && !download.success {
                 state = .downloading(download.progress)
             } else {
                 state = .waiting
@@ -135,7 +137,8 @@ extension DownloadManager {
             case .waiting: return 4
             }
         }
-        return items.sorted { rank($0) != rank($1) ? rank($0) < rank($1) : $0.identifier < $1.identifier }
+        return (items.sorted { rank($0) != rank($1) ? rank($0) < rank($1) : $0.identifier < $1.identifier },
+                allDownloaded)
     }
 }
 
@@ -267,12 +270,11 @@ final class QueueCenter {
 
     /// Downloads are all in: hand the batch to apt. The log sheet opens with
     /// it, because the install phase is the part worth watching.
-    private func checkAptHandoff() {
-        guard downloadPhase, !handoffScheduled else { return }
+    private func checkAptHandoff(allDownloaded: Bool) {
+        guard downloadPhase, !handoffScheduled, allDownloaded else { return }
         let manager = DownloadManager.shared
         guard manager.queueRunning, !manager.aptRunning, !manager.aptFinished,
-              manager.operationCount() > 0, manager.verifyComplete(),
-              manager.downloadingPackages() == 0 else { return }
+              manager.operationCount() > 0 else { return }
 
         // never present while a page or a panel is mid-transition: UIKit
         // throws and the app dies. Wait a moment, then look again.
@@ -282,7 +284,7 @@ final class QueueCenter {
             self.handoffScheduled = false
             guard self.downloadPhase,
                   manager.queueRunning, !manager.aptRunning, !manager.aptFinished,
-                  manager.operationCount() > 0, manager.verifyComplete() else { return }
+                  manager.operationCount() > 0 else { return }
 
             guard let tab = TabBarController.singleton, tab.view.window != nil else { return }
             var host: UIViewController = tab
@@ -291,14 +293,36 @@ final class QueueCenter {
                   !host.isBeingPresented, !host.isBeingDismissed else { return }
 
             let controller = manager.viewController
-            manager.currentDownloadSession = 0
             self.downloadPhase = false
+            // straight into the install phase: confirmQueued would start the
+            // downloads over again, and they are all in already
+            let beginInstall: () -> Void = { [weak controller] in
+                guard let controller = controller else { return }
+                controller.reloadData()
+                controller.transferToAction()
+            }
+            let removals = manager.vars.uninstallations.raw.map { $0.package }
+                + manager.vars.uninstalldeps.raw.map { $0.package }
+            let essentials = removals.filter { manager.isEssential($0) }
+            let start: () -> Void = {
+                if essentials.isEmpty {
+                    beginInstall()
+                } else {
+                    let names = essentials.map { $0.name ?? $0.package }.joined(separator: "\n")
+                    let message = String(format: String(localizationKey: "Essential_Warning"), names)
+                    SileoPanelViewController.confirm(title: String(localizationKey: "Warning"),
+                                                     message: message,
+                                                     confirmTitle: String(localizationKey: "Dangerous_Repo.Last_Chance.Continue")) {
+                        beginInstall()
+                    }.present(from: controller)
+                }
+            }
             if host === controller {
-                controller.confirmQueued(nil)
+                start()
                 return
             }
             guard controller.presentingViewController == nil else {
-                controller.confirmQueued(nil)
+                start()
                 return
             }
             controller.modalPresentationStyle = .pageSheet
@@ -307,7 +331,7 @@ final class QueueCenter {
                 presentation.prefersGrabberVisible = true
             }
             host.present(controller, animated: true) {
-                controller.confirmQueued(nil)
+                start()
             }
         }
     }
@@ -319,13 +343,25 @@ final class QueueCenter {
     private func syncNow() {
         // Building the snapshot touches the apt queue's containers: never do
         // that on the main thread, the queue can be busy for seconds mid-download.
-        DownloadManager.shared.queueSnapshot { [weak self] items in
-            self?.applySnapshot(items)
+        DownloadManager.shared.queueSnapshot { [weak self] items, allDownloaded in
+            self?.applySnapshot(items, allDownloaded: allDownloaded)
         }
     }
 
-    private func applySnapshot(_ snapshot: [QueueItem]) {
+    private func applySnapshot(_ snapshot: [QueueItem], allDownloaded: Bool) {
         var items = snapshot
+        // between the last download and apt the task is on its way to install:
+        // show it as installing instead of flashing 等待开始
+        if downloadPhase && allDownloaded {
+            items = items.map { item in
+                guard case .waiting = item.state else { return item }
+                return QueueItem(identifier: item.identifier,
+                                 name: item.name,
+                                 version: item.version,
+                                 isRemoval: item.isRemoval,
+                                 state: item.isRemoval ? .uninstalling : .installing)
+            }
+        }
         for item in items where origins[item.identifier] == nil {
             origins[item.identifier] = QueueCenter.currentPageIdentifier()
         }
@@ -344,7 +380,7 @@ final class QueueCenter {
         }
 
         // downloads all in: hand the batch to apt
-        checkAptHandoff()
+        checkAptHandoff(allDownloaded: allDownloaded)
 
         // The capsule yields to the page that shows the task's own ring.
         var showCapsule = false

@@ -403,7 +403,7 @@ class DownloadsTableViewController: SileoViewController {
         return true
     }
     
-    private func transferToAction() {
+    func transferToAction() {
         NSLog("SileoLog: transferToAction \(isInstalling)")
         if isInstalling {
             return
