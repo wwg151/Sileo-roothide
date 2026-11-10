@@ -370,6 +370,7 @@ final class QueueCenter {
             }
 
             let controller = manager.viewController
+            let presented = tab.logController ?? controller
             self.downloadPhase = false
             // straight into the install phase: confirmQueued would start the
             // downloads over again, and they are all in already
@@ -394,20 +395,20 @@ final class QueueCenter {
                     }.present(from: controller)
                 }
             }
-            if host === controller {
+            if host === presented {
                 start()
                 return
             }
-            guard controller.presentingViewController == nil else {
+            guard presented.presentingViewController == nil else {
                 start()
                 return
             }
-            controller.modalPresentationStyle = .pageSheet
-            if let presentation = controller.sheetPresentationController {
+            presented.modalPresentationStyle = .pageSheet
+            if let presentation = presented.sheetPresentationController {
                 presentation.detents = [.large()]
                 presentation.prefersGrabberVisible = true
             }
-            host.present(controller, animated: true) {
+            host.present(presented, animated: true) {
                 start()
             }
         }
@@ -588,6 +589,11 @@ final class QueueCenter {
     func presentSheet() {
         guard !sheetVisible else { return }
         guard let host = TabBarController.singleton else { return }
+        // whatever is already up (the log page, for instance) must not be
+        // replaced by UIKit's "already presenting" exception
+        var top: UIViewController = host
+        while let presented = top.presentedViewController { top = presented }
+        guard !top.isBeingPresented, !top.isBeingDismissed, top.viewIfLoaded?.window != nil else { return }
         let sheet = QueueSheetController()
         sheet.modalPresentationStyle = .pageSheet
         if let presentation = sheet.sheetPresentationController {
@@ -595,7 +601,7 @@ final class QueueCenter {
             presentation.prefersGrabberVisible = true
         }
         sheetVisible = true
-        host.present(sheet, animated: true) {
+        top.present(sheet, animated: true) {
             self.restartTimer()
         }
     }
@@ -1036,14 +1042,10 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     }
 
     private func openLog() {
-        let controller = DownloadManager.shared.viewController
-        // already up somewhere in the chain: step aside so it is visible again
-        guard controller.presentingViewController == nil else {
-            if let presenter = presentingViewController {
-                presenter.dismiss(animated: true)
-            } else {
-                dismiss(animated: true)
-            }
+        guard let controller = TabBarController.singleton?.logController else { return }
+        // already up: get the sheet out of the way so the log can be read
+        if controller.presentingViewController != nil {
+            dismiss(animated: true)
             return
         }
         controller.modalPresentationStyle = .pageSheet
