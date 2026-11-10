@@ -584,6 +584,7 @@ final class QueueCapsuleView: UIView {
     private let trackLayer = CAShapeLayer()
     private let titleLabel = UILabel()
     private let percentLabel = UILabel()
+    private let badgeLabel = UILabel()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -610,23 +611,20 @@ final class QueueCapsuleView: UIView {
         ringLayer.lineCap = .round
         layer.addSublayer(ringLayer)
 
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         titleLabel.textColor = .label
         titleLabel.numberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
 
-        percentLabel.translatesAutoresizingMaskIntoConstraints = false
         percentLabel.font = .systemFont(ofSize: 13)
         percentLabel.textColor = .secondaryLabel
         addSubview(percentLabel)
 
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 42),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            percentLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            percentLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
+        badgeLabel.font = .systemFont(ofSize: 12, weight: .heavy)
+        badgeLabel.textAlignment = .center
+        badgeLabel.isHidden = true
+        addSubview(badgeLabel)
 
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
         isHidden = true
@@ -641,6 +639,13 @@ final class QueueCapsuleView: UIView {
         onTap?()
     }
 
+    override var intrinsicContentSize: CGSize {
+        let title = ceil(titleLabel.intrinsicContentSize.width)
+        let hasPercent = percentLabel.text?.isEmpty == false
+        let percent = hasPercent ? ceil(percentLabel.intrinsicContentSize.width) + 10 : 0
+        return CGSize(width: max(112, 42 + title + percent + 16), height: 44)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let center = CGPoint(x: 26, y: bounds.height / 2)
@@ -650,22 +655,48 @@ final class QueueCapsuleView: UIView {
         ringLayer.frame = bounds
         trackLayer.path = path.cgPath
         ringLayer.path = path.cgPath
+
+        let hasPercent = percentLabel.text?.isEmpty == false
+        let percentWidth = hasPercent ? ceil(percentLabel.intrinsicContentSize.width) : 0
+        let rightInset: CGFloat = 16
+        let titleWidth = max(0, bounds.width - 42 - rightInset - (hasPercent ? percentWidth + 10 : 0))
+        let titleHeight = ceil(titleLabel.intrinsicContentSize.height)
+        titleLabel.frame = CGRect(x: 42, y: (bounds.height - titleHeight) / 2,
+                                  width: titleWidth, height: titleHeight)
+        percentLabel.isHidden = !hasPercent
+        if hasPercent {
+            let height = ceil(percentLabel.intrinsicContentSize.height)
+            percentLabel.frame = CGRect(x: bounds.width - rightInset - percentWidth,
+                                        y: (bounds.height - height) / 2,
+                                        width: percentWidth, height: height)
+        }
+        if !badgeLabel.isHidden {
+            badgeLabel.frame = CGRect(x: center.x - 10, y: center.y - 9, width: 20, height: 18)
+        }
     }
 
     func configure(items: [QueueItem], failure: Bool, done: Bool) {
         let ringColor: UIColor
+        badgeLabel.isHidden = true
+        badgeLabel.text = nil
         if done {
             titleLabel.text = String(localizationKey: "Queue_Done")
-            percentLabel.text = "✓"
-            percentLabel.textColor = .systemGreen
+            percentLabel.text = "›"
+            percentLabel.textColor = .tertiaryLabel
             ringColor = .systemGreen
+            badgeLabel.text = "✓"
+            badgeLabel.textColor = .systemGreen
+            badgeLabel.isHidden = false
             setRing(1, ringColor)
         } else if failure || items.contains(where: { $0.isFailed }) {
             let failed = max(1, items.filter { $0.isFailed }.count)
             titleLabel.text = String(format: String(localizationKey: "Queue_Failed_N"), failed)
-            percentLabel.text = "!"
-            percentLabel.textColor = .systemRed
+            percentLabel.text = "›"
+            percentLabel.textColor = .tertiaryLabel
             ringColor = .systemRed
+            badgeLabel.text = "!"
+            badgeLabel.textColor = .systemRed
+            badgeLabel.isHidden = false
             setRing(1, ringColor)
         } else {
             let downloading = items.filter {
@@ -698,6 +729,8 @@ final class QueueCapsuleView: UIView {
                 setRing(1, ringColor)
             }
         }
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
     }
 
     private func setRing(_ fraction: CGFloat, _ color: UIColor) {
@@ -941,7 +974,15 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
 
     private func openLog() {
         let controller = DownloadManager.shared.viewController
-        guard controller.presentingViewController == nil else { return }
+        // already up somewhere in the chain: step aside so it is visible again
+        guard controller.presentingViewController == nil else {
+            if let presenter = presentingViewController {
+                presenter.dismiss(animated: true)
+            } else {
+                dismiss(animated: true)
+            }
+            return
+        }
         controller.modalPresentationStyle = .pageSheet
         if let presentation = controller.sheetPresentationController {
             presentation.detents = [.large()]
