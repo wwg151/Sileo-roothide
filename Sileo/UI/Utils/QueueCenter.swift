@@ -167,7 +167,7 @@ final class QueueCenter {
         guard window == nil else { return }
         guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive })
                 as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-        let queueWindow = UIWindow(windowScene: scene)
+        let queueWindow = QueueWindow(windowScene: scene)
         queueWindow.windowLevel = .normal + 1
         queueWindow.backgroundColor = .clear
         let rootView = QueueWindowRootView()
@@ -187,7 +187,9 @@ final class QueueCenter {
             capsuleView.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor, constant: -84),
             capsuleView.heightAnchor.constraint(equalToConstant: 44)
         ])
-        queueWindow.isHidden = false
+        queueWindow.isHidden = true
+        // the app's own window keeps the keyboard and the focus
+        TabBarController.singleton?.view.window?.makeKey()
         window = queueWindow
         capsule = capsuleView
     }
@@ -375,6 +377,11 @@ final class QueueCenter {
         guard let capsule = capsule else { return }
         if visible {
             capsule.configure(items: items, failure: failure, done: done)
+            if window?.isHidden != false {
+                window?.isHidden = false
+                // showing a window can take the key: hand it back to the app
+                TabBarController.singleton?.view.window?.makeKey()
+            }
             if capsule.isHidden {
                 capsule.alpha = 0
                 capsule.isHidden = false
@@ -393,6 +400,8 @@ final class QueueCenter {
             }, completion: { _ in
                 capsule.isHidden = true
                 capsule.transform = .identity
+                // nothing to show: the overlay window goes away entirely
+                self.window?.isHidden = true
             })
         }
         restartTimer()
@@ -427,6 +436,16 @@ final class QueueCenter {
 }
 
 // MARK: - Capsule window root
+
+/// A window that lets every touch it cannot place fall through to the app.
+final class QueueWindow: UIWindow {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        // UIView.hitTest answers the window itself when nothing inside claims
+        // the point; that would swallow the touch, so hand it back instead.
+        return hit === self ? nil : hit
+    }
+}
 
 /// The root view of the capsule's window: every touch that is not on the
 /// capsule itself is passed on to the windows below.
