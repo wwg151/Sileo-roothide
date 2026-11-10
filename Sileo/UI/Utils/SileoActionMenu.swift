@@ -38,6 +38,10 @@ final class SileoActionMenu: UIViewController {
     private let card = UIView()
     private let stack = UIStackView()
 
+    private var cardWidthConstraint: NSLayoutConstraint!
+    private var cardLeadingConstraint: NSLayoutConstraint!
+    private var cardTopConstraint: NSLayoutConstraint!
+
     private static let rowHeight: CGFloat = 44
     private static let cardWidth: CGFloat = 264
     private static let cornerRadius: CGFloat = 14
@@ -79,6 +83,8 @@ final class SileoActionMenu: UIViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .vertical
         stack.spacing = 0
+        stack.alignment = .fill
+        stack.distribution = .fill
         card.addSubview(stack)
 
         if let header = header, !header.isEmpty {
@@ -87,6 +93,16 @@ final class SileoActionMenu: UIViewController {
         for (index, item) in items.enumerated() {
             stack.addArrangedSubview(makeRow(item, index: index))
         }
+
+        // The card is placed with constraints, not a frame: a frame set beside
+        // Auto Layout left the rows narrower than the card, which put a band of
+        // empty space to the right of every icon.
+        cardWidthConstraint = card.widthAnchor.constraint(equalToConstant: SileoActionMenu.cardWidth)
+        cardLeadingConstraint = card.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16)
+        cardTopConstraint = card.topAnchor.constraint(equalTo: view.topAnchor, constant: 100)
+        NSLayoutConstraint.activate([
+            cardWidthConstraint, cardLeadingConstraint, cardTopConstraint
+        ])
 
         NSLayoutConstraint.activate([
             dimView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -114,19 +130,21 @@ final class SileoActionMenu: UIViewController {
         let height = stack.systemLayoutSizeFitting(CGSize(width: width, height: 0),
                                                    withHorizontalFittingPriority: .required,
                                                    verticalFittingPriority: .fittingSizeLevel).height
-        var origin = CGPoint(x: (view.bounds.width - width) / 2,
-                             y: (view.bounds.height - height) / 2)
+        var x = (view.bounds.width - width) / 2
+        var y = (view.bounds.height - height) / 2
         if let frame = sourceFrame, !frame.isEmpty {
             let maxX = view.bounds.width - width - 16
-            let x = min(max(16, frame.maxX - width), max(16, maxX))
+            x = min(max(16, frame.maxX - width), max(16, maxX))
             let below = frame.maxY + 8
-            let y = below + height + insets.bottom + 16 <= view.bounds.height
+            y = below + height + insets.bottom + 16 <= view.bounds.height
                 ? below
                 : frame.minY - height - 8
-            origin = CGPoint(x: x, y: max(insets.top + 16, y))
+            y = max(insets.top + 16, y)
         }
-        card.frame = CGRect(x: origin.x, y: origin.y, width: width, height: height)
-        card.layer.shadowPath = UIBezierPath(roundedRect: card.bounds,
+        if abs(cardWidthConstraint.constant - width) > 0.5 { cardWidthConstraint.constant = width }
+        if abs(cardLeadingConstraint.constant - x) > 0.5 { cardLeadingConstraint.constant = x }
+        if abs(cardTopConstraint.constant - y) > 0.5 { cardTopConstraint.constant = y }
+        card.layer.shadowPath = UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: width, height: height),
                                              cornerRadius: SileoActionMenu.cornerRadius).cgPath
     }
 
