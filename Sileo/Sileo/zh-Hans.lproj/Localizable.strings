@@ -450,3 +450,5 @@
 
 "Backup_Count_Packages" = "%lu 个插件";
 "Backup_Count_Sources" = "%lu 个源";
+
+"Version_Current_Local" = "当前版本：本地安装";

@@ -444,3 +444,5 @@
 
 "Backup_Count_Packages" = "%lu packages";
 "Backup_Count_Sources" = "%lu sources";
+
+"Version_Current_Local" = "Current version: installed locally";

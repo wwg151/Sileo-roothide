@@ -57,6 +57,14 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
         }
 
         var items: [SileoPanelTable.Item] = []
+        // An installed package whose source cannot be told: say so, the way
+        // the list opens even when no source offers the package at all.
+        if current.sourceRepo == nil && winner == nil {
+            items.append(SileoPanelTable.Item(
+                SileoPanelViewController.sectionLabel(String(localizationKey: "Version_Current_Local")),
+                height: 34
+            ))
+        }
         for (section, entry) in sections.enumerated() {
             if sections.count > 1 {
                 items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(entry.title), height: 34))

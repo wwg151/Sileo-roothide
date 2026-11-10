@@ -306,7 +306,8 @@ class PackageQueueButton: PackageButton {
             first.title.localizedCaseInsensitiveCompare(second.title) == .orderedAscending
         }
 
-        guard !sections.isEmpty else { return }
+        // The panel opens even when no source offers this package: it then
+        // says the current version came from a local install.
         // capture strongly: the long-press preview (and this button) may be released before a version is picked
         let listNavigationController = self.versionSelectionNavigationController
         let presenter = self.viewControllerForPresentation
