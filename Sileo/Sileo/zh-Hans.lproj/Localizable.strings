@@ -329,7 +329,7 @@
 "Backup_Sources" = "插件源备份";
 "Restore_Sources" = "插件源恢复";
 "Backup_Select_All" = "全选";
-"Backup_Deselect_All" = "取消";
+"Backup_Deselect_All" = "取消全选";
 "Backup_Start" = "备份";
 "Backup_Starting" = "正在准备…";
 "Backup_Time_Left" = "预计剩余 %d 秒";

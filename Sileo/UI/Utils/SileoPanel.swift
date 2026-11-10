@@ -120,6 +120,10 @@ class SileoPanelViewController: UIViewController {
     private(set) var footerView: UIView?
     private var customBody: UIView?
 
+    /// A control shown at the right of the header, such as 全选. Set it before
+    /// the panel is presented.
+    var headerAccessory: UIView?
+
     // MARK: - Chrome
 
     private let dimView = UIView()
@@ -347,7 +351,25 @@ class SileoPanelViewController: UIViewController {
         }
         container.addSubview(labels)
 
-        NSLayoutConstraint.activate([
+        var labelConstraints = [
+            labels.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 12),
+            labels.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
+            labels.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16)
+        ]
+        // A control such as 全选 sits at the right of the header.
+        if let accessory = headerAccessory {
+            accessory.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(accessory)
+            labelConstraints.append(labels.trailingAnchor.constraint(lessThanOrEqualTo: accessory.leadingAnchor, constant: -8))
+            NSLayoutConstraint.activate([
+                accessory.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+                accessory.centerYAnchor.constraint(equalTo: badge.centerYAnchor)
+            ])
+        } else {
+            labelConstraints.append(labels.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16))
+        }
+
+        NSLayoutConstraint.activate(labelConstraints + [
             badge.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             badge.topAnchor.constraint(equalTo: container.topAnchor, constant: 18),
             badge.widthAnchor.constraint(equalToConstant: 44),
@@ -356,10 +378,6 @@ class SileoPanelViewController: UIViewController {
             icon.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 22),
             icon.heightAnchor.constraint(equalToConstant: 22),
-            labels.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 12),
-            labels.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            labels.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
-            labels.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
             badge.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -16)
         ])
         return container
@@ -639,6 +657,17 @@ extension SileoPanelViewController {
         view.translatesAutoresizingMaskIntoConstraints = false
         view.heightAnchor.constraint(equalToConstant: height).isActive = true
         return view
+    }
+
+    /// A small text button for the header, such as 全选.
+    static func headerButton(title: String, handler: @escaping () -> Void) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+        button.setTitleColor(.tintColor, for: .normal)
+        button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        button.addAction(UIAction { _ in handler() }, for: .touchUpInside)
+        return button
     }
 
     /// A capsule button for the footer.

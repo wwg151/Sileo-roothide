@@ -323,7 +323,7 @@
 "Backup_Sources" = "Back Up Sources";
 "Restore_Sources" = "Restore Sources";
 "Backup_Select_All" = "Select All";
-"Backup_Deselect_All" = "Cancel";
+"Backup_Deselect_All" = "Deselect All";
 "Backup_Start" = "Back Up";
 "Backup_Starting" = "Preparing…";
 "Backup_Time_Left" = "%d s left";

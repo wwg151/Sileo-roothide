@@ -122,6 +122,7 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
     private let searchField = UITextField()
     private let listTable = SileoPanelTable()
     private var confirmButton: UIButton?
+    private var selectAllButton: UIButton?
 
     init(packages: [Package], onConfirm: @escaping ([Package]) -> Void) {
         self.packages = packages
@@ -152,6 +153,12 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
             listTable.bottomAnchor.constraint(equalTo: body.bottomAnchor)
         ])
         setBody(body)
+
+        let selectAll = SileoPanelViewController.headerButton(title: String(localizationKey: "Backup_Select_All")) { [weak self] in
+            self?.toggleSelectAll()
+        }
+        selectAllButton = selectAll
+        headerAccessory = selectAll
 
         let button = SileoPanelViewController.capsuleButton(title: footerTitle()) { [weak self] in
             guard let self = self, !self.selected.isEmpty else { return }
@@ -295,6 +302,26 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
     private func updateFooter() {
         confirmButton?.setTitle(footerTitle(), for: .normal)
         confirmButton?.isEnabled = !selected.isEmpty
+
+        let allSelected = !filtered.isEmpty && filtered.allSatisfy { selected.contains($0.package) }
+        selectAllButton?.setTitle(String(localizationKey: allSelected ? "Backup_Deselect_All" : "Backup_Select_All"),
+                                  for: .normal)
+    }
+
+    private func toggleSelectAll() {
+        let allSelected = !filtered.isEmpty && filtered.allSatisfy { selected.contains($0.package) }
+        for package in filtered {
+            if allSelected {
+                selected.remove(package.package)
+            } else {
+                selected.insert(package.package)
+            }
+        }
+        for (identifier, check) in checks {
+            update(check: check, selected: selected.contains(identifier))
+        }
+        UISelectionFeedbackGenerator().selectionChanged()
+        updateFooter()
     }
 }
 
@@ -307,6 +334,7 @@ final class SileoRemovedSourcesPanel: SileoPanelViewController {
     private var selected: Set<String> = []
     private var checks: [String: UIImageView] = [:]
     private var confirmButton: UIButton?
+    private var selectAllButton: UIButton?
 
     init(items: [RemovedSource], onAdd: @escaping ([RemovedSource]) -> Void) {
         self.items = items
@@ -318,6 +346,12 @@ final class SileoRemovedSourcesPanel: SileoPanelViewController {
         table.setItems(items.map { item in
             SileoPanelTable.Item(makeRow(for: item))
         })
+
+        let selectAll = SileoPanelViewController.headerButton(title: String(localizationKey: "Backup_Select_All")) { [weak self] in
+            self?.toggleSelectAll()
+        }
+        selectAllButton = selectAll
+        headerAccessory = selectAll
 
         let button = SileoPanelViewController.capsuleButton(title: footerTitle()) { [weak self] in
             guard let self = self, !self.selected.isEmpty else { return }
@@ -404,5 +438,25 @@ final class SileoRemovedSourcesPanel: SileoPanelViewController {
     private func updateFooter() {
         confirmButton?.setTitle(footerTitle(), for: .normal)
         confirmButton?.isEnabled = !selected.isEmpty
+
+        let allSelected = !items.isEmpty && items.allSatisfy { selected.contains($0.url) }
+        selectAllButton?.setTitle(String(localizationKey: allSelected ? "Backup_Deselect_All" : "Backup_Select_All"),
+                                  for: .normal)
+    }
+
+    private func toggleSelectAll() {
+        let allSelected = !items.isEmpty && items.allSatisfy { selected.contains($0.url) }
+        for item in items {
+            if allSelected {
+                selected.remove(item.url)
+            } else {
+                selected.insert(item.url)
+            }
+        }
+        for (identifier, check) in checks {
+            update(check: check, selected: selected.contains(identifier))
+        }
+        UISelectionFeedbackGenerator().selectionChanged()
+        updateFooter()
     }
 }
