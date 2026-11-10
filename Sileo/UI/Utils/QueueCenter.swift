@@ -54,8 +54,17 @@ struct QueueItem {
 
 extension DownloadManager {
 
-    /// Every entry of the queue, with the state the new UI shows.
-    func queueSnapshot() -> [QueueItem] {
+    /// Every entry of the queue, with the state the new UI shows. The sets
+    /// live on the apt queue, so the snapshot is built off the main thread —
+    /// mid-download that queue can be busy for seconds.
+    func queueSnapshot(_ completion: @escaping ([QueueItem]) -> Void) {
+        QueueCenter.snapshotQueue.async {
+            let items = self.buildSnapshot()
+            DispatchQueue.main.async { completion(items) }
+        }
+    }
+
+    private func buildSnapshot() -> [QueueItem] {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
@@ -136,6 +145,8 @@ final class QueueCenter {
     static let shared = QueueCenter()
     static let queueChangedNotification = Notification.Name("QueueCenterQueueChanged")
 
+    static let snapshotQueue = DispatchQueue(label: "QueueCenter.snapshot", qos: .utility)
+
     private var capsule: QueueCapsuleView?
     private var window: UIWindow?
     private var timer: Timer?
@@ -143,6 +154,8 @@ final class QueueCenter {
     private var installFailed = false
     private(set) var sheetVisible = false
     private var lastItems: [QueueItem] = []
+    private var downloadPhase = false
+    private var origins: [String: ObjectIdentifier] = [:]
 
     private init() {}
 
@@ -157,19 +170,21 @@ final class QueueCenter {
         let queueWindow = UIWindow(windowScene: scene)
         queueWindow.windowLevel = .normal + 1
         queueWindow.backgroundColor = .clear
+        let rootView = QueueWindowRootView()
         queueWindow.rootViewController = UIViewController()
+        queueWindow.rootViewController?.view = rootView
         // touches that miss the capsule fall through to the app below
-        queueWindow.rootViewController?.view.isUserInteractionEnabled = false
 
         let capsuleView = QueueCapsuleView(frame: .zero)
         capsuleView.onTap = { [weak self] in self?.presentSheet() }
         capsuleView.translatesAutoresizingMaskIntoConstraints = false
-        queueWindow.rootViewController?.view.addSubview(capsuleView)
+        rootView.addSubview(capsuleView)
+        rootView.hitTarget = capsuleView
         NSLayoutConstraint.activate([
-            capsuleView.centerXAnchor.constraint(equalTo: queueWindow.rootViewController!.view.centerXAnchor),
+            capsuleView.centerXAnchor.constraint(equalTo: rootView.centerXAnchor),
             // the floating pill sits 12pt above the safe area and is 64pt tall;
             // the capsule keeps 8pt of air above its top edge
-            capsuleView.bottomAnchor.constraint(equalTo: queueWindow.rootViewController!.view.safeAreaLayoutGuide.bottomAnchor, constant: -84),
+            capsuleView.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor, constant: -84),
             capsuleView.heightAnchor.constraint(equalToConstant: 44)
         ])
         queueWindow.isHidden = false
@@ -208,7 +223,6 @@ final class QueueCenter {
 
     // MARK: execution
 
-    /// Everything queued waits and nothing runs it yet: start the downloads.
     private func startQueueIfNeeded(_ items: [QueueItem]) {
         let manager = DownloadManager.shared
         guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning, !manager.aptFinished else { return }
@@ -216,6 +230,7 @@ final class QueueCenter {
         manager.currentDownloads = 0
         manager.aptRunning = false
         manager.aptFinished = false
+        downloadPhase = true
         NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
         manager.startDownloads()
     }
@@ -223,10 +238,12 @@ final class QueueCenter {
     /// Downloads are all in: hand the batch to apt. The log sheet opens with
     /// it, because the install phase is the part worth watching.
     private func checkAptHandoff() {
+        guard downloadPhase else { return }
         let manager = DownloadManager.shared
         guard manager.queueRunning, !manager.aptRunning, !manager.aptFinished,
               manager.operationCount() > 0, manager.verifyComplete(),
               manager.downloadingPackages() == 0 else { return }
+        downloadPhase = false
 
         guard let tab = TabBarController.singleton else { return }
         var host: UIViewController = tab
@@ -253,7 +270,15 @@ final class QueueCenter {
     }
 
     private func syncNow() {
-        var items = DownloadManager.shared.queueSnapshot()
+        // Building the snapshot touches the apt queue's containers: never do
+        // that on the main thread, the queue can be busy for seconds mid-download.
+        DownloadManager.shared.queueSnapshot { [weak self] items in
+            self?.applySnapshot(items)
+        }
+    }
+
+    private func applySnapshot(_ snapshot: [QueueItem]) {
+        var items = snapshot
         for item in items where origins[item.identifier] == nil {
             origins[item.identifier] = QueueCenter.currentPageIdentifier()
         }
@@ -262,15 +287,16 @@ final class QueueCenter {
         // The legacy popup carried the 开始 button that started the queue;
         // the queue now starts itself the moment something is queued.
         startQueueIfNeeded(items)
-        checkAptHandoff()
 
         if !items.isEmpty {
             // a new run supersedes the previous result
             doneShownAt = nil
-            installFailed = false
         } else if let done = doneShownAt, Date().timeIntervalSince(done) >= 2 {
             doneShownAt = nil
         }
+
+        // downloads all in: hand the batch to apt
+        checkAptHandoff()
 
         // The capsule yields to the page that shows the task's own ring.
         var showCapsule = false
@@ -311,7 +337,6 @@ final class QueueCenter {
 
     // The page a task came from is remembered the first time it is seen, so a
     // single task hides the capsule while its own page is on screen.
-    private var origins: [String: ObjectIdentifier] = [:]
 
     static func currentPageIdentifier() -> ObjectIdentifier? {
         guard let tab = TabBarController.singleton else { return nil }
@@ -398,6 +423,21 @@ final class QueueCenter {
     func sheetReappeared() {
         sheetVisible = true
         restartTimer()
+    }
+}
+
+// MARK: - Capsule window root
+
+/// The root view of the capsule's window: every touch that is not on the
+/// capsule itself is passed on to the windows below.
+final class QueueWindowRootView: UIView {
+
+    weak var hitTarget: UIView?
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let target = hitTarget, !target.isHidden, target.alpha > 0.01 else { return nil }
+        let local = convert(point, to: target)
+        return target.hitTest(local, with: event)
     }
 }
 
@@ -661,30 +701,33 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     }
 
     private func reload() {
-        items = DownloadManager.shared.queueSnapshot()
-        let failed = items.filter { $0.isFailed }.count
-        titleLabel.text = String(localizationKey: "Queue_Title")
-        if failed > 0 {
-            subtitleLabel.text = String(format: String(localizationKey: "Queue_Failed_N"), failed)
-            subtitleLabel.textColor = .systemRed
-        } else {
-            subtitleLabel.text = String(format: String(localizationKey: "Queue_Items"), items.count)
-            subtitleLabel.textColor = .secondaryLabel
+        DownloadManager.shared.queueSnapshot { [weak self] snapshot in
+            guard let self = self else { return }
+            self.items = snapshot
+            let failed = snapshot.filter { $0.isFailed }.count
+            self.titleLabel.text = String(localizationKey: "Queue_Title")
+            if failed > 0 {
+                self.subtitleLabel.text = String(format: String(localizationKey: "Queue_Failed_N"), failed)
+                self.subtitleLabel.textColor = .systemRed
+            } else {
+                self.subtitleLabel.text = String(format: String(localizationKey: "Queue_Items"), snapshot.count)
+                self.subtitleLabel.textColor = .secondaryLabel
+            }
+            if snapshot.isEmpty {
+                self.actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
+                self.actionButton.backgroundColor = .tertiarySystemFill
+                self.actionButton.setTitleColor(.label, for: .normal)
+            } else if failed > 0 {
+                self.actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
+                self.actionButton.backgroundColor = .tintColor
+                self.actionButton.setTitleColor(.white, for: .normal)
+            } else {
+                self.actionButton.setTitle(String(localizationKey: "Queue_Cancel_All"), for: .normal)
+                self.actionButton.backgroundColor = .tintColor
+                self.actionButton.setTitleColor(.white, for: .normal)
+            }
+            self.table.reloadData()
         }
-        if items.isEmpty {
-            actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
-            actionButton.backgroundColor = .tertiarySystemFill
-            actionButton.setTitleColor(.label, for: .normal)
-        } else if failed > 0 {
-            actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
-            actionButton.backgroundColor = .tintColor
-            actionButton.setTitleColor(.white, for: .normal)
-        } else {
-            actionButton.setTitle(String(localizationKey: "Queue_Cancel_All"), for: .normal)
-            actionButton.backgroundColor = .tintColor
-            actionButton.setTitleColor(.white, for: .normal)
-        }
-        table.reloadData()
     }
 
     private func primaryAction() {
