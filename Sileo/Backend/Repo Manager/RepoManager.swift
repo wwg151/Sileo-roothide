@@ -631,12 +631,11 @@ final class RepoManager {
 
         /// The word shown in the refresh log, in the app's language.
         var localizedDescription: String {
-            guard APTLogTranslator.isChinese else { return description }
             switch self {
             case .error:
-                return "错误"
+                return String(localizationKey: "Log_Error")
             case .warning:
-                return "警告"
+                return String(localizationKey: "Log_Warning")
             }
         }
 
@@ -730,7 +729,7 @@ final class RepoManager {
                             }
 
                             guard let releaseContents = fileURL.aptContents else {
-                                log("Could not parse release file from \(releaseURL)", type: .error)
+                                log(String(format: String(localizationKey: "Source_Parse_Release_From"), releaseURL.absoluteString), type: .error)
                                 errorsFound = true
                                 return
                             }
@@ -739,13 +738,13 @@ final class RepoManager {
                             do {
                                 releaseDict = try ControlFileParser.dictionary(controlFile: releaseContents, isReleaseFile: true).0
                             } catch {
-                                log("Could not parse release file: \(error)", type: .error)
+                                log(String(format: String(localizationKey: "Source_Parse_Release_Error"), "\(error)"), type: .error)
                                 errorsFound = true
                                 return
                             }
 
                             guard let repoArchs = (releaseDict["architectures"]?.components(separatedBy: " ") ?? releaseDict["architecture"].map { [$0] }) else {
-                                log("Didn't find any architectures in \(releaseDict["architectures"]) : \(releaseURL)", type: .error)
+                                log(String(format: String(localizationKey: "Source_No_Architectures"), releaseDict["architectures"] ?? "", releaseURL.absoluteString), type: .error)
                                 errorsFound = true
                                 return
                             }
@@ -761,14 +760,14 @@ final class RepoManager {
                             }
                             
                             guard preferredArch != nil else {
-                                log("Didn't find availabile architectures in \(releaseDict["architectures"]) : \(releaseURL)", type: .error)
+                                log(String(format: String(localizationKey: "Source_No_Usable_Architectures"), releaseDict["architectures"] ?? "", releaseURL.absoluteString), type: .error)
                                 errorsFound = true
                                 return
                             }
 
                             guard ["components"].allSatisfy(releaseDict.keys.contains) else {
                                 try? FileManager.default.removeItem(at: fileURL)
-                                log("Could not parse release file.", type: .error)
+                                log(String(localizationKey: "Source_Parse_Release"), type: .error)
                                 errorsFound = true
                                 return
                             }
@@ -784,7 +783,7 @@ final class RepoManager {
                                 ReleaseFileSemaphore.signal()
                             }
 
-                            log("\(releaseURL) returned status \(status). \(error?.localizedDescription ?? "")", type: .error)
+                            log(String(format: String(localizationKey: "Source_Status"), releaseURL.absoluteString, status, error?.localizedDescription ?? ""), type: .error)
                             errorsFound = true
 //                            repo.releaseProgress = 1
 //                            self.postProgressNotification(repo)
@@ -820,7 +819,7 @@ final class RepoManager {
                                 }
 
                                 if FileManager.default.fileExists(atPath: releaseGPGFileDst.path) {
-                                    log("\(releaseGPGURL) returned status \(status). \(error?.localizedDescription ?? "")", type: .error)
+                                    log(String(format: String(localizationKey: "Source_Status"), releaseGPGURL.absoluteString, status, error?.localizedDescription ?? ""), type: .error)
                                     errorsFound = true
                                 }
     //                            repo.releaseGPGProgress = 1
@@ -841,7 +840,7 @@ final class RepoManager {
                     
                     guard let releaseFile = optReleaseFile else {
                         NSLog("SileoLog: optReleaseFile=\(optReleaseFile)")
-                        log("Could not find release file for \(repo.repoURL)", type: .error)
+                        log(String(format: String(localizationKey: "Source_No_Release"), repo.repoURL.absoluteString), type: .error)
                         errorsFound = true
 //                        reposUpdated += 1
                         self.checkUpdatesInBackground(repo)
@@ -923,7 +922,7 @@ final class RepoManager {
                     }
 
                     if repo.isFlat==false && preferredArch==nil {
-                        log("Could not find preferredArch for \(repo.repoURL)", type: .error)
+                        log(String(format: String(localizationKey: "Source_No_Preferred_Arch"), repo.repoURL.absoluteString), type: .error)
                         errorsFound = true
 //                        reposUpdated += 1
                         self.checkUpdatesInBackground(repo)
@@ -986,7 +985,7 @@ final class RepoManager {
                                 defer {
                                     PackagesFileSemaphore.signal()
                                 }
-                                log("\(packagesUrl) returned status \(status). \(error?.localizedDescription ?? "")", type: .error)
+                                log(String(format: String(localizationKey: "Source_Status"), packagesUrl.absoluteString, status, error?.localizedDescription ?? ""), type: .error)
                                 errorsFound = true
 //                                repo.packagesProgress = 0
 //                                self.postProgressNotification(repo)
@@ -1006,7 +1005,7 @@ final class RepoManager {
                             NSLog("SileoLog: validAndTrusted=\(validAndTrusted) for \(repo.url)")
                             if !validAndTrusted || !error.isEmpty {
                                 if FileManager.default.fileExists(atPath: releaseGPGFileDst.path) {
-                                    log("Invalid GPG signature at \(releaseGPGURL)", type: .error)
+                                    log(String(format: String(localizationKey: "Source_Invalid_Signature"), releaseGPGURL.absoluteString), type: .error)
                                     errorsFound = true
                                     #if targetEnvironment(macCatalyst)
                                     repo.packageDict = [:]
@@ -1024,7 +1023,7 @@ final class RepoManager {
                         if !isReleaseGPGValid {
                             repo.packageDict = [:]
                             errorsFound = true
-                            log("\(repo.repoURL) had no valid GPG signature", type: .error)
+                            log(String(format: String(localizationKey: "Source_No_Signature"), repo.repoURL.absoluteString), type: .error)
 //                            reposUpdated += 1
                             self.checkUpdatesInBackground(repo)
                             continue
@@ -1044,7 +1043,7 @@ final class RepoManager {
                     var skipPackages = false
                     if !breakOff {
                         guard var packagesFile = optPackagesFile else {
-                            log("Could not find packages file for \(repo.repoURL)", type: .error)
+                            log(String(format: String(localizationKey: "Source_No_Packages"), repo.repoURL.absoluteString), type: .error)
                             errorsFound = true
 //                            reposUpdated += 1
                             self.checkUpdatesInBackground()
@@ -1059,7 +1058,7 @@ final class RepoManager {
                         let hashToSave: RepoHashType = supportedHashTypes.contains(where: { $0.0.hashType == .sha512 })
                             ? .sha512 : .sha256
                         if releaseFileContainsHashes && !isPackagesFileValid {
-                            log("Hash for \(packagesFile.name) from \(repo.repoURL) is invalid!", type: .error)
+                            log(String(format: String(localizationKey: "Source_Bad_Hash"), packagesFile.name, repo.repoURL.absoluteString), type: .error)
                             errorsFound = true
                         }
                         let (shouldSkip, hash) = self.ignorePackages(repo: repo, packagesURL: packagesFile.url, type: succeededExtension, destinationPath: packagesFileDst, hashtype: hashToSave)
@@ -1118,7 +1117,7 @@ final class RepoManager {
                                         self.ignorePackage(repo: repo.repoURL, type: succeededExtension, hash: hash, hashtype: hashToSave)
                                     }
                                 } catch {
-                                    log("Could not decompress packages from \(repo.repoURL) (\(succeededExtension)): \(error.localizedDescription)", type: .error)
+                                    log(String(format: String(localizationKey: "Source_Decompress_Failed"), repo.repoURL.absoluteString, succeededExtension, error.localizedDescription), type: .error)
                                     isPackagesFileValid = false
                                     errorsFound = true
                                 }

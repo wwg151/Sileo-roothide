@@ -373,3 +373,19 @@
 "Not_Supported" = "不支持";
 "Alternate_Icons_Mac_Unsupported" = "macOS 版目前不支持更换图标";
 "Form_Submit_Error" = "提交表单时发生错误。";
+
+"Log_Error" = "错误";
+"Log_Warning" = "警告";
+"Source_Parse_Release_From" = "无法解析 Release 文件：%@";
+"Source_Parse_Release_Error" = "无法解析 Release 文件：%@";
+"Source_No_Architectures" = "Release 文件里没有架构信息：%@ : %@";
+"Source_No_Usable_Architectures" = "Release 文件里没有可用架构：%@ : %@";
+"Source_Parse_Release" = "无法解析 Release 文件。";
+"Source_Status" = "%@ 返回状态 %d。%@";
+"Source_No_Release" = "找不到 Release 文件：%@";
+"Source_No_Preferred_Arch" = "找不到 %@ 的首选架构";
+"Source_Invalid_Signature" = "GPG 签名无效：%@";
+"Source_No_Signature" = "%@ 没有有效的 GPG 签名";
+"Source_No_Packages" = "找不到软件包列表文件：%@";
+"Source_Bad_Hash" = "%2$@ 里 %1$@ 的哈希校验失败！";
+"Source_Decompress_Failed" = "无法解压 %@ 的软件包列表（%@）：%@";

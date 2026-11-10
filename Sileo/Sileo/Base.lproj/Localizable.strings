@@ -367,3 +367,19 @@
 "Not_Supported" = "Not Supported";
 "Alternate_Icons_Mac_Unsupported" = "Alternate Icons are currently not supported in macOS";
 "Form_Submit_Error" = "An error occurred while submitting the form.";
+
+"Log_Error" = "Error";
+"Log_Warning" = "Warning";
+"Source_Parse_Release_From" = "Could not parse release file from %@";
+"Source_Parse_Release_Error" = "Could not parse release file: %@";
+"Source_No_Architectures" = "Didn't find any architectures in %@ : %@";
+"Source_No_Usable_Architectures" = "Didn't find availabile architectures in %@ : %@";
+"Source_Parse_Release" = "Could not parse release file.";
+"Source_Status" = "%@ returned status %d. %@";
+"Source_No_Release" = "Could not find release file for %@";
+"Source_No_Preferred_Arch" = "Could not find preferredArch for %@";
+"Source_Invalid_Signature" = "Invalid GPG signature at %@";
+"Source_No_Signature" = "%@ had no valid GPG signature";
+"Source_No_Packages" = "Could not find packages file for %@";
+"Source_Bad_Hash" = "Hash for %@ from %@ is invalid!";
+"Source_Decompress_Failed" = "Could not decompress packages from %@ (%@): %@";
