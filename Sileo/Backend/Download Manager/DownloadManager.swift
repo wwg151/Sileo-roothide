@@ -1348,7 +1348,8 @@ final class DownloadManager {
         if package.essential == "yes" {
             return true
         }
-        if (package.rawControl["priority"] ?? "").lowercased() == "required" {
+        let priority = (package.rawControl["priority"] ?? package.rawControl["Priority"] ?? "").lowercased()
+        if priority == "required" {
             return true
         }
         return DownloadManager.systemPackages.contains(package.package)
@@ -1438,8 +1439,9 @@ enum OrphanDependencies {
     /// wanted.
     static func dependencyNames(of package: Package) -> Set<String> {
         var names = Set<String>()
-        // Control fields are kept with lowercased keys.
-        for key in ["depends", "pre-depends"] {
+        // Control fields are kept with lowercased keys, but both spellings are
+        // read so a field kept as written cannot be missed.
+        for key in ["depends", "pre-depends", "Depends", "Pre-Depends"] {
             guard let raw = package.rawControl[key] else { continue }
             for clause in raw.components(separatedBy: ",") {
                 for alternative in clause.components(separatedBy: "|") {
