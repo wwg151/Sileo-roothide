@@ -28,16 +28,32 @@ static BOOL ApelinInsideContextMenu(UIView *view) {
     return NO;
 }
 
-// What the system asked for before the wash replaced it. A menu's backdrop is
-// often configured before it is put into the menu, so the check above can miss
-// it; the originals put it right once it arrives (see didMoveToWindow).
+// What the system asked for before the wash replaced it. The backdrop of a menu
+// is usually configured before the menu takes it in, so the check above misses
+// it there; what it had is kept here and put back once it arrives.
 static char ApelinOriginalFiltersKey;
 static char ApelinOriginalBackgroundKey;
 
-static void ApelinRemember(id object, void *key, id value) {
-    if (value && !objc_getAssociatedObject(object, key)) {
-        objc_setAssociatedObject(object, key, value, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+static void ApelinKeep(id object, void *key, id value) {
+    if (!objc_getAssociatedObject(object, key)) {
+        objc_setAssociatedObject(object, key, value ?: [NSNull null], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+}
+
+// Where a menu ends up, for a look from outside.
+static void ApelinAppendMenuLog(NSString *text) {
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"apelin_menu_dump.txt"];
+    NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+        if (handle) {
+            [handle seekToEndOfFile];
+            [handle writeData:data];
+            [handle closeFile];
+            return;
+        }
+    }
+    [data writeToFile:path atomically:YES];
 }
 
 @interface NSObject (ApelinVisualEffect)
@@ -49,7 +65,10 @@ hook(_UIVisualEffectSubview)
 - (void)setFilters:(NSArray *)filters {
     if (@available(iOS 13, *)){
         if ([self isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) {
-            ApelinRemember(self, &ApelinOriginalFiltersKey, filters);
+            ApelinKeep(self, &ApelinOriginalFiltersKey, filters);
+            // What the backdrop has before this call is the system's; whatever
+            // this method paints over it is not, so it must be kept first.
+            ApelinKeep(self, &ApelinOriginalBackgroundKey, [(UIView *)self backgroundColor]);
             // A glass blur keeps the system's own material: no wash, no filters
             // taken away, so what is behind it really shows through.
             for (UIView *search = (UIView *)self; search; search = search.superview) {
@@ -97,9 +116,6 @@ hook(_UIVisualEffectSubview)
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
     if (@available(iOS 13, *)){
-        if ([self isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) {
-            ApelinRemember(self, &ApelinOriginalBackgroundKey, backgroundColor ?: [NSNull null]);
-        }
     } else {
         // don't hook the blur applying view itself, only the view in front of it
         if (![self isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) {
@@ -142,6 +158,9 @@ hook(_UIVisualEffectSubview)
         if (background) {
             [self setBackgroundColor:[background isKindOfClass:[NSNull class]] ? nil : background];
         }
+        ApelinAppendMenuLog([NSString stringWithFormat:@"[menu backdrop] %@ restored, bg=%@\n",
+                             NSStringFromClass([self class]),
+                             [(UIView *)self backgroundColor]]);
     }
 }
 
