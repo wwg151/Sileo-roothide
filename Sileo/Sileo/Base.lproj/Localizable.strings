@@ -474,5 +474,3 @@
 "Queue_Uninstalling" = "Removing";
 "Queue_Downloading" = "Downloading";
 "Queue_Failed" = "Failed";
-"Queue_Failed_N" = "%lu failed";
-"Queue_Items" = "%lu items";

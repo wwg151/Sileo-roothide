@@ -465,7 +465,6 @@
 "Queue_Uninstalling" = "卸载中";
 "Queue_Downloading" = "下载中";
 "Queue_Failed" = "失败";
-"Queue_Failed_N" = "失败 
 "Queue_Title" = "下载队列";
 "Queue_View_Log" = "查看日志";
 "Queue_View_Log_Short" = "日志";
