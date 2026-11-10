@@ -571,7 +571,7 @@ class DownloadsTableViewController: SileoViewController {
 
         let installedToRecord = (installations + upgrades + installdeps).map { $0.package }
         let removedToForget = (uninstallations + uninstalldeps).map { $0.package.package }
-        APTWrapper.performOperations(installs: installations + upgrades, removals: uninstallations, installDeps: installdeps, progressCallback: { _, statusValid, statusReadable, package in
+        APTWrapper.performOperations(installs: installations + upgrades, removals: uninstallations + uninstalldeps, installDeps: installdeps, progressCallback: { _, statusValid, statusReadable, package in
             NSLog("SileoLog: progressCallback \(statusValid) \(package) \(statusReadable)")
             if statusValid {
                 self.statusWork(package: package, status: statusReadable)
