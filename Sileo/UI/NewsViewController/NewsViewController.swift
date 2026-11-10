@@ -15,7 +15,7 @@ fileprivate enum NewsSection {
     case packages
 }
 
-class NewsViewController: SileoViewController, UICollectionViewDataSource, UICollectionViewDelegate, UIViewControllerPreviewingDelegate {
+class NewsViewController: SileoViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     @IBOutlet var collectionView: UICollectionView!
     @IBOutlet var activityIndicatorView: UIActivityIndicatorView!
     
@@ -64,7 +64,11 @@ class NewsViewController: SileoViewController, UICollectionViewDataSource, UICol
         collectionView.register(NewsArticlesHeader.self,
                                 forCellWithReuseIdentifier: "NewsArticlesHeader")
 
-        self.registerForPreviewing(with: self, sourceView: self.collectionView)
+        // The long press below replaces the system's peek: it opens the preview
+        // menu built from Sileo's own card instead.
+        let packageCard = UILongPressGestureRecognizer(target: self, action: #selector(self.presentPackageCard(_:)))
+        packageCard.minimumPressDuration = 0.4
+        collectionView.addGestureRecognizer(packageCard)
         
         weak var weakSelf = self
         NotificationCenter.default.addObserver(weakSelf as Any,
@@ -375,43 +379,31 @@ extension NewsViewController { // 3D Touch
               let package = sections[timestamp]?[safe: indexPath.row] else { return nil }
         return NativePackageViewController.viewController(for: package)
     }
-
-    func previewingContext(_ previewingContext: UIViewControllerPreviewing, viewControllerForLocation location: CGPoint) -> UIViewController? {
-        guard let indexPath = collectionView?.indexPathForItem(at: location) else { return nil }
-        if currentSection(indexPath.section) != .packages { return nil }
-        guard let packageViewController = self.controller(indexPath: indexPath) else { return nil }
-        return packageViewController
-    }
-
-    func previewingContext(_ previewingContext: UIViewControllerPreviewing, commit viewControllerToCommit: UIViewController) {
-        self.navigationController?.pushViewController(viewControllerToCommit, animated: true)
-    }
 }
 
-@available(iOS 13.0, *)
 extension NewsViewController {
-    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
-        if currentSection(indexPath.section) != .packages { return nil }
-        guard let packageViewController = self.controller(indexPath: indexPath) else { return nil }
-        let menuItems = packageViewController.actions()
-        
-        return UIContextMenuConfiguration(identifier: nil,
-                                          previewProvider: {
-                                            packageViewController
-                                          },
-                                          actionProvider: { _ in
-                                            UIMenu(title: "", options: .displayInline, children: menuItems)
-                                          })
-    }
-    
-    func collectionView(_ collectionView: UICollectionView, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
-        if let controller = animator.previewViewController {
-            animator.addAnimations {
-                self.show(controller, sender: self)
-            }
+    /// A long press shows the package page as the preview and the actions as
+    /// rows of Sileo's own card under it, with no system menu.
+    @objc func presentPackageCard(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began,
+              let collectionView = self.collectionView,
+              let indexPath = collectionView.indexPathForItem(at: gesture.location(in: collectionView))
+        else {
+            return
         }
+        guard currentSection(indexPath.section) == .packages,
+              let packageViewController = self.controller(indexPath: indexPath)
+        else {
+            return
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let card = SileoPreviewMenu(page: packageViewController, items: packageViewController.cardActions()) { [weak self] in
+            self?.show(packageViewController, sender: self)
+        }
+        self.present(card, animated: true)
     }
 }
+
 
 
 extension Array {

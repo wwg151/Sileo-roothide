@@ -131,11 +131,11 @@ class FeaturedPackageView: FeaturedBaseView, PackageQueueButtonDataProvider {
         tap.delaysTouchesBegan = false
         self.addGestureRecognizer(tap)
 
-        viewController.registerForPreviewing(with: self, sourceView: self)
-        if #available(iOS 13, *) {
-            let interaction = UIContextMenuInteraction(delegate: self)
-            self.addInteraction(interaction)
-        }
+        // The long press below replaces the system's peek: it opens the preview
+        // menu built from Sileo's own card instead.
+        let card = UILongPressGestureRecognizer(target: self, action: #selector(FeaturedPackageView.presentCard(_:)))
+        card.minimumPressDuration = 0.4
+        self.addGestureRecognizer(card)
         
         self.reloadPackage()
         
@@ -270,42 +270,16 @@ class FeaturedPackageView: FeaturedBaseView, PackageQueueButtonDataProvider {
     }
 }
 
-extension FeaturedPackageView: UIViewControllerPreviewingDelegate {
-
-    func previewingContext(_ previewingContext: UIViewControllerPreviewing, viewControllerForLocation location: CGPoint) -> UIViewController? {
-        if let package = self.packageObject {
-            return NativePackageViewController.viewController(for: package)
+extension FeaturedPackageView {
+    /// A long press shows the package page as the preview and the actions as
+    /// rows of Sileo's own card under it, with no system menu.
+    @objc func presentCard(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, let package = self.packageObject else { return }
+        let packageViewController = NativePackageViewController.viewController(for: package)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let card = SileoPreviewMenu(page: packageViewController, items: packageViewController.cardActions()) { [weak self] in
+            self?.parentViewController?.navigationController?.pushViewController(packageViewController, animated: true)
         }
-        return nil
-    }
-    
-    func previewingContext(_ previewingContext: UIViewControllerPreviewing, commit viewControllerToCommit: UIViewController) {
-        self.parentViewController?.navigationController?.pushViewController(viewControllerToCommit, animated: false)
-    }
-}
-
-@available(iOS 13.0, *)
-extension FeaturedPackageView: UIContextMenuInteractionDelegate {
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-        if let package = self.packageObject {
-            let packageViewController = NativePackageViewController.viewController(for: package)
-            
-            let actions = packageViewController.actions()
-            
-            return UIContextMenuConfiguration(identifier: nil, previewProvider: {
-                packageViewController
-            }, actionProvider: {_ in
-                UIMenu(title: "", image: nil, options: .displayInline, children: actions)
-            })
-        }
-        return nil
-    }
-    
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
-        if let controller = animator.previewViewController {
-            animator.addAnimations {
-                self.parentViewController?.show(controller, sender: self)
-            }
-        }
+        self.parentViewController?.present(card, animated: true)
     }
 }
