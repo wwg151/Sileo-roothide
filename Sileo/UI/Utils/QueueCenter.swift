@@ -153,7 +153,7 @@ final class QueueCenter {
     private var doneShownAt: Date?
     private var installFailed = false
     private(set) var sheetVisible = false
-    private var lastItems: [QueueItem] = []
+    private(set) var lastItems: [QueueItem] = []
     private var downloadPhase = false
     private var origins: [String: ObjectIdentifier] = [:]
 
@@ -205,11 +205,20 @@ final class QueueCenter {
     /// the entries on screen with their reasons.
     func aptFinished(ok: Bool) {
         DispatchQueue.main.async {
+            let manager = DownloadManager.shared
+            manager.aptRunning = false
+            manager.queueRunning = false
+            manager.aptFinished = false
             if ok {
                 self.doneShownAt = Date()
+                self.installFailed = false
             } else {
                 self.installFailed = true
             }
+            // the queue is emptied either way: a failure stays on screen from
+            // the snapshot, and new work can be queued straight away
+            manager.removeAllItems()
+            self.downloadPhase = false
             self.syncNow()
         }
     }
@@ -223,11 +232,28 @@ final class QueueCenter {
         }
     }
 
+    /// Cancel everything, including the result still on screen.
+    func cancelAll() {
+        DispatchQueue.main.async {
+            let manager = DownloadManager.shared
+            manager.removeAllItems()
+            manager.queueRunning = false
+            manager.aptRunning = false
+            manager.aptFinished = false
+            self.downloadPhase = false
+            self.installFailed = false
+            self.doneShownAt = nil
+            self.origins.removeAll()
+            self.lastItems = []
+            self.syncNow()
+        }
+    }
+
     // MARK: execution
 
     private func startQueueIfNeeded(_ items: [QueueItem]) {
         let manager = DownloadManager.shared
-        guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning, !manager.aptFinished else { return }
+        guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning else { return }
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -293,6 +319,7 @@ final class QueueCenter {
         if !items.isEmpty {
             // a new run supersedes the previous result
             doneShownAt = nil
+            installFailed = false
         } else if let done = doneShownAt, Date().timeIntervalSince(done) >= 2 {
             doneShownAt = nil
         }
@@ -706,7 +733,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         table.delegate = self
         table.separatorStyle = .none
         table.backgroundColor = .clear
-        table.register(QueueCardCell.self, forCellReuseIdentifier: "QueueCard")
+        table.register(UITableViewCell.self, forCellReuseIdentifier: "QueueCard")
         view.addSubview(table)
 
         actionButton.translatesAutoresizingMaskIntoConstraints = false
@@ -752,33 +779,33 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     }
 
     private func reload() {
-        DownloadManager.shared.queueSnapshot { [weak self] snapshot in
-            guard let self = self else { return }
-            self.items = snapshot
-            let failed = snapshot.filter { $0.isFailed }.count
-            self.titleLabel.text = String(localizationKey: "Queue_Title")
-            if failed > 0 {
-                self.subtitleLabel.text = String(format: String(localizationKey: "Queue_Failed_N"), failed)
-                self.subtitleLabel.textColor = .systemRed
-            } else {
-                self.subtitleLabel.text = String(format: String(localizationKey: "Queue_Items"), snapshot.count)
-                self.subtitleLabel.textColor = .secondaryLabel
-            }
-            if snapshot.isEmpty {
-                self.actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
-                self.actionButton.backgroundColor = .tertiarySystemFill
-                self.actionButton.setTitleColor(.label, for: .normal)
-            } else if failed > 0 {
-                self.actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
-                self.actionButton.backgroundColor = .tintColor
-                self.actionButton.setTitleColor(.white, for: .normal)
-            } else {
-                self.actionButton.setTitle(String(localizationKey: "Queue_Cancel_All"), for: .normal)
-                self.actionButton.backgroundColor = .tintColor
-                self.actionButton.setTitleColor(.white, for: .normal)
-            }
-            self.table.reloadData()
+        // the centre keeps the last snapshot, failures included, even after
+        // the manager has emptied the queue
+        let snapshot = QueueCenter.shared.lastItems
+        items = snapshot
+        let failed = snapshot.filter { $0.isFailed }.count
+        titleLabel.text = String(localizationKey: "Queue_Title")
+        if failed > 0 {
+            subtitleLabel.text = String(format: String(localizationKey: "Queue_Failed_N"), failed)
+            subtitleLabel.textColor = .systemRed
+        } else {
+            subtitleLabel.text = String(format: String(localizationKey: "Queue_Items"), snapshot.count)
+            subtitleLabel.textColor = .secondaryLabel
         }
+        if snapshot.isEmpty {
+            actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
+            actionButton.backgroundColor = .tertiarySystemFill
+            actionButton.setTitleColor(.label, for: .normal)
+        } else if failed > 0 {
+            actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
+            actionButton.backgroundColor = .tintColor
+            actionButton.setTitleColor(.white, for: .normal)
+        } else {
+            actionButton.setTitle(String(localizationKey: "Queue_Cancel_All"), for: .normal)
+            actionButton.backgroundColor = .tintColor
+            actionButton.setTitleColor(.white, for: .normal)
+        }
+        table.reloadData()
     }
 
     private func primaryAction() {
@@ -793,7 +820,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         SileoPanelViewController.confirm(title: String(localizationKey: "Queue_Cancel_All"),
                                          message: String(localizationKey: "Queue_Cancel_All_Message"),
                                          confirmTitle: String(localizationKey: "Queue_Cancel_All")) { [weak self] in
-            DownloadManager.shared.removeAllItems()
+            QueueCenter.shared.cancelAll()
+            self?.dismiss(animated: true)
         }.present(from: self)
     }
 
