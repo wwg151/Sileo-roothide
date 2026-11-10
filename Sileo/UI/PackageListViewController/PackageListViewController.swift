@@ -250,13 +250,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             collectionView.register(SearchHistoryCollectionViewCell.self,
                                     forCellWithReuseIdentifier: "HistoryViewCellIdentifier")
             
-            // the long press below replaces the system's peek: it opens the
-            // preview menu built from Sileo's own card instead
-        }
-        if let collectionView = collectionView {
-            let rowCard = UILongPressGestureRecognizer(target: self, action: #selector(self.presentRowCard(_:)))
-            rowCard.minimumPressDuration = 0.4
-            collectionView.addGestureRecognizer(rowCard)
+            self.registerForPreviewing(with: self, sourceView: collectionView)
         }
         DispatchQueue.global(qos: .userInteractive).async {
             let packageMan = PackageListManager.shared
@@ -1163,34 +1157,58 @@ extension PackageListViewController: UICollectionViewDelegateFlowLayout {
     }
 }
 
-extension PackageListViewController {
-    /// A long press shows the package page as the preview and the actions as
-    /// rows of Sileo's own card under it, with no system menu.
-    @objc func presentRowCard(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began,
-              let collectionView = self.collectionView,
-              let indexPath = collectionView.indexPathForItem(at: gesture.location(in: collectionView))
+extension PackageListViewController: UIViewControllerPreviewingDelegate {
+    func previewingContext(_ previewingContext: UIViewControllerPreviewing, viewControllerForLocation location: CGPoint) -> UIViewController? {
+        guard let indexPath = collectionView?.indexPathForItem(at: location),
+              let pvc = self.controller(indexPath: indexPath)
         else {
-            return
+            return nil
         }
+        return pvc
+    }
+    
+    func previewingContext(_ previewingContext: UIViewControllerPreviewing, commit viewControllerToCommit: UIViewController) {
+        self.navigationController?.pushViewController(viewControllerToCommit, animated: true)
+    }
+}
+
+@available(iOS 13.0, *)
+extension PackageListViewController {
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         if findWhatFuckingSectionThisIs(indexPath.section) == .searchHistoryList {
-            let card = SileoActionMenu(header: nil, items: [
-                SileoActionMenuItem(title: String(localizationKey: "Copy"), imageName: "doc.on.doc") {
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+                let copyItemAction = UIAction(title: String(localizationKey: "Copy"), image: UIImage(systemName: "doc.on.doc")) { _ in
                     UIPasteboard.general.string = searchHistory[safe: indexPath.row]
                 }
-            ])
-            self.present(card, animated: true)
-            return
+                
+                return UIMenu(children: [copyItemAction])
+            }
         }
+        
         guard let pvc = self.controller(indexPath: indexPath) else {
-            return
+            return nil
         }
         (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        let card = SileoPreviewMenu(page: pvc, items: pvc.cardActions()) { [weak self] in
-            self?.show(pvc, sender: self)
+
+        let menuItems = pvc.actions()
+        // a compact, centered preview leaves room for the menu instead of the full-height page covering it
+        let previewWidth = min(collectionView.bounds.width - 48, 360)
+        let config = UIContextMenuConfiguration(identifier: nil, previewProvider: {
+            pvc.preferredContentSize = CGSize(width: previewWidth, height: min(collectionView.bounds.height * 0.4, 320))
+            return pvc
+        }, actionProvider: { _ in
+            UIMenu(title: "", options: .displayInline, children: menuItems)
+        })
+
+        return config
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
+        if let previewController = animator.previewViewController {
+            animator.addAnimations {
+                self.show(previewController, sender: self)
+            }
         }
-        self.present(card, animated: true)
     }
 }
 
