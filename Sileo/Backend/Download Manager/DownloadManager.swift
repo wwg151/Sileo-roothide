@@ -661,6 +661,21 @@ final class DownloadManager {
             installDeps.removeAll { installations.contains($0) }
             installDeps.removeAll { upgrades.contains($0) }
         }
+
+        // apt's own answer is not always complete: it only knows a package came
+        // in as a dependency if every one did, which naming each package on the
+        // command line does not leave behind. What nothing else needs is worked
+        // out here as well, and never includes a package the device needs.
+        if installationsAndUpgrades.isEmpty && !uninstallations.isEmpty {
+            let orphans = OrphanDependencies.orphaned(by: uninstallations.map { $0.package },
+                                                      installed: PackageListManager.shared.installedPackages)
+            NSLog("SileoLog: orphaned dependencies=\(orphans.map { $0.package })")
+            for orphan in orphans
+            where !uninstallations.contains(where: { $0.package.package == orphan.package })
+                && !uninstallDeps.contains(where: { $0.package.package == orphan.package }) {
+                uninstallDeps.insert(DownloadPackage(package: orphan))
+            }
+        }
   
         self.vars.upgrades.setTo(upgrades)
         self.vars.installations.setTo(installations)
@@ -1371,5 +1386,112 @@ final class DownloadManager {
                                      progressCallback: progressCallback,
                                      outputCallback: outputCallback,
                                      completionCallback: completionCallback)
+    }
+}
+
+/// Works out which packages came along as dependencies of the ones being
+/// removed and are wanted by nothing else, so that taking a package off the
+/// device takes what it dragged in with it.
+///
+/// apt knows this too, but only while every package it brought in is marked
+/// automatic, which the way Sileo installs (each package named on the command
+/// line) does not always leave behind. This reads the same facts — the
+/// dependencies of what is installed, and apt's own record of what came in
+/// automatically — and answers the question directly.
+enum OrphanDependencies {
+
+    /// The packages apt recorded as installed for a dependency, from
+    /// extended_states, which is what `apt-mark showauto` reads.
+    static func autoInstalled() -> Set<String> {
+        let path = "\(CommandPath.prefix)/var/lib/apt/extended_states"
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return []
+        }
+        var identifiers = Set<String>()
+        var current: String?
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                current = nil
+            } else if trimmed.hasPrefix("Package:") {
+                current = String(trimmed.dropFirst("Package:".count)).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("Auto-Installed: 1"), let name = current {
+                identifiers.insert(name)
+            }
+        }
+        return identifiers
+    }
+
+    /// The package names a control file asks for, alternatives included: if any
+    /// way of satisfying a dependency names a package, that package counts as
+    /// wanted.
+    static func dependencyNames(of package: Package) -> Set<String> {
+        var names = Set<String>()
+        for key in ["Depends", "Pre-Depends"] {
+            guard let raw = package.rawControl[key] else { continue }
+            for clause in raw.components(separatedBy: ",") {
+                for alternative in clause.components(separatedBy: "|") {
+                    var name = alternative.trimmingCharacters(in: .whitespaces)
+                    if let bracket = name.firstIndex(of: "(") {
+                        name = String(name[..<bracket])
+                    }
+                    if let colon = name.firstIndex(of: ":") {
+                        name = String(name[..<colon])
+                    }
+                    name = name.trimmingCharacters(in: .whitespaces)
+                    if !name.isEmpty {
+                        names.insert(name)
+                    }
+                }
+            }
+        }
+        return names
+    }
+
+    /// What would be left behind, and unwanted, if these packages went.
+    static func orphaned(by removing: [Package], installed: [String: Package]) -> [Package] {
+        guard !removing.isEmpty else { return [] }
+        let automatic = autoInstalled()
+        guard !automatic.isEmpty else { return [] }
+        let removedIdentifiers = Set(removing.map { $0.package })
+
+        // Everything those packages pulled in, and what that pulled in, as long
+        // as apt brought it in as a dependency.
+        var candidates = Set<String>()
+        var visited = removedIdentifiers
+        var queue = Array(removedIdentifiers)
+        while !queue.isEmpty {
+            let identifier = queue.removeFirst()
+            guard let package = installed[identifier] else { continue }
+            for dependency in dependencyNames(of: package) {
+                guard automatic.contains(dependency),
+                      installed[dependency] != nil,
+                      !removedIdentifiers.contains(dependency),
+                      candidates.insert(dependency).inserted else {
+                    continue
+                }
+                if visited.insert(dependency).inserted {
+                    queue.append(dependency)
+                }
+            }
+        }
+        guard !candidates.isEmpty else { return [] }
+
+        // Anything another installed package still asks for stays, whether that
+        // package is being removed as well or not.
+        var wanted = Set<String>()
+        for (identifier, package) in installed
+        where !removedIdentifiers.contains(identifier) && !candidates.contains(identifier) {
+            for dependency in dependencyNames(of: package) where candidates.contains(dependency) {
+                wanted.insert(dependency)
+            }
+        }
+        candidates.subtract(wanted)
+
+        // A dependency is never taken along if the device cannot do without it.
+        return candidates.compactMap { identifier in
+            guard let package = installed[identifier] else { return nil }
+            return DownloadManager.isSystemPackage(package) ? nil : package
+        }
     }
 }
