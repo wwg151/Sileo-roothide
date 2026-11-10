@@ -56,9 +56,69 @@ static void ApelinAppendMenuLog(NSString *text) {
     [data writeToFile:path atomically:YES];
 }
 
+static NSString *ApelinFilterNames(UIView *view) {
+    NSMutableArray *names = [NSMutableArray array];
+    @try {
+        id filters = [view valueForKey:@"filters"];
+        if ([filters isKindOfClass:[NSArray class]]) {
+            for (id filter in (NSArray *)filters) {
+                @try {
+                    [names addObject:[filter valueForKey:@"filterName"] ?: @"?"];
+                } @catch (__unused NSException *exception) {
+                    [names addObject:@"?"];
+                }
+            }
+        }
+    } @catch (__unused NSException *exception) {
+    }
+    return [names componentsJoinedByString:@","];
+}
+
+static void ApelinDumpView(UIView *view, int depth, NSMutableString *out) {
+    if (depth > 10) return;
+    NSString *indent = [@"" stringByPaddingToLength:(NSUInteger)(depth * 2) withString:@" " startingAtIndex:0];
+    [out appendFormat:@"%@%@ frame=%@ alpha=%.2f hidden=%d bg=%@",
+     indent,
+     NSStringFromClass([view class]),
+     NSStringFromCGRect(view.frame),
+     view.alpha,
+     view.hidden,
+     view.backgroundColor];
+    if ([[NSStringFromClass([view class]) lowercaseString] containsString:@"backdrop"]) {
+        [out appendFormat:@" filters=[%@]", ApelinFilterNames(view)];
+    }
+    [out appendString:@"\n"];
+    for (UIView *subview in view.subviews) {
+        ApelinDumpView(subview, depth + 1, out);
+    }
+}
+
 @interface NSObject (ApelinVisualEffect)
 - (void)setFilters:(NSArray *)filters;
 @end
+
+// What a menu is made of once it has settled, which is when its material and
+// its background are all there.
+hook(_UIContextMenuView)
+
+- (void)layoutSubviews {
+    _orig(void);
+    UIView *menu = (UIView *)self;
+    if (!menu.window) return;
+    static char dumpedKey;
+    if (objc_getAssociatedObject(self, &dumpedKey)) return;
+    objc_setAssociatedObject(self, &dumpedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView *weakMenu = menu;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIView *settled = weakMenu;
+        if (!settled) return;
+        NSMutableString *out = [NSMutableString string];
+        ApelinDumpView(settled, 0, out);
+        ApelinAppendMenuLog([NSString stringWithFormat:@"\n=== menu at %@ ===\n%@", [NSDate date], out]);
+    });
+}
+
+endhook
 
 hook(_UIVisualEffectSubview)
 
