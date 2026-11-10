@@ -207,10 +207,10 @@ final class QueueCenter {
         rootView.hitTarget = capsuleView
         NSLayoutConstraint.activate([
             capsuleView.centerXAnchor.constraint(equalTo: rootView.centerXAnchor),
-            // the floating pill sits 12pt above the safe area and is 64pt tall;
-            // the capsule keeps 8pt of air above its top edge
-            capsuleView.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor, constant: -84),
-            capsuleView.heightAnchor.constraint(equalToConstant: 44)
+            // the floating pill sits 12pt above the 64pt tab bar; the capsule
+            // keeps 12pt of air above the bar's top edge
+            capsuleView.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor, constant: -88),
+            capsuleView.heightAnchor.constraint(equalToConstant: 52)
         ])
         queueWindow.isHidden = true
         // the app's own window keeps the keyboard and the focus
@@ -652,38 +652,38 @@ final class QueueCapsuleView: UIView {
         super.init(frame: frame)
 
         backgroundColor = .systemBackground
-        layer.cornerRadius = 22
+        layer.cornerRadius = 26
         layer.cornerCurve = .continuous
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.18
-        layer.shadowRadius = 18
-        layer.shadowOffset = CGSize(width: 0, height: 6)
+        layer.shadowOpacity = 0.12
+        layer.shadowRadius = 14
+        layer.shadowOffset = CGSize(width: 0, height: 5)
         layer.borderWidth = 0.5
-        layer.borderColor = UIColor.separator.withAlphaComponent(0.4).cgColor
+        layer.borderColor = UIColor.separator.withAlphaComponent(0.5).cgColor
 
         trackLayer.fillColor = UIColor.clear.cgColor
         trackLayer.strokeColor = UIColor.tertiaryLabel.withAlphaComponent(0.35).cgColor
-        trackLayer.lineWidth = 3
+        trackLayer.lineWidth = 3.5
         trackLayer.lineCap = .round
         layer.addSublayer(trackLayer)
 
         ringLayer.fillColor = UIColor.clear.cgColor
         ringLayer.strokeColor = UIColor.tintColor.cgColor
-        ringLayer.lineWidth = 3
+        ringLayer.lineWidth = 3.5
         ringLayer.lineCap = .round
         layer.addSublayer(ringLayer)
 
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         titleLabel.textColor = .label
         titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
 
-        percentLabel.font = .systemFont(ofSize: 13)
+        percentLabel.font = .systemFont(ofSize: 14)
         percentLabel.textColor = .secondaryLabel
         addSubview(percentLabel)
 
-        badgeLabel.font = .systemFont(ofSize: 12, weight: .heavy)
+        badgeLabel.font = .systemFont(ofSize: 13, weight: .heavy)
         badgeLabel.textAlignment = .center
         badgeLabel.isHidden = true
         addSubview(badgeLabel)
@@ -705,13 +705,13 @@ final class QueueCapsuleView: UIView {
         let title = ceil(titleLabel.intrinsicContentSize.width)
         let hasPercent = percentLabel.text?.isEmpty == false
         let percent = hasPercent ? ceil(percentLabel.intrinsicContentSize.width) + 10 : 0
-        return CGSize(width: max(112, 42 + title + percent + 16), height: 44)
+        return CGSize(width: max(132, 52 + title + percent + 18), height: 52)
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let center = CGPoint(x: 26, y: bounds.height / 2)
-        let path = UIBezierPath(arcCenter: center, radius: 9.5, startAngle: -.pi / 2,
+        let ringCenter = CGPoint(x: 30, y: bounds.height / 2)
+        let path = UIBezierPath(arcCenter: ringCenter, radius: 10.5, startAngle: -.pi / 2,
                                 endAngle: .pi * 3 / 2, clockwise: true)
         trackLayer.frame = bounds
         ringLayer.frame = bounds
@@ -720,10 +720,10 @@ final class QueueCapsuleView: UIView {
 
         let hasPercent = percentLabel.text?.isEmpty == false
         let percentWidth = hasPercent ? ceil(percentLabel.intrinsicContentSize.width) : 0
-        let rightInset: CGFloat = 16
-        let titleWidth = max(0, bounds.width - 42 - rightInset - (hasPercent ? percentWidth + 10 : 0))
+        let rightInset: CGFloat = 18
+        let titleWidth = max(0, bounds.width - 52 - rightInset - (hasPercent ? percentWidth + 10 : 0))
         let titleHeight = ceil(titleLabel.intrinsicContentSize.height)
-        titleLabel.frame = CGRect(x: 42, y: (bounds.height - titleHeight) / 2,
+        titleLabel.frame = CGRect(x: 52, y: (bounds.height - titleHeight) / 2,
                                   width: titleWidth, height: titleHeight)
         percentLabel.isHidden = !hasPercent
         if hasPercent {
@@ -733,7 +733,7 @@ final class QueueCapsuleView: UIView {
                                         width: percentWidth, height: height)
         }
         if !badgeLabel.isHidden {
-            badgeLabel.frame = CGRect(x: center.x - 10, y: center.y - 9, width: 20, height: 18)
+            badgeLabel.frame = CGRect(x: ringCenter.x - 12, y: ringCenter.y - 10, width: 24, height: 20)
         }
     }
 
