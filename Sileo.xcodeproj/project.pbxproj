@@ -693,6 +693,9 @@
 		E1D33901269C3ECB00933AA5 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D33900269C3ECB00933AA5 /* main.swift */; };
 		E1D33908269C41F900933AA5 /* RootHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D33907269C41F900933AA5 /* RootHelper.swift */; };
 		E1D44BB82665093A00A12A77 /* SileoTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D44BB72665093A00A12A77 /* SileoTableView.swift */; };
+        A1C0DE00000000000000C1F1 /* SileoActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C1F0 /* SileoActionMenu.swift */; };
+        A1C0DE00000000000000C1F2 /* SileoActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C1F0 /* SileoActionMenu.swift */; };
+        A1C0DE00000000000000C1F3 /* SileoActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C1F0 /* SileoActionMenu.swift */; };
 		E1D44BB92665093A00A12A77 /* SileoTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D44BB72665093A00A12A77 /* SileoTableView.swift */; };
 		E1D6DFB7268BA730005BF9EA /* APTJsonParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D6DFB6268BA72F005BF9EA /* APTJsonParser.swift */; };
 		E1D6DFB8268BA730005BF9EA /* APTJsonParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D6DFB6268BA72F005BF9EA /* APTJsonParser.swift */; };
@@ -1439,6 +1442,7 @@
 		E155D4EB28CE5A8600AC7AE0 /* Stardust@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Stardust@2x.png"; sourceTree = "<group>"; };
 		E155D4EC28CE5A8600AC7AE0 /* Stardust@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Stardust@3x.png"; sourceTree = "<group>"; };
 		E15A954126B981E4000DB10E /* LanguageHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageHelper.swift; sourceTree = "<group>"; };
+        A1C0DE00000000000000C1F0 /* SileoActionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SileoActionMenu.swift; sourceTree = "<group>"; };
 		E15A954826B99104000DB10E /* LanguageSelectionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSelectionViewController.swift; sourceTree = "<group>"; };
 		E15A954B26B99408000DB10E /* LanguageSelectionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSelectionCell.swift; sourceTree = "<group>"; };
 		E15B5BCE2756B8D90003A56D /* en-PT */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en-PT"; path = "Sileo/en-PT.lproj/Categories.strings"; sourceTree = "<group>"; };
@@ -2100,6 +2104,7 @@
 				F1AB912922ED09AE0054341B /* SourceProgressIndicatorView.swift */,
 				F1330EA82324F76C00971073 /* UIColor-ThemeColors.swift */,
 				E191837B29CF5F48009AA62E /* ImageLoader.swift */,
+                A1C0DE00000000000000C1F0 /* SileoActionMenu.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -4090,6 +4095,7 @@
 				E13488F529CC923F00B0A8D5 /* PackageProtocol.swift in Sources */,
 				E128182426BBFAA500D2553B /* PaymentProfileHeaderView.swift in Sources */,
 				E128182526BBFAA500D2553B /* SileoTableView.swift in Sources */,
+                A1C0DE00000000000000C1F1 /* SileoActionMenu.swift in Sources */,
 				E13488ED29CC877000B0A8D5 /* ThemesSectionViewController.swift in Sources */,
 				E128182626BBFAA500D2553B /* PaymentError.swift in Sources */,
 				E128182726BBFAA500D2553B /* CSGradientView.swift in Sources */,
@@ -4304,6 +4310,7 @@
 				496992E2260BAAE500E3C35D /* AltIconTableViewController.swift in Sources */,
 				F1DD3CD023132D1F00D86A52 /* APTWrapper.swift in Sources */,
 				E1D44BB92665093A00A12A77 /* SileoTableView.swift in Sources */,
+                A1C0DE00000000000000C1F2 /* SileoActionMenu.swift in Sources */,
 				F183CFB12318D1FF00D3AF3B /* AppDelegate.swift in Sources */,
 				F1C85B4E2325835D0064D3A2 /* SileoSeparatorView.swift in Sources */,
 				E15A954D26B99408000DB10E /* LanguageSelectionCell.swift in Sources */,
@@ -4504,6 +4511,7 @@
 				E13488F329CC923F00B0A8D5 /* PackageProtocol.swift in Sources */,
 				FB40264623E0FCAE002D97FE /* PaymentProfileHeaderView.swift in Sources */,
 				E1D44BB82665093A00A12A77 /* SileoTableView.swift in Sources */,
+                A1C0DE00000000000000C1F3 /* SileoActionMenu.swift in Sources */,
 				FB6F3D3124AA634E00E941F8 /* PaymentError.swift in Sources */,
 				F147E67C22F02EAB0048F868 /* CSGradientView.swift in Sources */,
 				E18CD2D1262C8E7500FF499C /* NewsResolver.swift in Sources */,

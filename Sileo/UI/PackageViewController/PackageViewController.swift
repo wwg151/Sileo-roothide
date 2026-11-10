@@ -812,44 +812,41 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.present(sharePopup, animated: true)
     }
 
-    /// The "…" opens a menu of the system's own: one group and no header, so
-    /// nothing separates the rows. What it holds is worked out when it opens,
-    /// never on every change of state.
-    @available(iOS 14.0, *)
+    /// The "…" opens a card of Sileo's own: one list, no separators, colours
+    /// that follow the system's appearance. What it holds is worked out when it
+    /// opens, never on every change of state.
     private func installShareMenu() {
         guard let shareButton = shareButton else { return }
-        shareButton.menu = UIMenu(children: [
-            UIDeferredMenuElement.uncached { [weak self] completion in
-                guard let self = self else {
-                    completion([])
-                    return
-                }
-                completion(self.shareMenuActions())
-            }
-        ])
-        shareButton.showsMenuAsPrimaryAction = true
+        shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
     }
 
-    @available(iOS 14.0, *)
-    private func shareMenuActions() -> [UIMenuElement] {
+    @objc private func presentShareCard(_ sender: UIButton) {
+        guard let package = self.package else { return }
+        present(SileoActionMenu(header: package.name,
+                                items: shareMenuActions(),
+                                sourceFrame: sender.convert(sender.bounds, to: nil)),
+                animated: true)
+    }
+
+    private func shareMenuActions() -> [SileoActionMenuItem] {
         guard let package = self.package else { return [] }
-        var actions: [UIMenuElement] = [
-            UIAction(title: String(localizationKey: "Package_Share_Action"),
-                     image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+        var actions: [SileoActionMenuItem] = [
+            SileoActionMenuItem(title: String(localizationKey: "Package_Share_Action"),
+                                imageName: "square.and.arrow.up") { [weak self] in
                 self?.sharePackageLink()
             }
         ]
 
         if let name = package.author?.name {
-            actions.append(UIAction(title: String(localizationKey: "Package_Developer_Find_Action"),
-                                    image: UIImage(systemName: "person.crop.circle")) { [weak self] _ in
+            actions.append(SileoActionMenuItem(title: String(localizationKey: "Package_Developer_Find_Action"),
+                                               imageName: "person.crop.circle") { [weak self] in
                 self?.showPackagesByAuthor(name)
             })
         }
 
         if let email = package.author?.email {
-            actions.append(UIAction(title: String(localizationKey: "Package_Support_Action"),
-                                    image: UIImage(systemName: "envelope")) { [weak self] _ in
+            actions.append(SileoActionMenuItem(title: String(localizationKey: "Package_Support_Action"),
+                                               imageName: "envelope") { [weak self] in
                 self?.openSupportEmail(email)
             })
         }
@@ -857,16 +854,16 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         if let installedPackage = installedPackage {
             let title = installedPackage.wantInfo == .hold ?
                 String(localizationKey: "Package_Hold_Disable_Action") : String(localizationKey: "Package_Hold_Enable_Action")
-            actions.append(UIAction(title: title,
-                                    image: UIImage(systemName: "pause.circle")) { [weak self] _ in
+            actions.append(SileoActionMenuItem(title: title,
+                                               imageName: "pause.circle") { [weak self] in
                 self?.toggleIgnoringUpdates()
             })
         }
 
         let wishListText = WishListManager.shared.isPackageInWishList(package.package) ?
             String(localizationKey: "Package_Wishlist_Remove") : String(localizationKey: "Package_Wishlist_Add")
-        actions.append(UIAction(title: wishListText,
-                                image: UIImage(systemName: "heart")) { [weak self] _ in
+        actions.append(SileoActionMenuItem(title: wishListText,
+                                           imageName: "heart") { [weak self] in
             self?.toggleWishList()
         })
 

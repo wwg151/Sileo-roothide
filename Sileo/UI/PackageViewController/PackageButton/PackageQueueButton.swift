@@ -58,33 +58,47 @@ class PackageQueueButton: PackageButton {
                                                name: DownloadManager.lockStateChangeNotification,
                                                object: nil)
         
-        if #available(iOS 14.0, *) {
-            // The button's own menu: the system's translucent material, in one
-            // group so there are no separators. A tap opens it on an installed
-            // package, a long press on any.
-            menu = UIMenu(children: [
-                UIDeferredMenuElement.uncached { [weak self] completion in
-                    guard let self = self, let package = self.package, !(package.isProvisional ?? false) else {
-                        completion([])
-                        return
-                    }
-                    completion(self.longPressMenuItems(for: package).map { item in
-                        UIAction(title: item.title,
-                                 image: UIImage(systemName: item.image),
-                                 attributes: item.enabled ? (item.destructive ? .destructive : []) : .disabled) { _ in
-                            item.handler()
-                        }
-                    })
-                }
-            ])
-        } else if #available(iOS 13.0, *) {
-            let menuDelegate = PackageQueueMenuDelegate(button: self)
-            contextMenuDelegate = menuDelegate
-            addInteraction(UIContextMenuInteraction(delegate: menuDelegate))
-        } else {
-            let longPressGesture = UILongPressGestureRecognizer(target: self, action: #selector(PackageQueueButton.longPressed(_:)))
-            addGestureRecognizer(longPressGesture)
+        if #available(iOS 13.0, *) {
+            // A long press on any package opens the card of Sileo's own; on an
+            // installed package a tap does too (see handleButtonPress).
+            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(PackageQueueButton.presentActionCard(_:)))
+            longPress.minimumPressDuration = 0.4
+            longPress.cancelsTouchesInView = false
+            addGestureRecognizer(longPress)
         }
+    }
+
+    /// The package's actions, in Sileo's own card dropped from the button.
+    private func presentActionCard() {
+        guard let package = package, !(package.isProvisional ?? false) else { return }
+        let items = longPressMenuItems(for: package).map { item in
+            SileoActionMenuItem(title: item.title,
+                                imageName: item.image,
+                                destructive: item.destructive,
+                                enabled: item.enabled,
+                                handler: item.handler)
+        }
+        guard !items.isEmpty, let host = viewControllerForPresentation ?? hostViewController() else { return }
+        host.present(SileoActionMenu(header: package.name,
+                                     items: items,
+                                     sourceFrame: convert(bounds, to: nil)),
+                     animated: true)
+    }
+
+    @objc private func presentActionCard(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        presentActionCard()
+    }
+
+    /// The controller to present the card from: the first one up the responder
+    /// chain, or the window's own.
+    private func hostViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController { return controller }
+            responder = current.next
+        }
+        return UIApplication.shared.keyWindow?.rootViewController
     }
 
     @objc func longPressed(_ gesture: UILongPressGestureRecognizer) {
@@ -363,12 +377,7 @@ class PackageQueueButton: PackageButton {
     }
     
     @objc func updateInfo() {
-        var primaryMenu = false
-        defer {
-            if #available(iOS 14.0, *) {
-                self.showsMenuAsPrimaryAction = primaryMenu
-            }
-        }
+
 //        NSLog("SileoLog: updateInfo package=\(package?.package)")
         guard let package = package else {
             self.updateButton(title: String(localizationKey: "Package_Get_Action"))
@@ -396,10 +405,6 @@ class PackageQueueButton: PackageButton {
             self.updateButton(title: String(localizationKey: "Package_Queue_Action"))
         } else if installedPackage != nil {
             self.updateButton(title: String(localizationKey: "Package_Modify_Action"))
-            if #available(iOS 14.0, *) {
-                // a tap on an installed package opens the same popup menu as a long press
-                primaryMenu = true
-            }
         } else if let price = paymentInfo?.price, package.commercial && !purchased {
             self.updateButton(title: price)
         } else {
@@ -493,9 +498,7 @@ class PackageQueueButton: PackageButton {
                 
         } else if installedPackage != nil {
             NSLog("SileoLog: \(package.package) commercial=\(package.commercial) purchased=\(paymentInfo?.purchased) price=\(paymentInfo?.price) available=\(paymentInfo?.available)")
-            // A tap on an installed package's button opens its menu (see
-            // updateInfo); this is the fallback for the paths that skip it.
-            self.showLongPressMenu()
+            self.presentActionCard()
         } else if package.sourceRepo != nil || package.local_deb != nil {
             self.requestQueuePackage(package: package, queue: .installations)
         } else {

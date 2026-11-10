@@ -170,14 +170,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             backupButton.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
             backupButton.accessibilityLabel = String(localizationKey: "Backup_Restore")
             backupButton.addTarget(self, action: #selector(self.pressBackupButton(_:)), for: .touchDown)
-            if #available(iOS 14.0, *) {
-                // A tap opens the menu anchored on the button, not a sheet from
-                // the bottom of the screen.
-                backupButton.menu = backupMenu()
-                backupButton.showsMenuAsPrimaryAction = true
-            } else {
-                backupButton.addTarget(self, action: #selector(self.presentBackupMenu(_:)), for: .touchUpInside)
-            }
+            // A card of Sileo's own, opened from the button.
+            backupButton.addTarget(self, action: #selector(self.presentBackupCard(_:)), for: .touchUpInside)
             self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: backupButton)
         }
         
@@ -436,50 +430,37 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         #endif
     }
 
-    @available(iOS 14.0, *)
-    private func backupMenu() -> UIMenu {
-        let actions = [
-            UIAction(title: String(localizationKey: "Backup_All_Packages"),
-                     image: UIImage(systemName: "archivebox")) { [weak self] _ in
-                self?.backupAllPackages()
-            },
-            UIAction(title: String(localizationKey: "Backup_Select_Packages"),
-                     image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in
-                self?.backupSelectedPackages()
-            },
-            UIAction(title: String(localizationKey: "Backup_Configuration"),
-                     image: UIImage(systemName: "gearshape")) { [weak self] _ in
-                self?.backupConfiguration()
-            },
-            UIAction(title: String(localizationKey: "Backup_Sources"),
-                     image: UIImage(systemName: "tray.and.arrow.down")) { [weak self] _ in
-                self?.backupSources()
-            },
-            UIAction(title: String(localizationKey: "Restore_All_Packages"),
-                     image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
-                self?.restoreAllPackages()
-            },
-            UIAction(title: String(localizationKey: "Restore_Configuration"),
-                     image: UIImage(systemName: "arrow.clockwise.circle")) { [weak self] _ in
-                self?.restoreConfiguration()
-            },
-            UIAction(title: String(localizationKey: "Restore_Sources"),
-                     image: UIImage(systemName: "tray.and.arrow.up")) { [weak self] _ in
-                self?.restoreSources()
-            },
-            UIAction(title: String(localizationKey: "Backup_View"),
-                     image: UIImage(systemName: "folder")) { [weak self] _ in
-                self?.openBackupsInFilza()
-            },
-            UIAction(title: String(localizationKey: "Backup_Clear"),
-                     image: UIImage(systemName: "trash"),
-                     attributes: .destructive) { [weak self] _ in
-                self?.presentClearBackupsMenu()
-            }
+    /// The backup and restore choices, for the card the button opens.
+    private func backupMenuItems() -> [SileoActionMenuItem] {
+        [
+            SileoActionMenuItem(title: String(localizationKey: "Backup_All_Packages"),
+                                imageName: "archivebox") { [weak self] in self?.backupAllPackages() },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Select_Packages"),
+                                imageName: "checkmark.circle") { [weak self] in self?.backupSelectedPackages() },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Configuration"),
+                                imageName: "gearshape") { [weak self] in self?.backupConfiguration() },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Sources"),
+                                imageName: "tray.and.arrow.down") { [weak self] in self?.backupSources() },
+            SileoActionMenuItem(title: String(localizationKey: "Restore_All_Packages"),
+                                imageName: "arrow.down.circle") { [weak self] in self?.restoreAllPackages() },
+            SileoActionMenuItem(title: String(localizationKey: "Restore_Configuration"),
+                                imageName: "arrow.clockwise.circle") { [weak self] in self?.restoreConfiguration() },
+            SileoActionMenuItem(title: String(localizationKey: "Restore_Sources"),
+                                imageName: "tray.and.arrow.up") { [weak self] in self?.restoreSources() },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_View"),
+                                imageName: "folder") { [weak self] in self?.openBackupsInFilza() },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Clear"),
+                                imageName: "trash",
+                                destructive: true) { [weak self] in self?.presentClearBackupsMenu() }
         ]
-        // No header: a titled menu gets a header section the system separates
-        // from the rows with a line.
-        return UIMenu(children: actions)
+    }
+
+    /// The button's card, opened where the button is.
+    @objc private func presentBackupCard(_ sender: UIButton) {
+        present(SileoActionMenu(header: String(localizationKey: "Backup_Restore"),
+                                items: backupMenuItems(),
+                                sourceFrame: sender.convert(sender.bounds, to: nil)),
+                animated: true)
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {
@@ -899,21 +880,26 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
     }
     
-    /// The sort choices as the system's own menu, anchored on the header,
-    /// instead of a sheet from the bottom of the screen.
-    @available(iOS 14.0, *)
-    private func sortMenu() -> UIMenu {
-        func action(_ key: String, _ value: String) -> UIAction {
-            UIAction(title: String(localizationKey: key)) { [weak self] _ in
-                UserDefaults.standard.set(value, forKey: "InstallSortType")
+    /// The sort choices, in Sileo's own card opened from the header.
+    private func presentSortCard(_ sender: UIButton) {
+        let items = [
+            SileoActionMenuItem(title: String(localizationKey: "Sort_Name")) { [weak self] in
+                UserDefaults.standard.set("name", forKey: "InstallSortType")
+                self?.updatePackageList()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Sort_Date")) { [weak self] in
+                UserDefaults.standard.set("installdate", forKey: "InstallSortType")
+                self?.updatePackageList()
+            },
+            SileoActionMenuItem(title: String(localizationKey: "Sort_Install_Size")) { [weak self] in
+                UserDefaults.standard.set("size", forKey: "InstallSortType")
                 self?.updatePackageList()
             }
-        }
-        return UIMenu(children: [
-            action("Sort_Name", "name"),
-            action("Sort_Date", "installdate"),
-            action("Sort_Install_Size", "size")
-        ])
+        ]
+        present(SileoActionMenu(header: String(localizationKey: "Sort_By"),
+                                items: items,
+                                sourceFrame: sender.convert(sender.bounds, to: nil)),
+                animated: true)
     }
 
     @objc func sortPopup(sender: UIView?) {
@@ -1089,26 +1075,20 @@ extension PackageListViewController: UICollectionViewDataSource {
                 case .installdate: headerView.sortHeader?.text = String(localizationKey: "Sort_Date")
                 case .size: headerView.sortHeader?.text = String(localizationKey: "Sort_Install_Size")
                 }
-                if #available(iOS 14.0, *) {
-                    // UIControl carries no menu of its own, so a clear button on
-                    // top of it opens the sort menu where the control sits.
-                    if let container = headerView.sortContainer {
-                        container.viewWithTag(0x5A07)?.removeFromSuperview()
-                        let sortButton = UIButton(type: .custom)
-                        sortButton.translatesAutoresizingMaskIntoConstraints = false
-                        sortButton.tag = 0x5A07
-                        sortButton.menu = self.sortMenu()
-                        sortButton.showsMenuAsPrimaryAction = true
-                        container.addSubview(sortButton)
-                        NSLayoutConstraint.activate([
-                            sortButton.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                            sortButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                            sortButton.topAnchor.constraint(equalTo: container.topAnchor),
-                            sortButton.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-                        ])
-                    }
-                } else {
-                    headerView.sortContainer?.addTarget(self, action: #selector(self.sortPopup(sender:)), for: .touchUpInside)
+                if let container = headerView.sortContainer {
+                    // A card of Sileo's own, opened from the control.
+                    container.viewWithTag(0x5A07)?.removeFromSuperview()
+                    let sortButton = UIButton(type: .custom)
+                    sortButton.translatesAutoresizingMaskIntoConstraints = false
+                    sortButton.tag = 0x5A07
+                    sortButton.addTarget(self, action: #selector(self.presentSortCard(_:)), for: .touchUpInside)
+                    container.addSubview(sortButton)
+                    NSLayoutConstraint.activate([
+                        sortButton.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                        sortButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                        sortButton.topAnchor.constraint(equalTo: container.topAnchor),
+                        sortButton.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+                    ])
                 }
 //                headerView.separatorView?.isHidden = false
                 return headerView

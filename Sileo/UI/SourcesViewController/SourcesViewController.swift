@@ -262,33 +262,12 @@ final class SourcesViewController: SileoViewController {
             } else {
                 nav.leftBarButtonItem = UIBarButtonItem(title: String(localizationKey: "Edit"), style: .done, target: self, action: #selector(self.toggleEditing(_:)))
                 let plusItem: UIBarButtonItem
-                // A system menu in one group: its own translucent material, and
-                // no separators because there is nothing to separate.
-                let addSource = UIAction(title: String(localizationKey: "Add_Source.Button.Add"),
-                                         image: UIImage(systemName: "plus.circle")) { _ in
-                    self.addSource(nil)
-                }
-                let importRepos = UIAction(title: String(localizationKey: "Import_Sources_File"),
-                                           image: UIImage(systemName: "archivebox")) { _ in
-                    self.promptImportRepos()
-                }
-                let importPackages = UIAction(title: String(localizationKey: "Batch_Import_Packages"),
-                                              image: UIImage(systemName: "tray.and.arrow.down")) { _ in
-                    self.promptImportPackages()
-                }
-                let removedSources = UIAction(title: String(localizationKey: "Removed_Sources_Title"),
-                                              image: UIImage(systemName: "clock.arrow.circlepath")) { _ in
-                    self.presentRemovedSources()
-                }
-                let removeBroken = UIAction(title: String(localizationKey: "Remove_Broken_Sources"),
-                                            image: UIImage(systemName: "wand.and.rays"),
-                                            attributes: .destructive) { _ in
-                    self.removeBrokenSources()
-                }
-                // No header: a titled menu gets a header section the system
-                // separates from the rows with a line.
-                let menu = UIMenu(children: [addSource, importRepos, importPackages, removedSources, removeBroken])
-                plusItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
+                // A card of Sileo's own: one list, no separators, and it follows
+                // the system's light and dark appearance.
+                plusItem = UIBarButtonItem(image: UIImage(systemName: "plus"),
+                                           style: .plain,
+                                           target: self,
+                                           action: #selector(self.presentAddCard(_:)))
                 // The search sits to the left of the add button.
                 nav.rightBarButtonItems = [plusItem, self.sourceSearchItem()]
             }
@@ -851,8 +830,28 @@ final class SourcesViewController: SileoViewController {
         present(alert, animated: true)
     }
     
-    /// The sources taken off the list with a swipe, shown as a sheet so one or
-    /// several of them can be put back.
+    /// The add button's choices, in Sileo's own card under the button.
+    @objc private func presentAddCard(_ sender: UIBarButtonItem) {
+        let items = [
+            SileoActionMenuItem(title: String(localizationKey: "Add_Source.Button.Add"),
+                                imageName: "plus.circle") { [weak self] in self?.addSource(nil) },
+            SileoActionMenuItem(title: String(localizationKey: "Import_Sources_File"),
+                                imageName: "archivebox") { [weak self] in self?.promptImportRepos() },
+            SileoActionMenuItem(title: String(localizationKey: "Batch_Import_Packages"),
+                                imageName: "tray.and.arrow.down") { [weak self] in self?.promptImportPackages() },
+            SileoActionMenuItem(title: String(localizationKey: "Removed_Sources_Title"),
+                                imageName: "clock.arrow.circlepath") { [weak self] in self?.presentRemovedSources() },
+            SileoActionMenuItem(title: String(localizationKey: "Remove_Broken_Sources"),
+                                imageName: "wand.and.rays",
+                                destructive: true) { [weak self] in self?.removeBrokenSources() }
+        ]
+        var frame: CGRect?
+        if let button = sender.value(forKey: "view") as? UIView {
+            frame = button.convert(button.bounds, to: nil)
+        }
+        present(SileoActionMenu(header: nil, items: items, sourceFrame: frame), animated: true)
+    }
+
     private func presentRemovedSources() {
         let picker = RemovedSourcesViewController()
         picker.onAdd = { [weak self] sources in
