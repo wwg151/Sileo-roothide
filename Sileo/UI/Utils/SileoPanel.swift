@@ -188,7 +188,7 @@ class SileoPanelViewController: UIViewController {
 
         if let header = makeHeader() {
             headerView = header
-            rootStack.addArrangedSubview(header)
+            rootStack.insertArrangedSubview(header, at: 0)
         }
 
         bodyContainer.translatesAutoresizingMaskIntoConstraints = false

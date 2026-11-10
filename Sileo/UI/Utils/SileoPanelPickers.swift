@@ -302,32 +302,107 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
 
 final class SileoRemovedSourcesPanel: SileoPanelViewController {
 
+    private let items: [RemovedSource]
+    private let onAdd: ([RemovedSource]) -> Void
+    private var selected: Set<String> = []
+    private var checks: [String: UIImageView] = [:]
+    private var confirmButton: UIButton?
+
     init(items: [RemovedSource], onAdd: @escaping ([RemovedSource]) -> Void) {
+        self.items = items
+        self.onAdd = onAdd
         super.init(title: String(localizationKey: "Removed_Sources_Title"),
                    subtitle: String(format: String(localizationKey: "Removed_Sources_Header_Count"), items.count),
                    icon: "clock.arrow.circlepath")
 
-        let rows = items.map { item -> SileoPanelTable.Item in
-            let row = SileoPanelViewController.choiceRow(title: item.name.isEmpty ? item.url : item.name,
-                                                          detail: item.url,
-                                                          selected: false) { [weak self] in
-                self?.close { onAdd([item]) }
-            }
-            return SileoPanelTable.Item(row)
-        }
-        table.setItems(rows)
+        table.setItems(items.map { item in
+            SileoPanelTable.Item(makeRow(for: item))
+        })
 
-        if items.count > 1 {
-            let button = SileoPanelViewController.capsuleButton(
-                title: String(format: String(localizationKey: "Removed_Sources_Add_Count"), items.count)
-            ) { [weak self] in
-                self?.close { onAdd(items) }
-            }
-            setFooter(button)
+        let button = SileoPanelViewController.capsuleButton(title: footerTitle()) { [weak self] in
+            guard let self = self, !self.selected.isEmpty else { return }
+            let chosen = self.items.filter { self.selected.contains($0.url) }
+            self.close { self.onAdd(chosen) }
         }
+        confirmButton = button
+        setFooter(button)
+        updateFooter()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    private func makeRow(for item: RemovedSource) -> UIView {
+        let row = SileoPanelRow()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addAction(UIAction { [weak self] _ in self?.toggle(item) }, for: .touchUpInside)
+
+        let label = UILabel()
+        label.text = item.name.isEmpty ? item.url : item.name
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = .label
+        label.numberOfLines = 2
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let url = UILabel()
+        url.text = item.url
+        url.font = .systemFont(ofSize: 13)
+        url.textColor = .secondaryLabel
+        url.numberOfLines = 1
+        url.lineBreakMode = .byTruncatingMiddle
+        url.translatesAutoresizingMaskIntoConstraints = false
+
+        let check = UIImageView()
+        check.translatesAutoresizingMaskIntoConstraints = false
+        check.contentMode = .scaleAspectFit
+        checks[item.url] = check
+        update(check: check, selected: selected.contains(item.url))
+
+        row.addSubview(label)
+        row.addSubview(url)
+        row.addSubview(check)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            label.topAnchor.constraint(equalTo: row.topAnchor, constant: 10),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12),
+            url.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            url.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 2),
+            url.trailingAnchor.constraint(lessThanOrEqualTo: check.leadingAnchor, constant: -12),
+            url.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -10),
+            check.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
+            check.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            check.widthAnchor.constraint(equalToConstant: 22),
+            check.heightAnchor.constraint(equalToConstant: 22)
+        ])
+        return row
+    }
+
+    private func update(check: UIImageView, selected: Bool) {
+        check.image = UIImage(systemName: selected ? "checkmark.circle.fill" : "circle")
+        check.tintColor = selected ? .tintColor : .tertiaryLabel
+    }
+
+    private func toggle(_ item: RemovedSource) {
+        if selected.contains(item.url) {
+            selected.remove(item.url)
+        } else {
+            selected.insert(item.url)
+        }
+        if let check = checks[item.url] {
+            update(check: check, selected: selected.contains(item.url))
+        }
+        UISelectionFeedbackGenerator().selectionChanged()
+        updateFooter()
+    }
+
+    private func footerTitle() -> String {
+        String(format: String(localizationKey: "Removed_Sources_Add_Count"), selected.count)
+    }
+
+    private func updateFooter() {
+        confirmButton?.setTitle(footerTitle(), for: .normal)
+        confirmButton?.isEnabled = !selected.isEmpty
     }
 }
