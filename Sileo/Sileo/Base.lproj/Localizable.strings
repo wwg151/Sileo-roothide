@@ -428,3 +428,12 @@
 "Reset" = "Reset";
 "Log_Dpkg_Downgrade" = "dpkg: warning: downgrading $1 from $2 to $3";
 "Log_Summary_Downgrade" = "$1 upgraded, $2 newly installed, $3 downgraded, $4 to remove and $5 not upgraded.";
+"Log_Unmet_Deps" = "The following packages have unmet dependencies:";
+"Log_Not_Going_To_Install" = " but it is not going to be installed";
+"Log_Not_Installable" = " but it is not installable";
+"Log_Unauthenticated" = "WARNING: The following packages cannot be authenticated!";
+"Log_Install_Unverified" = "Install these packages without verification? [y/N]";
+"Log_Fix_Broken_Hint" = "You might want to run 'apt --fix-broken install' to correct these.";
+"Log_Dpkg_Prepare_Configure" = "Preparing to configure $1 ($2) ...";
+"Log_Dpkg_Configuring" = "Configuring $1 ($2) ...";
+"Log_Dpkg_Error_Prefix" = "dpkg: error: ";

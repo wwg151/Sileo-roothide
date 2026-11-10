@@ -434,3 +434,12 @@
 "Reset" = "重置";
 "Log_Dpkg_Downgrade" = "dpkg：警告：正在降级 $1，从 $2 到 $3";
 "Log_Summary_Downgrade" = "升级 $1 个，新安装 $2 个，降级 $3 个，卸载 $4 个，未升级 $5 个。";
+"Log_Unmet_Deps" = "以下插件包存在未满足的依赖关系：";
+"Log_Not_Going_To_Install" = " 但它将不会被安装";
+"Log_Not_Installable" = " 但它无法安装";
+"Log_Unauthenticated" = "警告：以下插件包无法通过身份验证！";
+"Log_Install_Unverified" = "是否在不验证的情况下安装这些插件包？[y/N]";
+"Log_Fix_Broken_Hint" = "可能需要运行 'apt --fix-broken install' 来修正这些问题。";
+"Log_Dpkg_Prepare_Configure" = "正在准备配置 $1（$2）...";
+"Log_Dpkg_Configuring" = "正在配置 $1（$2）...";
+"Log_Dpkg_Error_Prefix" = "dpkg：错误：";
