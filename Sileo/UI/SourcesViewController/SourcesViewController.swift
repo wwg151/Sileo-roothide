@@ -285,9 +285,8 @@ final class SourcesViewController: SileoViewController {
                                             attributes: .destructive) { _ in
                     self.removeBrokenSources()
                 }
-                // No header: a titled menu gets a header section the system
-                // separates from the rows with a line.
-                let menu = UIMenu(children: [addSource, importRepos, importPackages, removedSources, removeBroken])
+                let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"),
+                                  children: [addSource, importRepos, importPackages, removedSources, removeBroken])
                 plusItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
                 // The search sits to the left of the add button.
                 nav.rightBarButtonItems = [plusItem, self.sourceSearchItem()]

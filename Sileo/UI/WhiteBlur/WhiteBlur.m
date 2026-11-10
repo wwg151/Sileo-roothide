@@ -17,9 +17,8 @@
 @end
 
 // A system menu brings its own material, and that is the whole point of using
-// one: it stays translucent whatever the app does to its own blurs. Anything
-// inside the menu's own hierarchy is left alone, so the wash below never
-// reaches it.
+// one: it stays translucent whatever the app does to its own blurs. A backdrop
+// inside the menu's hierarchy is left alone, so the wash never reaches it.
 static BOOL ApelinInsideContextMenu(UIView *view) {
     Class menuView = NSClassFromString(@"_UIContextMenuView");
     Class listView = NSClassFromString(@"_UIContextMenuListView");
@@ -34,7 +33,7 @@ static BOOL ApelinInsideContextMenu(UIView *view) {
 
 // What the system asked for before the wash replaced it. A menu's backdrop is
 // often configured before it is put into the menu, so the check above can miss
-// it there; the originals let it be put right once it arrives.
+// it; the originals put it right once it arrives (see didMoveToWindow).
 static char ApelinOriginalFiltersKey;
 static char ApelinOriginalBackgroundKey;
 
@@ -47,22 +46,6 @@ static void ApelinRemember(id object, void *key, id value) {
 @interface NSObject (ApelinVisualEffect)
 - (void)setFilters:(NSArray *)filters;
 @end
-
-// A menu's backdrop is often configured before it is put into the menu, so the
-// check above can miss it; once it has arrived, ask for what the system
-// originally wanted.
-static void ApelinRestoreMenuMaterial(UIView *view) {
-    if (@available(iOS 13, *)) {
-        if (![view isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) return;
-        if (!ApelinInsideContextMenu(view)) return;
-        NSArray *filters = objc_getAssociatedObject(view, &ApelinOriginalFiltersKey);
-        if (filters) [(id)view setFilters:filters];
-        id background = objc_getAssociatedObject(view, &ApelinOriginalBackgroundKey);
-        if (background) {
-            [(id)view setBackgroundColor:[background isKindOfClass:[NSNull class]] ? nil : background];
-        }
-    }
-}
 
 hook(_UIVisualEffectSubview)
 
@@ -107,13 +90,6 @@ hook(_UIVisualEffectSubview)
                }
             }
             [self setBackgroundColor:backgroundColor];
-            // The menu may only take this view into its hierarchy after this
-            // call; look again once the run loop has let that happen.
-            __weak UIView *weakView = (UIView *)self;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIView *view = weakView;
-                if (view) ApelinRestoreMenuMaterial(view);
-            });
         } else {
             _orig(void, filters);
         }
@@ -155,6 +131,21 @@ hook(_UIVisualEffectSubview)
     _orig(void, backgroundColor);
 }
 
-// A menu's backdrop that was washed before it reached the menu: once it is in
+// A menu's backdrop that was washed before the menu took it in: once it is in
 // the menu, ask for what the system originally wanted.
+- (void)didMoveToWindow {
+    _orig(void);
+    if (@available(iOS 13, *)) {
+        UIView *view = (UIView *)self;
+        if (![view isKindOfClass:NSClassFromString(@"_UIVisualEffectBackdropView")]) return;
+        if (!ApelinInsideContextMenu(view)) return;
+        NSArray *filters = objc_getAssociatedObject(self, &ApelinOriginalFiltersKey);
+        if (filters) [self setFilters:filters];
+        id background = objc_getAssociatedObject(self, &ApelinOriginalBackgroundKey);
+        if (background) {
+            [self setBackgroundColor:[background isKindOfClass:[NSNull class]] ? nil : background];
+        }
+    }
+}
+
 endhook

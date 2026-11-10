@@ -167,12 +167,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
         let shareButton = UIButton(type: .custom)
         shareButton.setImage(UIImage(named: "More"), for: .normal)
-        if #available(iOS 14.0, *) {
-            // A tap opens the system's own menu (built in refreshShareMenu).
-            shareButton.showsMenuAsPrimaryAction = true
-        } else {
-            shareButton.addTarget(self, action: #selector(PackageViewController.sharePackage), for: .touchUpInside)
-        }
+        shareButton.addTarget(self, action: #selector(PackageViewController.sharePackage), for: .touchUpInside)
         shareButton.accessibilityIgnoresInvertColors = true
         self.shareButton = shareButton
 
@@ -524,10 +519,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
-        if #available(iOS 14.0, *) {
-            refreshShareMenu()
-        }
-        
         self.statusBarStyle = .default
         
         self.navigationController?.navigationBar._backgroundOpacity = currentNavBarOpacity
@@ -707,62 +698,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         }
     }
 
-    /// The "…" button's menu: the system's own material, one group and no
-    /// header, so the system has nothing to put a separator between. The
-    /// entries follow what is installed and whether the package is in the wish
-    /// list, so the menu is built again whenever the page appears.
-    @available(iOS 14.0, *)
-    private func refreshShareMenu() {
-        guard let shareButton = shareButton else { return }
-        shareButton.menu = shareMenu()
-        shareButton.showsMenuAsPrimaryAction = true
-    }
-
-    @available(iOS 14.0, *)
-    private func shareMenu() -> UIMenu? {
-        guard let package = self.package else { return nil }
-        var actions: [UIAction] = [
-            UIAction(title: String(localizationKey: "Package_Share_Action"),
-                     image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
-                self?.sharePackageLink()
-            }
-        ]
-
-        if let name = package.author?.name {
-            actions.append(UIAction(title: String(localizationKey: "Package_Developer_Find_Action"),
-                                    image: UIImage(systemName: "person.crop.circle")) { [weak self] _ in
-                self?.showPackagesByAuthor(name)
-            })
-        }
-
-        if let email = package.author?.email {
-            actions.append(UIAction(title: String(localizationKey: "Package_Support_Action"),
-                                    image: UIImage(systemName: "envelope")) { [weak self] _ in
-                self?.openSupportEmail(email)
-            })
-        }
-
-        if let installedPackage = installedPackage {
-            let title = installedPackage.wantInfo == .hold ?
-                String(localizationKey: "Package_Hold_Disable_Action") : String(localizationKey: "Package_Hold_Enable_Action")
-            actions.append(UIAction(title: title,
-                                    image: UIImage(systemName: "pause.circle")) { [weak self] _ in
-                self?.toggleIgnoringUpdates()
-            })
-        }
-
-        let wishListText = WishListManager.shared.isPackageInWishList(package.package) ?
-            String(localizationKey: "Package_Wishlist_Remove") : String(localizationKey: "Package_Wishlist_Add")
-        actions.append(UIAction(title: wishListText,
-                                image: UIImage(systemName: "heart")) { [weak self] _ in
-            self?.toggleWishList()
-            self?.refreshShareMenu()
-        })
-
-        return UIMenu(children: actions)
-    }
-
-    /// The sheet this used to be, kept for the systems without button menus.
     @objc func sharePackage(_ sender: Any?) {
         guard let package = self.package,
             let shareButton = self.shareButton else {
@@ -770,37 +705,96 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         }
 
         let sharePopup = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        sharePopup.addAction(UIAlertAction(title: String(localizationKey: "Package_Share_Action"), style: .default) { [weak self] _ in
-            self?.sharePackageLink()
-        })
+        let shareAction = UIAlertAction(title: String(localizationKey: "Package_Share_Action"), style: .default) { _ in
+            var packageString = "\(package.name ?? package.package) - \(URLManager.url(package: package.package))"
+            if let repo = package.sourceRepo {
+                packageString += " - from \(repo.url?.absoluteString ?? repo.rawURL)"
+            }
+            let activityViewController = UIActivityViewController(activityItems: [packageString], applicationActivities: nil)
+            activityViewController.popoverPresentationController?.sourceView = shareButton
+            self.present(activityViewController, animated: true, completion: nil)
+        }
+        sharePopup.addAction(shareAction)
 
-        if let name = package.author?.name {
-            sharePopup.addAction(UIAlertAction(title: String(localizationKey: "Package_Developer_Find_Action"), style: .default) { [weak self] _ in
-                self?.showPackagesByAuthor(name)
-            })
+        if let author = package.author {
+            if let name = author.name {
+                let moreByDeveloper = UIAlertAction(title: String(localizationKey: "Package_Developer_Find_Action"), style: .default) { _ in
+                    let packagesListController = PackageListViewController(nibName: "PackageListViewController", bundle: nil)
+                    packagesListController.packagesLoadIdentifier = "author:\(name)"
+                    packagesListController.title = String(format: String(localizationKey: "Packages_By_Author"),
+                                                          author.name ?? "")
+                    self.navigationController?.pushViewController(packagesListController, animated: true)
+                }
+                sharePopup.addAction(moreByDeveloper)
+            }
+
+            if let email = author.email {
+                let packageSupport = UIAlertAction(title: String(localizationKey: "Package_Support_Action"), style: .default) { _ in
+                    func unavailable() {
+                        let alertController = UIAlertController(title: String(localizationKey: "Email_Unavailable.Title", type: .error),
+                                                                message: String(localizationKey: "Email_Unavailable.Body", type: .error),
+                                                                preferredStyle: .alert)
+                        alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: nil))
+                        self.present(alertController, animated: true, completion: nil)
+                    }
+                    guard let subject = "Sileo/APT(M): \(package.name ?? package.package)".addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed),
+                          let email = email.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed),
+                          let url = URL(string: "mailto:\(email)?subject=\(subject)") else {
+                        return unavailable()
+                    }
+                    UIApplication.shared.open(url) { success in
+                        if !success {
+                            unavailable()
+                        }
+                    }
+                }
+                sharePopup.addAction(packageSupport)
+            }
         }
 
-        if let email = package.author?.email {
-            sharePopup.addAction(UIAlertAction(title: String(localizationKey: "Package_Support_Action"), style: .default) { [weak self] _ in
-                self?.openSupportEmail(email)
-            })
-        }
-
-        if let installedPackage = installedPackage {
-            let title = installedPackage.wantInfo == .hold ?
+        if let installedPackage = installedPackage, let package = self.package {
+            let ignoreUpdatesText = installedPackage.wantInfo == .hold ?
                 String(localizationKey: "Package_Hold_Disable_Action") : String(localizationKey: "Package_Hold_Enable_Action")
-            sharePopup.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
-                self?.toggleIgnoringUpdates()
-            })
+            let ignoreUpdates = UIAlertAction(title: ignoreUpdatesText, style: .default) { _ in
+                do {
+                    if installedPackage.wantInfo == .hold {
+#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
+                        try DpkgWrapper.ignoreUpdates(false, package: package.package)
+                        installedPackage.wantInfo = .install
+#endif
+                    } else {
+#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
+                        try DpkgWrapper.ignoreUpdates(true, package: package.package)
+                        installedPackage.wantInfo = .hold
+#endif
+                    }
+                    NotificationCenter.default.post(Notification(name: PackageListManager.prefsNotification))
+                } catch {
+                    sharePopup.dismiss(animated: true) {
+                        let alertController = UIAlertController(title: String(localizationKey: "Unknown", type: .error), message: "\(error)", preferredStyle: .alert)
+                        alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: { _ in
+                            self.dismiss(animated: true, completion: nil)
+                        }))
+                        self.present(alertController, animated: true, completion: nil)
+                    }
+                }
+            }
+            sharePopup.addAction(ignoreUpdates)
         }
 
         let wishListText = WishListManager.shared.isPackageInWishList(package.package) ?
             String(localizationKey: "Package_Wishlist_Remove") : String(localizationKey: "Package_Wishlist_Add")
-        sharePopup.addAction(UIAlertAction(title: wishListText, style: .default) { [weak self] _ in
-            self?.toggleWishList()
-        })
+        let wishlist = UIAlertAction(title: wishListText, style: .default) { _ in
+            if WishListManager.shared.isPackageInWishList(package.package) {
+                WishListManager.shared.removePackageFromWishList(package.package)
+            } else {
+                _ = WishListManager.shared.addPackageToWishList(package.package)
+            }
+        }
+        sharePopup.addAction(wishlist)
 
-        sharePopup.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel, handler: nil))
+        let cancelAction = UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel, handler: nil)
+        sharePopup.addAction(cancelAction)
 
         if UIDevice.current.userInterfaceIdiom == .pad {
             sharePopup.popoverPresentationController?.sourceView = shareButton
@@ -809,81 +803,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             sharePopup.view.tintColor = tintColor
         }
         self.present(sharePopup, animated: true)
-    }
-
-    private func sharePackageLink() {
-        guard let package = self.package else { return }
-        var packageString = "\(package.name ?? package.package) - \(URLManager.url(package: package.package))"
-        if let repo = package.sourceRepo {
-            packageString += " - from \(repo.url?.absoluteString ?? repo.rawURL)"
-        }
-        let activityViewController = UIActivityViewController(activityItems: [packageString], applicationActivities: nil)
-        if let shareButton = shareButton {
-            activityViewController.popoverPresentationController?.sourceView = shareButton
-            activityViewController.popoverPresentationController?.sourceRect = shareButton.bounds
-        }
-        self.present(activityViewController, animated: true, completion: nil)
-    }
-
-    private func showPackagesByAuthor(_ name: String) {
-        let packagesListController = PackageListViewController(nibName: "PackageListViewController", bundle: nil)
-        packagesListController.packagesLoadIdentifier = "author:\(name)"
-        packagesListController.title = String(format: String(localizationKey: "Packages_By_Author"), name)
-        self.navigationController?.pushViewController(packagesListController, animated: true)
-    }
-
-    private func openSupportEmail(_ email: String) {
-        func unavailable() {
-            let alertController = UIAlertController(title: String(localizationKey: "Email_Unavailable.Title", type: .error),
-                                                    message: String(localizationKey: "Email_Unavailable.Body", type: .error),
-                                                    preferredStyle: .alert)
-            alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: nil))
-            self.present(alertController, animated: true, completion: nil)
-        }
-        guard let package = self.package,
-              let subject = "Sileo/APT(M): \(package.name ?? package.package)".addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed),
-              let encodedEmail = email.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed),
-              let url = URL(string: "mailto:\(encodedEmail)?subject=\(subject)") else {
-            return unavailable()
-        }
-        UIApplication.shared.open(url) { success in
-            if !success {
-                unavailable()
-            }
-        }
-    }
-
-    private func toggleIgnoringUpdates() {
-        guard let installedPackage = installedPackage, let package = self.package else { return }
-        do {
-            if installedPackage.wantInfo == .hold {
-#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
-                try DpkgWrapper.ignoreUpdates(false, package: package.package)
-                installedPackage.wantInfo = .install
-#endif
-            } else {
-#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
-                try DpkgWrapper.ignoreUpdates(true, package: package.package)
-                installedPackage.wantInfo = .hold
-#endif
-            }
-            NotificationCenter.default.post(Notification(name: PackageListManager.prefsNotification))
-        } catch {
-            let alertController = UIAlertController(title: String(localizationKey: "Unknown", type: .error),
-                                                    message: "\(error)",
-                                                    preferredStyle: .alert)
-            alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: nil))
-            self.present(alertController, animated: true, completion: nil)
-        }
-    }
-
-    private func toggleWishList() {
-        guard let package = self.package else { return }
-        if WishListManager.shared.isPackageInWishList(package.package) {
-            WishListManager.shared.removePackageFromWishList(package.package)
-        } else {
-            _ = WishListManager.shared.addPackageToWishList(package.package)
-        }
     }
 
     func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
