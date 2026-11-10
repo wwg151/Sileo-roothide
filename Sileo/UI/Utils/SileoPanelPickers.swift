@@ -21,10 +21,12 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                    icon: "arrow.triangle.branch")
 
         // Exactly one row is the version shown now: the same version can sit in
-        // several sources, and an installed package records no source of its
-        // own (it may have come from a local .deb), so nothing is marked then
-        // and the first pick is the user's.
+        // several sources. A page from a source marks its own; an installed
+        // package records no source, so the one Sileo would install from now
+        // is marked instead — unless this very version is known to have come
+        // from a local .deb, in which case nothing is marked.
         var winner: IndexPath?
+        let isLocalInstall = PackageListManager.shared.localPackages[current.package]?.version == current.version
         if let currentRepo = current.sourceRepo {
             for (section, entry) in sections.enumerated() {
                 for (row, package) in entry.packages.enumerated()
@@ -33,6 +35,24 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                     break
                 }
                 if winner != nil { break }
+            }
+        } else if !isLocalInstall {
+            let canonicalSource = PackageListManager.shared.newestPackage(identifier: current.package)?.sourceRepo?.url
+            var firstCandidate: IndexPath?
+            for (section, entry) in sections.enumerated() {
+                for (row, package) in entry.packages.enumerated() where package.version == current.version {
+                    if firstCandidate == nil {
+                        firstCandidate = IndexPath(row: row, section: section)
+                    }
+                    if package.sourceRepo?.url == canonicalSource {
+                        winner = IndexPath(row: row, section: section)
+                        break
+                    }
+                }
+                if winner != nil { break }
+            }
+            if winner == nil {
+                winner = firstCandidate
             }
         }
 
