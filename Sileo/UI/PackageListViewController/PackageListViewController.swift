@@ -170,8 +170,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             backupButton.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
             backupButton.accessibilityLabel = String(localizationKey: "Backup_Restore")
             backupButton.addTarget(self, action: #selector(self.pressBackupButton(_:)), for: .touchDown)
-            // The menu is Sileo's own card: no separators, and a highlight that
-            // slides between the rows.
+            // Still Sileo's own card for now.
             backupButton.addTarget(self, action: #selector(self.presentBackupMenu(_:)), for: .touchUpInside)
             self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: backupButton)
         }

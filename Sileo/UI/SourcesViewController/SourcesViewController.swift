@@ -262,9 +262,32 @@ final class SourcesViewController: SileoViewController {
             } else {
                 nav.leftBarButtonItem = UIBarButtonItem(title: String(localizationKey: "Edit"), style: .done, target: self, action: #selector(self.toggleEditing(_:)))
                 let plusItem: UIBarButtonItem
-                // The menu is drawn by Sileo itself: one card, no separators,
-                // and a highlight that slides from row to row.
-                plusItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.presentAddSourceMenu(_:)))
+                // A system menu in one group: its own translucent material, and
+                // no separators because there is nothing to separate.
+                let addSource = UIAction(title: String(localizationKey: "Add_Source.Button.Add"),
+                                         image: UIImage(systemName: "plus.circle")) { _ in
+                    self.addSource(nil)
+                }
+                let importRepos = UIAction(title: String(localizationKey: "Import_Sources_File"),
+                                           image: UIImage(systemName: "archivebox")) { _ in
+                    self.promptImportRepos()
+                }
+                let importPackages = UIAction(title: String(localizationKey: "Batch_Import_Packages"),
+                                              image: UIImage(systemName: "tray.and.arrow.down")) { _ in
+                    self.promptImportPackages()
+                }
+                let removedSources = UIAction(title: String(localizationKey: "Removed_Sources_Title"),
+                                              image: UIImage(systemName: "clock.arrow.circlepath")) { _ in
+                    self.presentRemovedSources()
+                }
+                let removeBroken = UIAction(title: String(localizationKey: "Remove_Broken_Sources"),
+                                            image: UIImage(systemName: "wand.and.rays"),
+                                            attributes: .destructive) { _ in
+                    self.removeBrokenSources()
+                }
+                let menu = UIMenu(title: String(localizationKey: "Add_Source.Title"),
+                                  children: [addSource, importRepos, importPackages, removedSources, removeBroken])
+                plusItem = UIBarButtonItem(systemItem: .add, primaryAction: nil, menu: menu)
                 // The search sits to the left of the add button.
                 nav.rightBarButtonItems = [plusItem, self.sourceSearchItem()]
             }
@@ -789,38 +812,6 @@ final class SourcesViewController: SileoViewController {
         }
     }
 
-    /// The add menu, drawn by Sileo itself: one card without separators, and a
-    /// highlight pill that slides between the rows.
-    @objc private func presentAddSourceMenu(_ sender: UIBarButtonItem) {
-        let items = [
-            SileoActionMenuItem(title: String(localizationKey: "Add_Source.Button.Add"), imageName: "plus.circle", destructive: false) { [weak self] in
-                self?.addSource(nil)
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Import_Sources_File"), imageName: "archivebox", destructive: false) { [weak self] in
-                self?.promptImportRepos()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Batch_Import_Packages"), imageName: "tray.and.arrow.down", destructive: false) { [weak self] in
-                self?.promptImportPackages()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Removed_Sources_Title"), imageName: "clock.arrow.circlepath", destructive: false) { [weak self] in
-                self?.presentRemovedSources()
-            },
-            SileoActionMenuItem(title: String(localizationKey: "Remove_Broken_Sources"), imageName: "wand.and.rays", destructive: true) { [weak self] in
-                self?.removeBrokenSources()
-            }
-        ]
-        var frame: CGRect?
-        if let bar = navigationController?.navigationBar {
-            let rect = bar.convert(bar.bounds, to: nil)
-            // The bar button has no public view, so the menu drops from the
-            // right end of the navigation bar, where the button sits.
-            frame = CGRect(x: rect.maxX - 44, y: rect.maxY, width: 44, height: 0)
-        }
-        let menu = SileoActionMenu(header: String(localizationKey: "Add_Source.Title"),
-                                   items: items,
-                                   sourceFrame: frame)
-        present(menu, animated: true)
-    }
 
     @objc private func presentAddRepoOptions() {
         let alert = UIAlertController(title: String(localizationKey: "Add_Source.Title"), message: nil, preferredStyle: .actionSheet)
