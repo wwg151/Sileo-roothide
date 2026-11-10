@@ -169,6 +169,7 @@ final class QueueCenter {
     private var downloadPhase = false
     private var downloadPhaseSince: Date?
     private var handoffScheduled = false
+    private var suspended = false
     private var origins: [String: ObjectIdentifier] = [:]
 
     private init() {}
@@ -206,6 +207,23 @@ final class QueueCenter {
         TabBarController.singleton?.view.window?.makeKey()
         window = queueWindow
         capsule = capsuleView
+
+        // a respring (or the app going away) turns the screen black while this
+        // process is still alive: the capsule must not float over that
+        NotificationCenter.default.addObserver(self, selector: #selector(appWillResignActive),
+                                               name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+
+    @objc private func appWillResignActive() {
+        suspended = true
+        window?.isHidden = true
+    }
+
+    @objc private func appDidBecomeActive() {
+        suspended = false
+        sync()
     }
 
     // MARK: states
@@ -489,6 +507,12 @@ final class QueueCenter {
 
     private func updateCapsule(visible: Bool, items: [QueueItem], failure: Bool, done: Bool) {
         guard let capsule = capsule else { return }
+        // the app is leaving (respring): nothing of ours stays on the screen
+        if suspended {
+            window?.isHidden = true
+            capsule.isHidden = true
+            return
+        }
         if visible {
             capsule.configure(items: items, failure: failure, done: done)
             if window?.isHidden != false {
