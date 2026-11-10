@@ -270,38 +270,42 @@ class PackageQueueButton: PackageButton {
             return
         }
         let state = QueueCenter.shared.state(for: package.package)
-        var text: String?
+        var percent: String?
+        var caption: String?
         var fraction: CGFloat?
         var failed = false
         switch state {
         case .downloading(let value):
-            text = String(format: "%.0f%%", value * 100)
+            percent = String(format: "%.0f%%", value * 100)
             fraction = value
+            caption = String(localizationKey: "Queue_Downloading")
         case .converting:
-            text = String(localizationKey: "Queue_Converting")
+            caption = String(localizationKey: "Queue_Converting")
         case .installing:
-            text = String(localizationKey: "Queue_Installing")
+            caption = String(localizationKey: "Queue_Installing")
         case .uninstalling:
-            text = String(localizationKey: "Queue_Uninstalling")
+            caption = String(localizationKey: "Queue_Uninstalling")
         case .waiting:
-            text = "…"
+            caption = String(localizationKey: "Queue_Waiting")
+            fraction = 0
         case .failed:
-            text = "!"
+            percent = "!"
+            caption = String(localizationKey: "Queue_Failed")
             failed = true
         default:
             break
         }
 
-        if let text = text {
+        if let caption = caption {
             if queueRingOverlay == nil {
                 let overlay = QueueRingOverlay()
                 overlay.translatesAutoresizingMaskIntoConstraints = false
                 addSubview(overlay)
                 NSLayoutConstraint.activate([
                     overlay.centerXAnchor.constraint(equalTo: centerXAnchor),
-                    overlay.centerYAnchor.constraint(equalTo: centerYAnchor),
-                    overlay.widthAnchor.constraint(equalTo: widthAnchor),
-                    overlay.heightAnchor.constraint(equalTo: heightAnchor)
+                    overlay.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -14),
+                    overlay.widthAnchor.constraint(equalToConstant: 96),
+                    overlay.heightAnchor.constraint(equalToConstant: 118)
                 ])
                 queueRingOverlay = overlay
             }
@@ -312,7 +316,7 @@ class PackageQueueButton: PackageButton {
             }
             bringSubviewToFront(queueRingOverlay!)
             titleLabel?.layer.opacity = 0
-            queueRingOverlay?.configure(text: text, fraction: fraction, failed: failed, onFilled: false)
+            queueRingOverlay?.configure(percent: percent, caption: caption, fraction: fraction, failed: failed)
             queueRingOverlay?.isHidden = false
         } else {
             endQueueRing()

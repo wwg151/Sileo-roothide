@@ -655,31 +655,42 @@ final class QueueRingOverlay: UIView {
 
     private let trackLayer = CAShapeLayer()
     private let ringLayer = CAShapeLayer()
-    private let textLayer = CATextLayer()
+    private let percentLayer = CATextLayer()
+    private let captionLayer = CATextLayer()
+
+    private static let lineWidth: CGFloat = 8
+    private static let captionHeight: CGFloat = 18
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         backgroundColor = .clear
 
-        // the track makes the ring readable even before any progress
+        // the design: a large ring, the percentage inside it, the state below
         trackLayer.fillColor = UIColor.clear.cgColor
-        trackLayer.lineWidth = 3
-        trackLayer.strokeColor = UIColor.label.withAlphaComponent(0.15).cgColor
+        trackLayer.strokeColor = UIColor.tertiarySystemFill.cgColor
+        trackLayer.lineWidth = QueueRingOverlay.lineWidth
         layer.addSublayer(trackLayer)
 
         ringLayer.fillColor = UIColor.clear.cgColor
         ringLayer.strokeColor = UIColor.tintColor.cgColor
-        ringLayer.lineWidth = 3
+        ringLayer.lineWidth = QueueRingOverlay.lineWidth
         ringLayer.lineCap = .round
         layer.addSublayer(ringLayer)
 
-        textLayer.string = ""
-        textLayer.fontSize = 12
-        textLayer.alignmentMode = .center
-        textLayer.contentsScale = UIScreen.main.scale
-        textLayer.foregroundColor = UIColor.label.cgColor
-        layer.addSublayer(textLayer)
+        percentLayer.string = ""
+        percentLayer.fontSize = 20
+        percentLayer.alignmentMode = .center
+        percentLayer.contentsScale = UIScreen.main.scale
+        percentLayer.foregroundColor = UIColor.tintColor.cgColor
+        layer.addSublayer(percentLayer)
+
+        captionLayer.string = ""
+        captionLayer.fontSize = 13
+        captionLayer.alignmentMode = .center
+        captionLayer.contentsScale = UIScreen.main.scale
+        captionLayer.foregroundColor = UIColor.secondaryLabel.cgColor
+        layer.addSublayer(captionLayer)
     }
 
     required init?(coder: NSCoder) {
@@ -688,24 +699,16 @@ final class QueueRingOverlay: UIView {
 
     private var fraction: CGFloat = 0
 
-    /// `onFilled` is for a button that is already a solid tint: its ring and
-    /// text have to be white to be seen at all.
-    func configure(text: String, fraction: CGFloat?, failed: Bool, onFilled: Bool) {
-        let ringColor: UIColor
-        if failed {
-            ringColor = onFilled ? .white : .systemRed
-        } else {
-            ringColor = onFilled ? .white : .tintColor
-        }
-        ringLayer.strokeColor = ringColor.cgColor
-        trackLayer.strokeColor = (onFilled ? UIColor.white.withAlphaComponent(0.35)
-                                           : UIColor.label.withAlphaComponent(0.12)).cgColor
-        textLayer.string = text
-        textLayer.fontSize = 15
-        textLayer.foregroundColor = (onFilled ? UIColor.white : (failed ? UIColor.systemRed : UIColor.label)).cgColor
-        let target = fraction ?? 1
-        if target != fraction {
-            // a download moves smoothly instead of jumping between polls
+    func configure(percent: String?, caption: String, fraction: CGFloat?, failed: Bool) {
+        let accent: UIColor = failed ? .systemRed : .tintColor
+        ringLayer.strokeColor = accent.cgColor
+        percentLayer.string = percent
+        percentLayer.foregroundColor = accent.cgColor
+        captionLayer.string = caption
+        captionLayer.foregroundColor = failed ? UIColor.systemRed : UIColor.secondaryLabel
+
+        let target = fraction ?? 0
+        if abs(target - fraction) > 0.001 {
             let animation = CABasicAnimation(keyPath: "strokeEnd")
             animation.fromValue = ringLayer.presentation()?.strokeEnd ?? fraction
             animation.toValue = target
@@ -719,26 +722,19 @@ final class QueueRingOverlay: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // a ring that fills the button's height, with the label beside it
-        let diameter = max(16, floor(bounds.height - 4))
-        let lineWidth: CGFloat = 4
-        let radius = diameter / 2 - lineWidth / 2
-        let center = CGPoint(x: radius + lineWidth / 2 + 2, y: bounds.midY)
+        let diameter = min(bounds.width, bounds.height - QueueRingOverlay.captionHeight)
+        let radius = diameter / 2 - QueueRingOverlay.lineWidth / 2
+        let center = CGPoint(x: bounds.midX, y: diameter / 2)
         let path = UIBezierPath(arcCenter: center, radius: radius,
                                 startAngle: -.pi / 2, endAngle: .pi * 3 / 2,
                                 clockwise: true).cgPath
         trackLayer.frame = bounds
         ringLayer.frame = bounds
-        trackLayer.lineWidth = lineWidth
-        ringLayer.lineWidth = lineWidth
-        trackLayer.contentsScale = UIScreen.main.scale
-        ringLayer.contentsScale = UIScreen.main.scale
         trackLayer.path = path
         ringLayer.path = path
         ringLayer.strokeEnd = fraction
-        let textX = diameter + 10
-        textLayer.frame = CGRect(x: textX, y: center.y - 9,
-                                 width: max(0, bounds.width - textX - 4), height: 18)
+        percentLayer.frame = CGRect(x: 0, y: center.y - 12, width: bounds.width, height: 24)
+        captionLayer.frame = CGRect(x: 0, y: diameter + 2, width: bounds.width, height: QueueRingOverlay.captionHeight)
     }
 }
 
