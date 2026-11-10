@@ -1174,12 +1174,14 @@ extension PackageListViewController {
         (pvc as? PackageViewController)?.configureVersionSelectionNavigationController(navigationController)
 
         let menuItems = pvc.actions()
-        // The card is the system's own snapshot of the row. A live page as the
-        // card has to be laid out again while it is being put away, which shows
-        // as a flash of the backdrop on the way out.
-        let config = UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+        // a compact, centered preview leaves room for the menu instead of the full-height page covering it
+        let previewWidth = min(collectionView.bounds.width - 48, 360)
+        let config = UIContextMenuConfiguration(identifier: nil, previewProvider: {
+            pvc.preferredContentSize = CGSize(width: previewWidth, height: min(collectionView.bounds.height * 0.4, 320))
+            return pvc
+        }, actionProvider: { _ in
             UIMenu(title: "", options: .displayInline, children: menuItems)
-        }
+        })
 
         return config
     }
