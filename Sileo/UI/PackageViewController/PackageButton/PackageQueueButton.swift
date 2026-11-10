@@ -60,23 +60,8 @@ class PackageQueueButton: PackageButton {
         
         if #available(iOS 14.0, *) {
             // The button's own menu: the system's translucent material, in one
-            // group so there are no separators. A tap opens it on an installed
-            // package, a long press on any.
-            menu = UIMenu(children: [
-                UIDeferredMenuElement.uncached { [weak self] completion in
-                    guard let self = self, let package = self.package, !(package.isProvisional ?? false) else {
-                        completion([])
-                        return
-                    }
-                    completion(self.longPressMenuItems(for: package).map { item in
-                        UIAction(title: item.title,
-                                 image: UIImage(systemName: item.image),
-                                 attributes: item.enabled ? (item.destructive ? .destructive : []) : .disabled) { _ in
-                            item.handler()
-                        }
-                    })
-                }
-            ])
+            // group without a header so nothing separates the rows. It is built
+            // again whenever the package's state changes (see updateInfo).
         } else if #available(iOS 13.0, *) {
             let menuDelegate = PackageQueueMenuDelegate(button: self)
             contextMenuDelegate = menuDelegate
@@ -90,6 +75,24 @@ class PackageQueueButton: PackageButton {
     @objc func longPressed(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
         showLongPressMenu()
+    }
+
+    /// The button's menu, built from the package's current state: one group and
+    /// no header, so the system has nothing to put a separator between.
+    @available(iOS 14.0, *)
+    private func rebuildMenu() {
+        guard let package = package, !(package.isProvisional ?? false) else {
+            menu = nil
+            return
+        }
+        let actions = longPressMenuItems(for: package).map { item in
+            UIAction(title: item.title,
+                     image: UIImage(systemName: item.image),
+                     attributes: item.enabled ? (item.destructive ? .destructive : []) : .disabled) { _ in
+                item.handler()
+            }
+        }
+        menu = actions.isEmpty ? nil : UIMenu(children: actions)
     }
 
     private func presentSheet(_ sheet: UIAlertController) {
@@ -366,6 +369,8 @@ class PackageQueueButton: PackageButton {
         var primaryMenu = false
         defer {
             if #available(iOS 14.0, *) {
+                // One group, no header: the system draws no separator in it.
+                self.rebuildMenu()
                 self.showsMenuAsPrimaryAction = primaryMenu
             }
         }
