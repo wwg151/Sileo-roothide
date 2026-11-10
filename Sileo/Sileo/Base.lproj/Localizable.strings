@@ -441,3 +441,6 @@
 "Copy_All" = "Copy All";
 "Copied" = "Copied";
 "Backup_Select_Count" = "%lu packages";
+
+"Backup_Count_Packages" = "%lu packages";
+"Backup_Count_Sources" = "%lu sources";

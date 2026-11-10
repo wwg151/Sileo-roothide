@@ -447,3 +447,6 @@
 "Copy_All" = "复制全部";
 "Copied" = "已复制";
 "Backup_Select_Count" = "%lu 个插件";
+
+"Backup_Count_Packages" = "%lu 个插件";
+"Backup_Count_Sources" = "%lu 个源";

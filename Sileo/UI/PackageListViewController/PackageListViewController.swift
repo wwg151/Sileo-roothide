@@ -824,7 +824,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                                             icon: "folder")
         var items: [SileoPanelTable.Item] = []
         for folder in folders.prefix(20) {
-            items.append(SileoPanelTable.Item(SileoPanelViewController.detailRow(title: folder.name,
+            items.append(SileoPanelTable.Item(SileoPanelViewController.detailRow(title: Self.backupSummary(folder, kind: kind),
                                                                                  detail: Self.backupDateText(folder)) { [weak panel] in
                 panel?.close {
                     completion(folder)
@@ -833,6 +833,47 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
         panel.table.setItems(items)
         panel.present(from: self)
+    }
+
+    /// What a backup holds, shown in place of its folder name: the name ends
+    /// with the very date and time already shown beside it.
+    private static func backupSummary(_ folder: BackupManager.BackupFolder,
+                                      kind: BackupManager.BackupKind) -> String {
+        switch kind {
+        case .packages:
+            if let data = try? Data(contentsOf: folder.manifestURL),
+               let entries = try? JSONDecoder().decode([BackupManager.ManifestEntry].self, from: data) {
+                return String(format: String(localizationKey: "Backup_Count_Packages"), entries.count)
+            }
+            return String(localizationKey: "Backup_All_Packages")
+        case .sources:
+            let count = sourceCount(in: folder.sourcesURL)
+            return count > 0
+                ? String(format: String(localizationKey: "Backup_Count_Sources"), count)
+                : String(localizationKey: "Backup_Sources")
+        case .configuration:
+            return String(localizationKey: "Backup_Configuration")
+        }
+    }
+
+    /// The number of source entries a sources backup holds.
+    private static func sourceCount(in folder: URL) -> Int {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder,
+                                                                       includingPropertiesForKeys: nil,
+                                                                       options: [.skipsHiddenFiles]) else {
+            return 0
+        }
+        var count = 0
+        for file in files {
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            for line in text.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("deb ") || trimmed.hasPrefix("URIs:") {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 
     /// The day a backup was made, shown beside its name.
