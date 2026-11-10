@@ -457,7 +457,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
 
     /// The button's card, opened where the button is.
     @objc private func presentBackupCard(_ sender: UIButton) {
-        present(SileoActionMenu(header: String(localizationKey: "Backup_Restore"),
+        present(SileoActionMenu(header: nil,
                                 items: backupMenuItems(),
                                 sourceFrame: sender.convert(sender.bounds, to: nil)),
                 animated: true)
@@ -896,7 +896,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 self?.updatePackageList()
             }
         ]
-        present(SileoActionMenu(header: String(localizationKey: "Sort_By"),
+        present(SileoActionMenu(header: nil,
                                 items: items,
                                 sourceFrame: sender.convert(sender.bounds, to: nil)),
                 animated: true)

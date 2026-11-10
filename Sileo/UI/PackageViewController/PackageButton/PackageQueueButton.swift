@@ -79,7 +79,7 @@ class PackageQueueButton: PackageButton {
                                 handler: item.handler)
         }
         guard !items.isEmpty, let host = viewControllerForPresentation ?? hostViewController() else { return }
-        host.present(SileoActionMenu(header: package.name,
+        host.present(SileoActionMenu(header: nil,
                                      items: items,
                                      sourceFrame: convert(bounds, to: nil)),
                      animated: true)

@@ -822,7 +822,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     @objc private func presentShareCard(_ sender: UIButton) {
         guard let package = self.package else { return }
-        present(SileoActionMenu(header: package.name,
+        present(SileoActionMenu(header: nil,
                                 items: shareMenuActions(),
                                 sourceFrame: sender.convert(sender.bounds, to: nil)),
                 animated: true)
