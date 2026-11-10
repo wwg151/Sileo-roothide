@@ -221,7 +221,7 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
     private func rebuildRows() {
         checks.removeAll()
         let items = filtered.map { package -> SileoPanelTable.Item in
-            SileoPanelTable.Item(makeRow(for: package), height: 60)
+            SileoPanelTable.Item(makeRow(for: package))
         }
         listTable.setItems(items)
     }
@@ -235,7 +235,7 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
         label.text = package.name
         label.font = .systemFont(ofSize: 17)
         label.textColor = .label
-        label.numberOfLines = 2
+        label.numberOfLines = 0
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -342,7 +342,7 @@ final class SileoRemovedSourcesPanel: SileoPanelViewController {
         label.text = item.name.isEmpty ? item.url : item.name
         label.font = .systemFont(ofSize: 17)
         label.textColor = .label
-        label.numberOfLines = 2
+        label.numberOfLines = 0
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
 

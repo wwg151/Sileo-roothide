@@ -567,6 +567,52 @@ extension SileoPanelViewController {
         return row
     }
 
+    /// A row with a title and a detail on the same line, and no mark.
+    static func detailRow(title: String,
+                          detail: String?,
+                          handler: @escaping () -> Void) -> SileoPanelRow {
+        let row = SileoPanelRow()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addAction(UIAction { _ in handler() }, for: .touchUpInside)
+
+        let label = UILabel()
+        label.text = title
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = .label
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingMiddle
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(label)
+
+        var constraints = [
+            row.heightAnchor.constraint(equalToConstant: 52),
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor)
+        ]
+
+        if let detail = detail, !detail.isEmpty {
+            let detailLabel = UILabel()
+            detailLabel.text = detail
+            detailLabel.font = .systemFont(ofSize: 13)
+            detailLabel.textColor = .secondaryLabel
+            detailLabel.textAlignment = .right
+            detailLabel.numberOfLines = 1
+            detailLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+            detailLabel.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview(detailLabel)
+            constraints += [
+                detailLabel.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
+                detailLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: detailLabel.leadingAnchor, constant: -12)
+            ]
+        } else {
+            constraints.append(label.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -16))
+        }
+        NSLayoutConstraint.activate(constraints)
+        return row
+    }
+
     /// A small heading that groups rows, with no line under it.
     static func sectionLabel(_ text: String) -> UIView {
         let container = UIView()
@@ -596,7 +642,10 @@ extension SileoPanelViewController {
     }
 
     /// A capsule button for the footer.
-    static func capsuleButton(title: String, filled: Bool = true, handler: @escaping () -> Void) -> UIButton {
+    static func capsuleButton(title: String,
+                              filled: Bool = true,
+                              color: UIColor = .tintColor,
+                              handler: @escaping () -> Void) -> UIButton {
         let button = UIButton(type: .system)
         button.setTitle(title, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
@@ -604,15 +653,15 @@ extension SileoPanelViewController {
         button.layer.cornerCurve = .continuous
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         if filled {
-            button.backgroundColor = .tintColor
+            button.backgroundColor = color
             button.setTitleColor(.white, for: .normal)
             button.setTitleColor(UIColor.white.withAlphaComponent(0.6), for: .disabled)
         } else {
             button.backgroundColor = .clear
-            button.setTitleColor(.tintColor, for: .normal)
+            button.setTitleColor(color, for: .normal)
             button.setTitleColor(.tertiaryLabel, for: .disabled)
             button.layer.borderWidth = 0.5
-            button.layer.borderColor = UIColor.tintColor.withAlphaComponent(0.4).cgColor
+            button.layer.borderColor = color.withAlphaComponent(0.4).cgColor
         }
         button.addAction(UIAction { _ in handler() }, for: .touchUpInside)
         return button
@@ -666,15 +715,22 @@ extension SileoPanelViewController {
             messageLabel.trailingAnchor.constraint(equalTo: block.trailingAnchor, constant: -8)
         ])
 
-        panel.table.setItems([
-            SileoPanelTable.Item(block),
-            SileoPanelTable.Item(row(title: confirmTitle, destructive: destructive) { [weak panel] in
-                panel?.close { onConfirm() }
-            }),
-            SileoPanelTable.Item(row(title: String(localizationKey: "Cancel")) { [weak panel] in
-                panel?.close()
-            })
-        ])
+        panel.table.setItems([SileoPanelTable.Item(block)])
+
+        // 取消 on the left, the answer on the right, both the same width.
+        let cancel = capsuleButton(title: String(localizationKey: "Cancel"), filled: false) { [weak panel] in
+            panel?.close()
+        }
+        let accept = capsuleButton(title: confirmTitle,
+                                   filled: true,
+                                   color: destructive ? .systemRed : .tintColor) { [weak panel] in
+            panel?.close { onConfirm() }
+        }
+        let footer = UIStackView(arrangedSubviews: [cancel, accept])
+        footer.axis = .horizontal
+        footer.spacing = 10
+        footer.distribution = .fillEqually
+        panel.setFooter(footer)
         return panel
     }
 

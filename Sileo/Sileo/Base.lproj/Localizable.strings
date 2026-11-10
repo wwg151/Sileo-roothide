@@ -305,10 +305,10 @@
 
 /* Removed sources */
 "Removed_Sources_Title" = "Removed Sources";
-"Removed_Sources_Header_Count" = "%lu removed source(s). Pick the ones to add back.";
+"Removed_Sources_Header_Count" = "%lu removed source(s). Pick the ones to restore.";
 "Removed_Sources_Empty" = "Nothing here yet. A source removed with a swipe is kept in this list, so it can be put back.";
 "Removed_Sources_Add" = "Add to Sources";
-"Removed_Sources_Add_Count" = "Add %lu Source(s)";
+"Removed_Sources_Add_Count" = "Restore (%lu)";
 "Removed_Sources_Forget" = "Forget";
 "Removed_Sources_Add_Failed" = "The picked sources could not be added.";
 "Select_All" = "Select All";

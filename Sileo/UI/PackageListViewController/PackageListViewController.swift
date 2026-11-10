@@ -824,9 +824,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                                             icon: "folder")
         var items: [SileoPanelTable.Item] = []
         for folder in folders.prefix(20) {
-            items.append(SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: folder.name,
-                                                                                 detail: Self.backupDateText(folder),
-                                                                                 selected: false) { [weak panel] in
+            items.append(SileoPanelTable.Item(SileoPanelViewController.detailRow(title: folder.name,
+                                                                                 detail: Self.backupDateText(folder)) { [weak panel] in
                 panel?.close {
                     completion(folder)
                 }
