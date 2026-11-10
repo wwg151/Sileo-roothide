@@ -471,7 +471,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 self?.presentClearBackupsMenu()
             }
         ]
-        return UIMenu(title: String(localizationKey: "Backup_Restore"), children: actions)
+        // No header: a titled menu gets a header section the system separates
+        // from the rows with a line.
+        return UIMenu(children: actions)
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {
