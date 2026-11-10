@@ -386,19 +386,19 @@
 "Source_No_Preferred_Arch" = "找不到 %@ 的首选架构";
 "Source_Invalid_Signature" = "GPG 签名无效：%@";
 "Source_No_Signature" = "%@ 没有有效的 GPG 签名";
-"Source_No_Packages" = "找不到软件包列表文件：%@";
+"Source_No_Packages" = "找不到插件包列表文件：%@";
 "Source_Bad_Hash" = "%2$@ 里 %1$@ 的哈希校验失败！";
-"Source_Decompress_Failed" = "无法解压 %@ 的软件包列表（%@）：%@";
+"Source_Decompress_Failed" = "无法解压 %@ 的插件包列表（%@）：%@";
 
-"Log_Read_Lists" = "正在读取软件包列表...";
+"Log_Read_Lists" = "正在读取插件包列表...";
 "Log_Build_Tree" = "正在分析依赖关系树...";
 "Log_Read_State" = "正在读取状态信息...";
-"Log_Auto_Installed" = "以下软件包为自动安装，且已不再需要：";
+"Log_Auto_Installed" = "以下插件包为自动安装，且已不再需要：";
 "Log_Autoremove_Hint" = "可使用 'apt autoremove' 卸载它们。";
-"Log_Will_Install" = "以下新软件包将被安装：";
-"Log_Will_Upgrade" = "以下软件包将被升级：";
-"Log_Will_Downgrade" = "以下软件包将被降级：";
-"Log_Will_Remove" = "以下软件包将被卸载：";
+"Log_Will_Install" = "以下新插件包将被安装：";
+"Log_Will_Upgrade" = "以下插件包将被升级：";
+"Log_Will_Downgrade" = "以下插件包将被降级：";
+"Log_Will_Remove" = "以下插件包将被卸载：";
 "Log_Summary" = "升级 $1 个，新安装 $2 个，卸载 $3 个，未升级 $4 个。";
 "Log_Disk_Used" = "此操作将额外占用 $1 磁盘空间。";
 "Log_Disk_Freed" = "此操作将释放 $1 磁盘空间。";
@@ -410,7 +410,7 @@
 "Log_Ign" = "忽略：$1 $2";
 "Log_Err" = "错误：$1 $2";
 "Log_Index_Failed" = "部分索引文件下载失败。它们已被忽略，或改用旧的文件。";
-"Log_Dpkg_Select" = "正在选择未安装的软件包 $1。";
+"Log_Dpkg_Select" = "正在选择未安装的插件包 $1。";
 "Log_Dpkg_Database" = "（正在读取数据库 ... 当前已安装 $1 个文件和目录。）";
 "Log_Dpkg_Prepare" = "正在准备解包 .../$1 ...";
 "Log_Dpkg_Unpack_Over" = "正在解包 $1（$2），覆盖（$3）...";
@@ -420,16 +420,17 @@
 "Log_Dpkg_Purge" = "正在清除 $1（$2）的配置文件...";
 "Log_Dpkg_Triggers" = "正在处理 $1（$2）的触发器...";
 "Log_Dpkg_Warning" = "dpkg：警告：";
-"Log_Dpkg_Error" = "dpkg：处理软件包 $1（--$2）时出错：";
+"Log_Dpkg_Error" = "dpkg：处理插件包 $1（--$2）时出错：";
 "Log_Dpkg_Dep_Config" = "dpkg：依赖问题阻止了 $1 的配置：";
 "Log_Dpkg_Dep_Unconfigured" = " 依赖问题 - 保持未配置状态";
 "Log_Dpkg_Errors" = "处理过程中出现错误：";
 "Log_Depends_However" = " $1 依赖于 $2；但是：";
-"Log_Not_Installed" = "  软件包 $1 尚未安装。";
-"Log_Not_Configured" = "  软件包 $1 尚未配置。";
+"Log_Not_Installed" = "  插件包 $1 尚未安装。";
+"Log_Not_Configured" = "  插件包 $1 尚未配置。";
 "Log_E" = "错误：";
 "Log_W" = "警告：";
 "Log_Error_Prefix" = "错误：";
 
 "Reset" = "重置";
 "Log_Dpkg_Downgrade" = "dpkg：警告：正在降级 $1，从 $2 到 $3";
+"Log_Summary_Downgrade" = "升级 $1 个，新安装 $2 个，降级 $3 个，卸载 $4 个，未升级 $5 个。";

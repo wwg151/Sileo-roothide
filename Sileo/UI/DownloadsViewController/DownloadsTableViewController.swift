@@ -955,6 +955,7 @@ enum APTLogTranslator {
         ("(?m)^The following packages will be DOWNGRADED:$", "Log_Will_Downgrade"),
         ("(?m)^The following packages will be REMOVED:$", "Log_Will_Remove"),
         ("(?m)^The following packages will be removed:$", "Log_Will_Remove"),
+        ("(?m)^(\\d+) upgraded, (\\d+) newly installed, (\\d+) downgraded, (\\d+) to remove and (\\d+) not upgraded\\.$", "Log_Summary_Downgrade"),
         ("(?m)^(\\d+) upgraded, (\\d+) newly installed, (\\d+) to remove and (\\d+) not upgraded\\.$", "Log_Summary"),
         ("(?m)^After this operation, (.+) of additional disk space will be used\\.$", "Log_Disk_Used"),
         ("(?m)^After this operation, (.+) disk space will be freed\\.$", "Log_Disk_Freed"),

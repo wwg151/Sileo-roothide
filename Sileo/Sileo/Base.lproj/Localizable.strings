@@ -427,3 +427,4 @@
 
 "Reset" = "Reset";
 "Log_Dpkg_Downgrade" = "dpkg: warning: downgrading $1 from $2 to $3";
+"Log_Summary_Downgrade" = "$1 upgraded, $2 newly installed, $3 downgraded, $4 to remove and $5 not upgraded.";
