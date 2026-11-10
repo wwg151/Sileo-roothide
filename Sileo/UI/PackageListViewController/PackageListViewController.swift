@@ -753,15 +753,17 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             ("Clear_Sources", .sources),
             ("Clear_All", nil)
         ]
+        var items: [SileoPanelTable.Item] = []
         for (key, kind) in options {
-            panel.contentStack.addArrangedSubview(SileoPanelViewController.row(title: String(localizationKey: key),
-                                                                               iconName: "trash",
-                                                                               destructive: true) { [weak self, weak panel] in
+            items.append(SileoPanelTable.Item(SileoPanelViewController.row(title: String(localizationKey: key),
+                                                                            iconName: "trash",
+                                                                            destructive: true) { [weak self, weak panel] in
                 panel?.close {
                     self?.confirmClearBackups(kind: kind, title: String(localizationKey: key))
                 }
-            })
+            }))
         }
+        panel.table.setItems(items)
         panel.present(from: self)
     }
 
@@ -820,15 +822,17 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         let panel = SileoPanelViewController(title: title,
                                             subtitle: String(localizationKey: "Backup_Choose_Folder"),
                                             icon: "folder")
+        var items: [SileoPanelTable.Item] = []
         for folder in folders.prefix(20) {
-            panel.contentStack.addArrangedSubview(SileoPanelViewController.choiceRow(title: folder.name,
-                                                                                     detail: Self.backupDateText(folder),
-                                                                                     selected: false) { [weak panel] in
+            items.append(SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: folder.name,
+                                                                                 detail: Self.backupDateText(folder),
+                                                                                 selected: false) { [weak panel] in
                 panel?.close {
                     completion(folder)
                 }
-            })
+            }))
         }
+        panel.table.setItems(items)
         panel.present(from: self)
     }
 
