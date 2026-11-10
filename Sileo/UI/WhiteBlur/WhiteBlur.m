@@ -20,11 +20,8 @@
 // one: it stays translucent whatever the app does to its own blurs. A backdrop
 // inside the menu's hierarchy is left alone, so the wash never reaches it.
 static BOOL ApelinInsideContextMenu(UIView *view) {
-    Class menuView = NSClassFromString(@"_UIContextMenuView");
-    Class listView = NSClassFromString(@"_UIContextMenuListView");
     for (UIView *search = view; search; search = search.superview) {
-        if ((menuView && [search isKindOfClass:menuView]) ||
-            (listView && [search isKindOfClass:listView])) {
+        if ([NSStringFromClass([search class]) containsString:@"ContextMenu"]) {
             return YES;
         }
     }
@@ -47,6 +44,72 @@ static void ApelinRemember(id object, void *key, id value) {
 - (void)setFilters:(NSArray *)filters;
 @end
 
+// A menu's own separators: iOS 16 draws one wherever it starts a new section,
+// and these menus are a single section, so every line here is unwanted. They
+// hide themselves rather than being removed, so the menu's layout stays as the
+// system arranged it.
+hook(_UIContextMenuSeparatorView)
+
+- (void)layoutSubviews {
+    _orig(void);
+    [(UIView *)self setHidden:YES];
+}
+
+- (void)didMoveToWindow {
+    _orig(void);
+    [(UIView *)self setHidden:YES];
+}
+
+endhook
+
+// What the menu is actually made of, written where a look from outside can
+// reach it: which view carries the material, and whether the wash reached it.
+static void ApelinDumpView(UIView *view, int depth, NSMutableString *out) {
+    if (depth > 10) return;
+    NSString *indent = [@"" stringByPaddingToLength:(NSUInteger)(depth * 2) withString:@" " startingAtIndex:0];
+    [out appendFormat:@"%@%@ frame=%@ alpha=%.2f hidden=%d bg=%@\n",
+     indent,
+     NSStringFromClass([view class]),
+     NSStringFromCGRect(view.frame),
+     view.alpha,
+     view.hidden,
+     view.backgroundColor];
+    for (UIView *subview in view.subviews) {
+        ApelinDumpView(subview, depth + 1, out);
+    }
+}
+
+static void ApelinAppendMenuDump(NSString *text) {
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"apelin_menu_dump.txt"];
+    NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+        if (handle) {
+            [handle seekToEndOfFile];
+            [handle writeData:data];
+            [handle closeFile];
+            return;
+        }
+    }
+    [data writeToFile:path atomically:YES];
+}
+
+hook(_UIContextMenuView)
+
+- (void)layoutSubviews {
+    _orig(void);
+    UIView *menu = (UIView *)self;
+    if (!menu.window) return;
+    static char dumpedKey;
+    if (objc_getAssociatedObject(self, &dumpedKey)) return;
+    objc_setAssociatedObject(self, &dumpedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSMutableString *out = [NSMutableString string];
+    ApelinDumpView(menu, 0, out);
+    ApelinAppendMenuDump([NSString stringWithFormat:@"\n=== menu at %@ ===\n%@", [NSDate date], out]);
+}
+
+endhook
+
 hook(_UIVisualEffectSubview)
 
 - (void)setFilters:(NSArray *)filters {
@@ -62,6 +125,7 @@ hook(_UIVisualEffectSubview)
                 }
             }
             if (ApelinInsideContextMenu((UIView *)self)) {
+                ApelinAppendMenuDump([NSString stringWithFormat:@"[kept the system's material] %@\n", NSStringFromClass([self class])]);
                 _orig(void, filters);
                 return;
             }
