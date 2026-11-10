@@ -446,3 +446,33 @@
 "Backup_Count_Sources" = "%lu sources";
 
 "Version_Current_Local" = "Current version: installed locally";
+
+"Queue_Title" = "Download Queue";
+"Queue_View_Log" = "View Log";
+"Queue_View_Log_Short" = "Log";
+"Queue_Cancel_All" = "Cancel All";
+"Queue_Cancel_All_Message" = "Every queued task will be cancelled.";
+"Queue_Done" = "All Done";
+"Queue_Waiting" = "Waiting";
+"Queue_Converting" = "Converting";
+"Queue_Installing" = "Installing";
+"Queue_Uninstalling" = "Removing";
+"Queue_Downloading" = "Downloading";
+"Queue_Failed" = "Failed";
+"Queue_Failed_N" = "%lu failed";
+"Queue_Items" = "%lu items";
+
+"Queue_Title" = "Download Queue";
+"Queue_View_Log" = "View Log";
+"Queue_View_Log_Short" = "Log";
+"Queue_Cancel_All" = "Cancel All";
+"Queue_Cancel_All_Message" = "Every queued task will be cancelled.";
+"Queue_Done" = "All Done";
+"Queue_Waiting" = "Waiting";
+"Queue_Converting" = "Converting";
+"Queue_Installing" = "Installing";
+"Queue_Uninstalling" = "Removing";
+"Queue_Downloading" = "Downloading";
+"Queue_Failed" = "Failed";
+"Queue_Failed_N" = "%lu failed";
+"Queue_Items" = "%lu items";

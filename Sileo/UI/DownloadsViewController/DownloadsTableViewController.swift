@@ -566,6 +566,7 @@ class DownloadsTableViewController: SileoViewController {
         }
         
         DownloadManager.shared.aptRunning = true
+        QueueCenter.shared.installStarted()
         DownloadManager.shared.aptFinished = false
         
         TabBarController.singleton?.updatePopup()
@@ -606,6 +607,7 @@ class DownloadsTableViewController: SileoViewController {
             }
         }, completionCallback: { status, finish, refresh in
             NSLog("SileoLog: apt completionCallback \(status) \(finish) \(refresh)")
+            QueueCenter.shared.aptFinished(ok: status == 0)
             if status == 0 {
                 installedToRecord.forEach { InstalledSourceStore.record($0) }
                 removedToForget.forEach { InstalledSourceStore.remove(identifier: $0) }

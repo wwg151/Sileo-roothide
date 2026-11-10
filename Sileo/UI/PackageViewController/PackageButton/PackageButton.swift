@@ -39,7 +39,14 @@ class PackageButton: UIButton {
                                                selector: #selector(updateSileoColors),
                                                name: SileoThemeManager.sileoChangedThemeNotification,
                                                object: nil)
+        NotificationCenter.default.addObserver(weakSelf as Any,
+                                               selector: #selector(queueChanged),
+                                               name: QueueCenter.queueChangedNotification,
+                                               object: nil)
     }
+
+    /// Buttons that show a task's progress override this.
+    @objc func queueChanged() {}
     
     override func layoutSubviews() {
         super.layoutSubviews()

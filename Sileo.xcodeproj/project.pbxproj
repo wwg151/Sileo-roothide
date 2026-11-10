@@ -699,6 +699,9 @@
         A1C0DE00000000000000C200 /* SileoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C201 /* SileoPanel.swift */; };
         A1C0DE00000000000000C202 /* SileoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C201 /* SileoPanel.swift */; };
         A1C0DE00000000000000C203 /* SileoPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C201 /* SileoPanel.swift */; };
+        A1C0DE00000000000000C230 /* QueueCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C231 /* QueueCenter.swift */; };
+        A1C0DE00000000000000C232 /* QueueCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C231 /* QueueCenter.swift */; };
+        A1C0DE00000000000000C233 /* QueueCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C231 /* QueueCenter.swift */; };
         A1C0DE00000000000000C210 /* SileoPanelPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C211 /* SileoPanelPickers.swift */; };
         A1C0DE00000000000000C212 /* SileoPanelPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C211 /* SileoPanelPickers.swift */; };
         A1C0DE00000000000000C213 /* SileoPanelPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C211 /* SileoPanelPickers.swift */; };
@@ -1451,6 +1454,7 @@
         A1C0DE00000000000000C1F0 /* SileoActionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SileoActionMenu.swift; sourceTree = "<group>"; };
         A1C0DE00000000000000C201 /* SileoPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SileoPanel.swift; sourceTree = "<group>"; };
         A1C0DE00000000000000C211 /* SileoPanelPickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SileoPanelPickers.swift; sourceTree = "<group>"; };
+        A1C0DE00000000000000C231 /* QueueCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueCenter.swift; sourceTree = "<group>"; };
 		E15A954826B99104000DB10E /* LanguageSelectionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSelectionViewController.swift; sourceTree = "<group>"; };
 		E15A954B26B99408000DB10E /* LanguageSelectionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSelectionCell.swift; sourceTree = "<group>"; };
 		E15B5BCE2756B8D90003A56D /* en-PT */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en-PT"; path = "Sileo/en-PT.lproj/Categories.strings"; sourceTree = "<group>"; };
@@ -2115,6 +2119,7 @@
                 A1C0DE00000000000000C1F0 /* SileoActionMenu.swift */,
                 A1C0DE00000000000000C201 /* SileoPanel.swift */,
                 A1C0DE00000000000000C211 /* SileoPanelPickers.swift */,
+                A1C0DE00000000000000C231 /* QueueCenter.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -4325,6 +4330,7 @@
                 A1C0DE00000000000000C1F2 /* SileoActionMenu.swift in Sources */,
                 A1C0DE00000000000000C202 /* SileoPanel.swift in Sources */,
                 A1C0DE00000000000000C212 /* SileoPanelPickers.swift in Sources */,
+                A1C0DE00000000000000C232 /* QueueCenter.swift in Sources */,
 				F183CFB12318D1FF00D3AF3B /* AppDelegate.swift in Sources */,
 				F1C85B4E2325835D0064D3A2 /* SileoSeparatorView.swift in Sources */,
 				E15A954D26B99408000DB10E /* LanguageSelectionCell.swift in Sources */,
@@ -4527,7 +4533,9 @@
 				E1D44BB82665093A00A12A77 /* SileoTableView.swift in Sources */,
                 A1C0DE00000000000000C1F3 /* SileoActionMenu.swift in Sources */,
                 A1C0DE00000000000000C203 /* SileoPanel.swift in Sources */,
+                A1C0DE00000000000000C230 /* QueueCenter.swift in Sources */,
                 A1C0DE00000000000000C213 /* SileoPanelPickers.swift in Sources */,
+                A1C0DE00000000000000C233 /* QueueCenter.swift in Sources */,
 				FB6F3D3124AA634E00E941F8 /* PaymentError.swift in Sources */,
 				F147E67C22F02EAB0048F868 /* CSGradientView.swift in Sources */,
 				E18CD2D1262C8E7500FF499C /* NewsResolver.swift in Sources */,

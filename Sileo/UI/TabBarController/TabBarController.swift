@@ -72,6 +72,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         self.tabBar.layoutIfNeeded()
         applyFloatingStyle()
         
+        QueueCenter.shared.attach(to: self.view, tabBar: self.tabBar)
         self.updatePopup()
     }
     
@@ -281,71 +282,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     
     func updatePopup(animated:Bool = true, completion: (() -> Void)? = nil, bypass: Bool = false) {
-        func hideRegardless() {
-            if UIDevice.current.userInterfaceIdiom == .pad && self.view.frame.width >= ipadModeMinWidth {
-                downloadsController?.popupItem.title = String(localizationKey: "Queued_Package_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), 0)
-                self.dismissPopupController()
-                self.presentPopup(animated: animated, completion: completion)
-            } else {
-                self.dismissPopup(animated: animated, completion: completion)
-            }
-        }
-//we should never dismiss the popup if the queue is not empty (will cause TabBar to never display anymore)
-//        if bypass {
-//            hideRegardless()
-//            return
-//        }
-        
-        let manager = DownloadManager.shared
-        NSLog("SileoLog: updatePopup(\(completion),\(bypass)) : \(self.view.frame.width) : queueRunning=\(manager.queueRunning) aptRunning=\(manager.aptRunning)  aptFinished=\(manager.aptFinished) operationCount=\(manager.operationCount()) downloading=\(manager.downloadingPackages()) ready=\(manager.readyPackages()) installing=\(manager.installingPackages()) uninstalling=\(manager.uninstallingPackages()) verifyComplete=\(manager.verifyComplete())")
-//        Thread.callStackSymbols.forEach{NSLog("SileoLog: updatePopup callstack=\($0)")}
-        
-        if manager.operationCount() == 0 {
-            assert(manager.queueRunning == false)
-            
-            //requires async due the deadlock: dismissPopupController->(LNPopupController)->viewDidLayoutSubviews->updatePopup->dismissPopup on iphone mode on ipad
-            DispatchQueue.main.async {
-                hideRegardless()
-            }
-        }
-        else if !manager.queueRunning {
-            downloadsController?.popupItem.title = String(localizationKey: "Queued_Package_Status")
-            downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.operationCount())
-            downloadsController?.popupItem.progress = 0
-            self.presentPopup(completion: completion)
-        }
-        else if manager.aptFinished {
-            downloadsController?.popupItem.title = String(localizationKey: "Done")
-            downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.operationCount())
-            downloadsController?.popupItem.progress = 0
-            self.presentPopup(completion: completion)
-        }
-        else if manager.aptRunning {
-            if manager.installingPackages() > 0 {
-                downloadsController?.popupItem.title = String(localizationKey: "Installing_Package_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.installingPackages())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            } else if manager.uninstallingPackages() > 0 {
-                downloadsController?.popupItem.title = String(localizationKey: "Removal_Queued_Package_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.uninstallingPackages())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            }
-        }
-        else {
-            if manager.downloadingPackages() > 0 {
-                downloadsController?.popupItem.title = String(localizationKey: "Downloading_Package_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.downloadingPackages())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            } else if manager.verifyComplete() {
-                downloadsController?.popupItem.title = String(localizationKey: "Ready_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.operationCount())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            }
+        // The legacy popup bar is retired: the queue lives in the capsule above
+        // the tab bar and the queue sheet now.
+        DispatchQueue.main.async {
+            QueueCenter.shared.sync()
+            completion?()
         }
     }
     

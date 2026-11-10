@@ -452,3 +452,31 @@
 "Backup_Count_Sources" = "%lu 个源";
 
 "Version_Current_Local" = "当前版本：本地安装";
+
+"Queue_Title" = "下载队列";
+"Queue_View_Log" = "查看日志";
+"Queue_View_Log_Short" = "日志";
+"Queue_Cancel_All" = "取消全部";
+"Queue_Cancel_All_Message" = "将取消队列中的全部任务。";
+"Queue_Done" = "全部完成";
+"Queue_Waiting" = "等待开始";
+"Queue_Converting" = "转换中";
+"Queue_Installing" = "安装中";
+"Queue_Uninstalling" = "卸载中";
+"Queue_Downloading" = "下载中";
+"Queue_Failed" = "失败";
+"Queue_Failed_N" = "失败 
+"Queue_Title" = "下载队列";
+"Queue_View_Log" = "查看日志";
+"Queue_View_Log_Short" = "日志";
+"Queue_Cancel_All" = "取消全部";
+"Queue_Cancel_All_Message" = "将取消队列中的全部任务。";
+"Queue_Done" = "全部完成";
+"Queue_Waiting" = "等待开始";
+"Queue_Converting" = "转换中";
+"Queue_Installing" = "安装中";
+"Queue_Uninstalling" = "卸载中";
+"Queue_Downloading" = "下载中";
+"Queue_Failed" = "失败";
+"Queue_Failed_N" = "失败 %lu 项";
+"Queue_Items" = "%lu 项";

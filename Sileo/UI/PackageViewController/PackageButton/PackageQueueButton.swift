@@ -259,6 +259,62 @@ class PackageQueueButton: PackageButton {
     }
 
     // Context-menu previews are not in the view hierarchy, so present from what is actually on screen
+    // MARK: the task ring lives on this very button
+
+    private var queueRingOverlay: QueueRingOverlay?
+
+    override func queueChanged() {
+        guard let package = self.package else {
+            queueRingOverlay?.isHidden = true
+            titleLabel?.layer.opacity = 1
+            return
+        }
+        let state = QueueCenter.shared.state(for: package.package)
+        var text: String?
+        var fraction: CGFloat?
+        var failed = false
+        switch state {
+        case .downloading(let value):
+            text = String(format: "%.0f%%", value * 100)
+            fraction = value
+        case .converting:
+            text = String(localizationKey: "Queue_Converting")
+        case .installing:
+            text = String(localizationKey: "Queue_Installing")
+        case .uninstalling:
+            text = String(localizationKey: "Queue_Uninstalling")
+        case .waiting:
+            text = String(localizationKey: "Queue_Waiting")
+        case .failed:
+            text = "!"
+            failed = true
+        default:
+            break
+        }
+
+        if let text = text {
+            if queueRingOverlay == nil {
+                let overlay = QueueRingOverlay()
+                overlay.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(overlay)
+                NSLayoutConstraint.activate([
+                    overlay.centerXAnchor.constraint(equalTo: centerXAnchor),
+                    overlay.centerYAnchor.constraint(equalTo: centerYAnchor),
+                    overlay.widthAnchor.constraint(equalTo: widthAnchor),
+                    overlay.heightAnchor.constraint(equalTo: heightAnchor)
+                ])
+                queueRingOverlay = overlay
+            }
+            bringSubviewToFront(queueRingOverlay!)
+            titleLabel?.layer.opacity = 0
+            queueRingOverlay?.configure(text: text, fraction: fraction, failed: failed)
+            queueRingOverlay?.isHidden = false
+        } else {
+            titleLabel?.layer.opacity = 1
+            queueRingOverlay?.isHidden = true
+        }
+    }
+
     private func useVisiblePresenter() {
         guard viewControllerForPresentation?.view.window == nil else { return }
         var top = UIApplication.shared.keyWindow?.rootViewController
