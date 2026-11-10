@@ -1566,15 +1566,15 @@ extension SourcesViewController: UITableViewDelegate { // UITableViewDelegate
     func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         UIContextMenuConfiguration(identifier: nil,
                                    previewProvider: nil) { [weak self] _ in
-            let copyAction = UIAction(title: "Copy") { [weak self] _ in
+            let copyAction = UIAction(title: String(localizationKey: "Copy")) { [weak self] _ in
                 let repo = self?.sortedRepoList[indexPath.row]
                 UIPasteboard.general.string = repo?.aptSource
             }
-            let deleteAction = UIAction(title: "Remove") { [weak self] _ in
+            let deleteAction = UIAction(title: String(localizationKey: "Remove")) { [weak self] _ in
                 guard let strong = self else { return }
                 strong.deleteRepo(at: indexPath)
             }
-            let refreshAction = UIAction(title: "Refresh") { [weak self] _ in
+            let refreshAction = UIAction(title: String(localizationKey: "Refresh")) { [weak self] _ in
                 guard let strong = self else { return }
                 let repo = strong.sortedRepoList[indexPath.row]
                 strong.updateSpecific([repo])

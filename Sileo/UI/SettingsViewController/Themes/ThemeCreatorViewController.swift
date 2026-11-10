@@ -157,16 +157,18 @@ class ThemeCreatorViewController: BaseSettingsViewController {
         case 2:
             tableView.deselectRow(at: indexPath, animated: true)
             guard let themeName = themeName else {
-                let controller = UIAlertController(title: "Please set a name.", message: nil, preferredStyle: .alert)
-                controller.addAction(.init(title: "OK", style: .cancel))
+                let controller = UIAlertController(title: String(localizationKey: "Theme_Name_Required"), message: nil, preferredStyle: .alert)
+                controller.addAction(.init(title: String(localizationKey: "OK"), style: .cancel))
                 self.present(controller, animated: true, completion: nil)
                 return
             }
             
             // make sure the name isn't already being used
             guard !SileoThemeManager.shared.themeList.contains(where: { $0.name==themeName || String(localizationKey: $0.name) == themeName }) else {
-                let controller = UIAlertController(title: "Cannot use name", message: "The name \"\(themeName)\" is already being used", preferredStyle: .alert)
-                controller.addAction(.init(title: "OK", style: .cancel, handler: nil))
+                let controller = UIAlertController(title: String(localizationKey: "Theme_Name_Taken_Title"),
+                                                   message: String(format: String(localizationKey: "Theme_Name_Taken_Body"), themeName),
+                                                   preferredStyle: .alert)
+                controller.addAction(.init(title: String(localizationKey: "OK"), style: .cancel, handler: nil))
                 self.present(controller, animated: true, completion: nil)
                 return
             }

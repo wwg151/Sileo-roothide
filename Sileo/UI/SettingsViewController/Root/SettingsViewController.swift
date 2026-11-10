@@ -295,8 +295,8 @@ extension SettingsViewController { // UITableViewDataSource
             case 2: SileoThemeManager.shared.resetTintColor() // Tint color reset
             case 3:
 #if targetEnvironment(macCatalyst)
-                let errorVC = UIAlertController(title: "Not Supported", message: "Alternate Icons are currently not supported in macOS", preferredStyle: .alert)
-                errorVC.addAction(UIAlertAction(title: "Ok", style: .cancel, handler: { _ in errorVC.dismiss(animated: true) }))
+                let errorVC = UIAlertController(title: String(localizationKey: "Not_Supported"), message: String(localizationKey: "Alternate_Icons_Mac_Unsupported"), preferredStyle: .alert)
+                errorVC.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: { _ in errorVC.dismiss(animated: true) }))
                 self.present(errorVC, animated: true)
 #else
                 let altVC = AltIconTableViewController()

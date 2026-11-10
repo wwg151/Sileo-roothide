@@ -357,3 +357,13 @@
 "Backup_Unavailable" = "Backup is not available in this build.";
 "Backup_No_File_List" = "The package's file list could not be read.";
 "Backup_No_Files" = "There is no file to put in the package.";
+
+"Copy" = "Copy";
+"Retry" = "Retry";
+"Add_Theme" = "Add Theme";
+"Theme_Name_Required" = "Please set a name.";
+"Theme_Name_Taken_Title" = "Cannot use name";
+"Theme_Name_Taken_Body" = "The name \"%@\" is already being used";
+"Not_Supported" = "Not Supported";
+"Alternate_Icons_Mac_Unsupported" = "Alternate Icons are currently not supported in macOS";
+"Form_Submit_Error" = "An error occurred while submitting the form.";

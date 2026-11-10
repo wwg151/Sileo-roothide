@@ -363,3 +363,13 @@
 "Backup_Unavailable" = "当前构建不支持备份功能。";
 "Backup_No_File_List" = "无法读取该包的文件清单。";
 "Backup_No_Files" = "没有可打包的文件。";
+
+"Copy" = "复制";
+"Retry" = "重试";
+"Add_Theme" = "添加主题";
+"Theme_Name_Required" = "请填写名称。";
+"Theme_Name_Taken_Title" = "无法使用该名称";
+"Theme_Name_Taken_Body" = "名称“%@”已被使用";
+"Not_Supported" = "不支持";
+"Alternate_Icons_Mac_Unsupported" = "macOS 版目前不支持更换图标";
+"Form_Submit_Error" = "提交表单时发生错误。";

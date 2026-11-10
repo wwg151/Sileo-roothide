@@ -591,7 +591,7 @@ class DownloadsTableViewController: SileoViewController {
                 textColor = Dusk.warningColor
             }
             
-            let substring = NSMutableAttributedString(string: output, attributes: [NSAttributedString.Key.foregroundColor: textColor])
+            let substring = NSMutableAttributedString(string: APTLogTranslator.localize(output), attributes: [NSAttributedString.Key.foregroundColor: textColor])
             DispatchQueue.main.async {
                 self.detailsAttributedString?.append(substring)
                 
@@ -920,4 +920,83 @@ extension DownloadsTableViewController: UITextViewDelegate {
     override func selectAll(_ sender: Any?) {
         detailsTextView?.selectAll(sender)
     }
+}
+
+/// The log apt and dpkg print is English whatever the app's language is. For a
+/// Chinese interface the lines people actually read are translated here, with
+/// the package names and versions left as they are; anything not matched is
+/// shown as it came.
+enum APTLogTranslator {
+
+    static var isChinese: Bool {
+        (Locale.preferredLanguages.first ?? "").lowercased().hasPrefix("zh")
+    }
+
+    static func localize(_ text: String) -> String {
+        guard isChinese, !text.isEmpty else { return text }
+        var result = text
+        for (pattern, replacement) in rules {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: replacement)
+        }
+        return result
+    }
+
+    private static let rules: [(String, String)] = [
+        // apt
+        ("(?m)^Reading package lists\\.\\.\\.$", "正在读取软件包列表..."),
+        ("(?m)^Building dependency tree\\.\\.\\.$", "正在分析依赖关系树..."),
+        ("(?m)^Reading state information\\.\\.\\.$", "正在读取状态信息..."),
+        ("(?m)^The following packages were automatically installed and are no longer required:$",
+         "以下软件包为自动安装，且已不再需要："),
+        ("(?m)^Use 'apt autoremove' to remove them\\.$", "可使用 'apt autoremove' 卸载它们。"),
+        ("(?m)^The following NEW packages will be installed:$", "以下新软件包将被安装："),
+        ("(?m)^The following packages will be upgraded:$", "以下软件包将被升级："),
+        ("(?m)^The following packages will be DOWNGRADED:$", "以下软件包将被降级："),
+        ("(?m)^The following packages will be REMOVED:$", "以下软件包将被卸载："),
+        ("(?m)^The following packages will be removed:$", "以下软件包将被卸载："),
+        ("(?m)^(\\d+) upgraded, (\\d+) newly installed, (\\d+) to remove and (\\d+) not upgraded\\.$",
+         "升级 $1 个，新安装 $2 个，卸载 $3 个，未升级 $4 个。"),
+        ("(?m)^After this operation, (.+) of additional disk space will be used\\.$",
+         "此操作将额外占用 $1 磁盘空间。"),
+        ("(?m)^After this operation, (.+) disk space will be freed\\.$", "此操作将释放 $1 磁盘空间。"),
+        ("(?m)^Need to get (.+)\\.$", "需要下载 $1。"),
+        ("(?m)^Fetched (.+) in (.+) \\((.+)\\)$", "已下载 $1，用时 $2（$3）"),
+        ("(?m)^Do you want to continue\\? \\[Y/n\\]$", "是否继续？[Y/n]"),
+        ("(?m)^Hit:(\\d+) (.+)$", "命中 $1 $2"),
+        ("(?m)^Get:(\\d+) (.+)$", "获取 $1 $2"),
+        ("(?m)^Ign:(\\d+) (.+)$", "忽略 $1 $2"),
+        ("(?m)^Err:(\\d+) (.+)$", "错误 $1 $2"),
+        ("(?m)^Some index files failed to download\\. They have been ignored, or old ones used instead\\.$",
+         "部分索引文件下载失败。它们已被忽略，或改用旧的文件。"),
+        ("(?m)^Could not find packages file for (.+)$", "错误：找不到软件包列表文件：$1"),
+        ("(?m)^Could not find release file for (.+)$", "错误：找不到 Release 文件：$1"),
+
+        // dpkg
+        ("(?m)^Selecting previously unselected package (.+)\\.$", "正在选择未安装的软件包 $1。"),
+        ("(?m)^\\(Reading database \\.\\.\\. (\\d+) files and directories currently installed\\.\\)$",
+         "（正在读取数据库 ... 当前已安装 $1 个文件和目录。）"),
+        ("(?m)^Preparing to unpack \\.\\.\\./(.+) \\.\\.\\.$", "正在准备解包 .../$1 ..."),
+        ("(?m)^Unpacking (.+) \\((.+)\\) over \\((.+)\\) \\.\\.\\.$", "正在解包 $1（$2），覆盖（$3）..."),
+        ("(?m)^Unpacking (.+) \\((.+)\\) \\.\\.\\.$", "正在解包 $1（$2）..."),
+        ("(?m)^Setting up (.+) \\((.+)\\) \\.\\.\\.$", "正在设置 $1（$2）..."),
+        ("(?m)^Removing (.+) \\((.+)\\) \\.\\.\\.$", "正在卸载 $1（$2）..."),
+        ("(?m)^Purging configuration files for (.+) \\((.+)\\) \\.\\.\\.$", "正在清除 $1（$2）的配置文件..."),
+        ("(?m)^Processing triggers for (.+) \\((.+)\\) \\.\\.\\.$", "正在处理 $1（$2）的触发器..."),
+        ("(?m)^dpkg: warning: ", "dpkg：警告："),
+        ("(?m)^dpkg: error processing package (.+) \\(--(\\w+)\\):$", "dpkg：处理软件包 $1（--$2）时出错："),
+        ("(?m)^dpkg: dependency problems prevent configuration of (.+):$", "dpkg：依赖问题阻止了 $1 的配置："),
+        ("(?m)^ dependency problems - leaving unconfigured$", " 依赖问题 - 保持未配置状态"),
+        ("(?m)^Errors were encountered while processing:$", "处理过程中出现错误："),
+        ("(?m)^ (.+) depends on (.+); however:$", " $1 依赖于 $2；但是："),
+        ("(?m)^  Package (.+) is not installed\\.$", "  软件包 $1 尚未安装。"),
+        ("(?m)^  Package (.+) is not configured yet\\.$", "  软件包 $1 尚未配置。"),
+        ("(?m)^  Package (.+) is not installed$", "  软件包 $1 尚未安装"),
+
+        // the first word of an apt error or warning line
+        ("(?m)^E: ", "错误："),
+        ("(?m)^W: ", "警告："),
+        ("(?m)^Error: ", "错误：")
+    ]
 }

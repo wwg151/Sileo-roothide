@@ -187,7 +187,7 @@ class DepictionFormViewController: SileoTableViewController {
             DispatchQueue.main.async {
                 guard success,
                       let dict = dict else {
-                    strong.presentErrorDialog(message: "An error occurred while submitting the form.", mustCancel: true)
+                    strong.presentErrorDialog(message: String(localizationKey: "Form_Submit_Error"), mustCancel: true)
                     return
                 }
                 guard dict["success"] as? Bool ?? false else {
@@ -210,7 +210,7 @@ class DepictionFormViewController: SileoTableViewController {
                 let alert = UIAlertController(title: title ?? fallbackTitle,
                                               message: message ?? fallbackMessage,
                                               preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: { _ in
+                alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: { _ in
                     if success {
                         strong.dismiss(animated: true, completion: nil)
                     }
@@ -224,7 +224,7 @@ class DepictionFormViewController: SileoTableViewController {
         let alert = UIAlertController(title: (title != nil ? title! : String(localizationKey: "Form_Error.Title", type: .error)),
                                       message: message, preferredStyle: .alert)
         if mustCancel && retry {
-            alert.addAction(UIAlertAction(title: "Retry", style: .default) { _ in
+            alert.addAction(UIAlertAction(title: String(localizationKey: "Retry"), style: .default) { _ in
                 self.submit(nil)
             })
         }
