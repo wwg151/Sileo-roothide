@@ -722,15 +722,12 @@ final class QueueRingOverlay: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // the ring sits inside the button: the caption only appears when the
-        // overlay is tall enough to hold both
-        let showsCaption = bounds.height >= 64
-        let available = showsCaption ? bounds.height - QueueRingOverlay.captionHeight : bounds.height
-        let diameter = max(16, min(bounds.width - 6, available - 2))
-        // a thick stroke on a small button would swallow the percentage
-        let lineWidth = min(QueueRingOverlay.lineWidth, max(2.5, diameter / 6))
-        let radius = max(4, diameter / 2 - lineWidth / 2)
-        let center = CGPoint(x: bounds.midX, y: showsCaption ? diameter / 2 + 1 : bounds.midY)
+        // a compact ring with its caption underneath, always both
+        let captionHeight: CGFloat = 16
+        let diameter = max(24, min(bounds.width, bounds.height - captionHeight - 6))
+        let lineWidth: CGFloat = 4
+        let radius = max(6, diameter / 2 - lineWidth / 2)
+        let center = CGPoint(x: bounds.midX, y: diameter / 2 + 2)
         let path = UIBezierPath(arcCenter: center, radius: radius,
                                 startAngle: -.pi / 2, endAngle: .pi * 3 / 2,
                                 clockwise: true).cgPath
@@ -742,15 +739,17 @@ final class QueueRingOverlay: UIView {
         ringLayer.path = path
         ringLayer.strokeEnd = fraction
 
-        percentLayer.fontSize = diameter >= 46 ? 15 : 11
+        percentLayer.fontSize = diameter >= 44 ? 13 : 11
         percentLayer.frame = CGRect(x: center.x - diameter / 2,
-                                    y: center.y - 10,
+                                    y: center.y - 9,
                                     width: diameter,
-                                    height: 20)
-        captionLayer.isHidden = !showsCaption
-        captionLayer.frame = CGRect(x: 0, y: diameter + 2,
+                                    height: 18)
+        captionLayer.isHidden = false
+        captionLayer.fontSize = 12
+        captionLayer.frame = CGRect(x: 0,
+                                    y: diameter + 6,
                                     width: bounds.width,
-                                    height: QueueRingOverlay.captionHeight)
+                                    height: captionHeight)
     }
 }
 

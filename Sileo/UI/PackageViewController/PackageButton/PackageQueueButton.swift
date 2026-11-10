@@ -298,25 +298,25 @@ class PackageQueueButton: PackageButton {
 
         if let caption = caption {
             if queueRingOverlay == nil {
+                guard let host = superview else { return }
                 let overlay = QueueRingOverlay()
                 overlay.translatesAutoresizingMaskIntoConstraints = false
-                addSubview(overlay)
+                // beside the button, not inside it: the button hides itself
+                // and the ring hangs from the same top edge, downwards
+                host.addSubview(overlay)
                 NSLayoutConstraint.activate([
                     overlay.centerXAnchor.constraint(equalTo: centerXAnchor),
-                    overlay.centerYAnchor.constraint(equalTo: centerYAnchor),
-                    overlay.widthAnchor.constraint(equalTo: widthAnchor),
-                    overlay.heightAnchor.constraint(equalTo: heightAnchor)
+                    overlay.topAnchor.constraint(equalTo: topAnchor),
+                    overlay.widthAnchor.constraint(equalToConstant: 84),
+                    overlay.heightAnchor.constraint(equalToConstant: 68)
                 ])
                 queueRingOverlay = overlay
             }
-            // the ring replaces the button's own look while a task runs
-            if savedButtonBackground == nil {
-                savedButtonBackground = backgroundColor
-            }
-            backgroundColor = .clear
-            self.alpha = 1
-            bringSubviewToFront(queueRingOverlay!)
+            isHidden = true
             titleLabel?.layer.opacity = 0
+            if let overlay = queueRingOverlay, let host = overlay.superview {
+                host.bringSubviewToFront(overlay)
+            }
             queueRingOverlay?.configure(percent: percent, caption: caption, fraction: fraction, failed: failed)
             queueRingOverlay?.isHidden = false
         } else {
@@ -325,13 +325,11 @@ class PackageQueueButton: PackageButton {
     }
 
     private func endQueueRing() {
-        titleLabel?.layer.opacity = 1
-        guard queueRingOverlay?.isHidden == false else { return }
+        let overlayVisible = queueRingOverlay?.isHidden == false
+        guard overlayVisible || isHidden else { return }
         queueRingOverlay?.isHidden = true
-        if let saved = savedButtonBackground {
-            backgroundColor = saved
-            savedButtonBackground = nil
-        }
+        isHidden = false
+        titleLabel?.layer.opacity = 1
         alpha = isEnabled ? customAlpha : customAlpha * 0.45
         updateStyle()
     }
