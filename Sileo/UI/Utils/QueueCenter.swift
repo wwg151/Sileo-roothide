@@ -1607,17 +1607,6 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         card.configure(item: item)
         card.translatesAutoresizingMaskIntoConstraints = false
         card.tag = indexPath.row
-        card.tapHandler = { [weak self] in
-            if item.isFailed {
-                if item.failureRead {
-                    QueueCenter.shared.removeFromBatch(item.identifier)
-                } else {
-                    self?.openLog()
-                }
-            } else if case .downloading = item.state {
-                QueueCenter.shared.togglePause(item.identifier)
-            }
-        }
         cell.contentView.addSubview(card)
         NSLayoutConstraint.activate([
             card.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
@@ -1821,11 +1810,6 @@ final class QueueLogSheetController: UIViewController {
 
 final class QueueCardCell: UIView {
 
-    var cancelHandler: (() -> Void)?
-    var logHandler: (() -> Void)?
-    /// what the round button on the right does: remove the row, or open the log
-    var tapHandler: (() -> Void)?
-
     private let iconView = UIView()
     private let iconLabel = UILabel()
     private let nameLabel = UILabel()
@@ -1835,14 +1819,14 @@ final class QueueCardCell: UIView {
     private let headLabel = UILabel()
     private var barFillWidth: NSLayoutConstraint?
     private var progressFraction: CGFloat = 0
-    private let actionButton = UIButton(type: .system)
-    private var cardTap: UITapGestureRecognizer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
         backgroundColor = .secondarySystemBackground
         layer.cornerRadius = 14
+        // the row itself is not a control: a tap belongs to the cell
+        isUserInteractionEnabled = false
         layer.cornerCurve = .continuous
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
@@ -1888,31 +1872,6 @@ final class QueueCardCell: UIView {
         headLabel.isHidden = true
         addSubview(headLabel)
 
-        actionButton.translatesAutoresizingMaskIntoConstraints = false
-        actionButton.layer.cornerRadius = 22
-        actionButton.layer.borderWidth = 1.4
-        actionButton.layer.borderColor = UIColor.separator.cgColor
-        actionButton.setTitleColor(.label, for: .normal)
-        actionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
-        actionButton.tintColor = .label
-        actionButton.setTitleColor(.label, for: .normal)
-        actionButton.addAction(UIAction { [weak self] _ in
-            guard let self = self else { return }
-            if let tapHandler = self.tapHandler {
-                tapHandler()
-            } else if self.actionButton.title(for: .normal) == String(localizationKey: "Queue_View_Log_Short") {
-                self.logHandler?()
-            } else {
-                self.cancelHandler?()
-            }
-        }, for: .touchUpInside)
-        addSubview(actionButton)
-        // a failed row is a big target: the whole card opens its log
-        let tap = UITapGestureRecognizer(target: self, action: #selector(cardTapped))
-        tap.isEnabled = false
-        addGestureRecognizer(tap)
-        cardTap = tap
-
 
         NSLayoutConstraint.activate([
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
@@ -1924,24 +1883,20 @@ final class QueueCardCell: UIView {
 
             nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 12),
             nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 13),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: actionButton.leadingAnchor, constant: -12),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
 
             statusLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             statusLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
-            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: actionButton.leadingAnchor, constant: -12),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
 
             barTrack.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            barTrack.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -12),
+            barTrack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             barTrack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
             barTrack.heightAnchor.constraint(equalToConstant: 3.5),
             barFill.leadingAnchor.constraint(equalTo: barTrack.leadingAnchor),
             barFill.topAnchor.constraint(equalTo: barTrack.topAnchor),
             barFill.bottomAnchor.constraint(equalTo: barTrack.bottomAnchor),
 
-            actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            actionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            actionButton.widthAnchor.constraint(equalToConstant: 44),
-            actionButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
@@ -1984,14 +1939,10 @@ final class QueueCardCell: UIView {
         positionBar(animated: true)
     }
 
-    @objc private func cardTapped() {
-        tapHandler?()
-    }
 
 
     func configure(item: QueueItem) {
         // only a failed row answers a tap on its body
-        cardTap?.isEnabled = item.isFailed
 
         nameLabel.text = item.name
         var status = item.statusText
@@ -2026,42 +1977,5 @@ final class QueueCardCell: UIView {
             : (progressFraction >= 1 ? .systemGreen : .tintColor)
         barFill.isHidden = progressFraction <= 0
         setNeedsLayout()
-
-        let title: String?
-        var symbol: String?
-        switch item.state {
-        case .waiting:
-            // nothing to hold yet: removal is a swipe
-            title = nil
-        case .downloading:
-            title = nil
-            symbol = item.isPaused ? "play.fill" : "pause.fill"
-            actionButton.layer.borderColor = UIColor.separator.cgColor
-            actionButton.tintColor = .label
-        case .failed:
-            if item.failureRead {
-                // the log has been read: the row can be taken out now
-                title = "✕"
-                actionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
-                actionButton.layer.borderColor = UIColor.separator.cgColor
-                actionButton.setTitleColor(.label, for: .normal)
-            } else {
-                title = String(localizationKey: "Queue_View_Log_Short")
-                // the word, not the glyph, has to fit the round button
-                actionButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
-                actionButton.layer.borderColor = UIColor.systemRed.withAlphaComponent(0.5).cgColor
-                actionButton.setTitleColor(.systemRed, for: .normal)
-            }
-        default:
-            title = nil
-        }
-        actionButton.setTitle(title, for: .normal)
-        if let symbol = symbol {
-            let configuration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-            actionButton.setImage(UIImage(systemName: symbol, withConfiguration: configuration), for: .normal)
-        } else {
-            actionButton.setImage(nil, for: .normal)
-        }
-        actionButton.isHidden = title == nil && symbol == nil
     }
 }
