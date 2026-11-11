@@ -321,6 +321,7 @@ final class DownloadManager {
         let package = download.package
         download.success = false
         download.progress = 0.99
+        download.converting = true
         download.message = String(localizationKey: "Compat_Converting")
         self.viewController.updateDownloadStatus(download: download)
         
@@ -350,6 +351,7 @@ final class DownloadManager {
     
     private func finishConversion(download: Download, original: Package, converted: Package?, failure: String?, output: URL) {
         download.message = nil
+        download.converting = false
         
         guard download.session == self.currentDownloadSession else {
             try? FileManager.default.removeItem(at: output)

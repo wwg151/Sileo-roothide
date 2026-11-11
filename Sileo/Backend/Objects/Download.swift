@@ -22,6 +22,8 @@ final class Download {
     var completed = false
     var started = false
     var message: String?
+    /// the roothide conversion is running inside this download's slot
+    var converting = false
     var session: UInt32
     
     init(package: Package, session: UInt32) {

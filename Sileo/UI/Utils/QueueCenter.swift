@@ -29,6 +29,8 @@ struct QueueItem {
     let state: QueueItemState
     /// 0…1 while apt works through the batch
     var aptFraction: CGFloat = 0
+    /// 0…1 while the roothide conversion runs
+    var convertingFraction: CGFloat = 0
     /// a failed task whose log has been read: it can be removed now
     var failureRead = false
 
@@ -52,6 +54,7 @@ struct QueueItem {
         if case .downloading(let fraction) = state { return fraction }
         if case .installing = state { return aptFraction }
         if case .uninstalling = state { return aptFraction }
+        if case .converting = state { return convertingFraction }
         return nil
     }
 }
@@ -99,7 +102,7 @@ extension DownloadManager {
                 if let download = downloads[identifier] {
                     if download.failureReason != nil {
                         state = .failed(download.failureReason)
-                    } else if download.message != nil && !download.completed {
+                    } else if download.converting || (download.message != nil && !download.completed) {
                         // the roothide conversion runs inside the download's slot
                         state = .converting
                     } else if download.started && !download.completed && !download.success {
@@ -114,12 +117,14 @@ extension DownloadManager {
                 } else {
                     state = .waiting
                 }
+                let converting = { if case .converting = state { return true }; return false }()
                 items.append(QueueItem(identifier: identifier,
                                        name: package.name ?? identifier,
                                        version: package.version,
                                        isRemoval: removal,
                                        state: state,
                                        aptFraction: aptActive ? aptFraction : 0,
+                                       convertingFraction: converting ? 0.99 : 0,
                                        failureRead: readFailures.contains(identifier)))
             }
         }
@@ -136,7 +141,7 @@ extension DownloadManager {
             let state: QueueItemState
             if download.failureReason != nil {
                 state = .failed(download.failureReason)
-            } else if download.message != nil && !download.completed {
+            } else if download.converting || (download.message != nil && !download.completed) {
                 state = .converting
             } else if download.started && !download.completed && !download.success {
                 state = .downloading(download.progress)
@@ -148,6 +153,7 @@ extension DownloadManager {
                                    version: download.package.version,
                                    isRemoval: false,
                                    state: state,
+                                   convertingFraction: { if case .converting = state { return 0.99 }; return 0 }(),
                                    failureRead: readFailures.contains(identifier)))
         }
 
