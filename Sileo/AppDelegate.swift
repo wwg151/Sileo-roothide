@@ -160,14 +160,10 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
                 }
             }
         }
-        // The switch in Settings: apply it to the tables already on screen, not
-        // only to the ones built afterwards.
+        // The switch in Settings: the tables on screen, on the other tabs and
+        // in the navigation stacks all take the colour at once.
         _ = NotificationCenter.default.addObserver(forName: Notification.Name("HideSeparators"), object: nil, queue: .main) { _ in
-            let color = UIColor.sileoSeparatorColor
-            UITableView.appearance().separatorColor = color
-            for window in UIApplication.shared.windows {
-                SileoAppDelegate.applySeparatorColor(color, in: window)
-            }
+            SileoAppDelegate.applySeparatorSetting()
         }
         self.updateTintColor()
         
@@ -297,6 +293,38 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
         self.window?.tintColor = tintColor
     }
     
+    /// The switch in Settings: every table takes the colour now — the ones on
+    /// screen, the ones on the other tabs and the ones pushed in their stacks —
+    /// so nothing waits for a restart.
+    static func applySeparatorSetting() {
+        let color = UIColor.sileoSeparatorColor
+        UITableView.appearance().separatorColor = color
+        for window in UIApplication.shared.windows {
+            applySeparatorColor(color, in: window)
+        }
+        guard let tab = TabBarController.singleton else { return }
+        for controller in tab.viewControllers ?? [] {
+            _ = controller.view
+            applySeparatorColor(color, in: controller.view)
+            var stacks: [UIViewController] = []
+            if let navigation = controller as? UINavigationController {
+                stacks = navigation.viewControllers
+            } else if let split = controller as? UISplitViewController {
+                stacks = split.viewControllers
+            }
+            for child in stacks {
+                _ = child.view
+                applySeparatorColor(color, in: child.view)
+                if let navigation = child as? UINavigationController {
+                    for pushed in navigation.viewControllers {
+                        _ = pushed.view
+                        applySeparatorColor(color, in: pushed.view)
+                    }
+                }
+            }
+        }
+    }
+
     /// Walks what is on screen and gives every table and hairline the colour the
     /// switch asks for; anything built later takes it from the appearance above.
     private static func applySeparatorColor(_ color: UIColor, in view: UIView) {
