@@ -76,6 +76,14 @@ extension DownloadManager {
         }
     }
 
+    /// The download's share of the bar: the reported fraction, or the bytes
+    /// when a server sends no length at all.
+    private func downloadFraction(_ download: Download) -> CGFloat {
+        if download.progress > 0 { return min(1, download.progress) }
+        guard download.totalBytesExpectedToWrite > 0 else { return 0 }
+        return min(1, CGFloat(download.totalBytesWritten) / CGFloat(download.totalBytesExpectedToWrite))
+    }
+
     private func buildSnapshot(readFailures: Set<String>) -> ([QueueItem], Bool) {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
@@ -106,7 +114,7 @@ extension DownloadManager {
                         // the roothide conversion runs inside the download's slot
                         state = .converting
                     } else if download.started && !download.completed && !download.success {
-                        state = .downloading(download.progress)
+                        state = .downloading(downloadFraction(download))
                     } else if aptActive {
                         state = removal ? .uninstalling : .installing
                     } else {
@@ -144,7 +152,7 @@ extension DownloadManager {
             } else if download.converting || (download.message != nil && !download.completed) {
                 state = .converting
             } else if download.started && !download.completed && !download.success {
-                state = .downloading(download.progress)
+                state = .downloading(downloadFraction(download))
             } else {
                 state = .waiting
             }
@@ -300,10 +308,17 @@ final class QueueCenter {
         DispatchQueue.main.async {
             self.installFailed = false
             self.doneShownAt = nil
-            self.aptTotal = max(DownloadManager.shared.operationCount(), 1)
-            self.aptCounted.removeAll()
-            self.aptPartial.removeAll()
-            self.aptFraction = 0
+            // a second apt pass in the same batch (the auto-remove of orphans,
+            // for instance) must not start the bar over
+            let continuing = self.aptFraction > 0 || !self.aptCounted.isEmpty || !self.aptPartial.isEmpty
+            if !continuing {
+                self.aptTotal = max(DownloadManager.shared.operationCount(), 1)
+                self.aptCounted.removeAll()
+                self.aptPartial.removeAll()
+                self.aptFraction = 0
+            } else {
+                self.aptTotal = max(self.aptTotal, DownloadManager.shared.operationCount())
+            }
             self.syncNow()
         }
     }
@@ -328,7 +343,8 @@ final class QueueCenter {
             }
             // dpkg reports very often: only redraw when the ring moves visibly
             guard abs(next - self.aptFraction) >= 0.005 else { return }
-            self.aptFraction = next
+            // never backwards: a second pass in the same batch keeps the bar
+            self.aptFraction = max(self.aptFraction, next)
             self.syncNow()
         }
     }
@@ -1132,6 +1148,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     private let subtitleLabel = UILabel()
     private let actionButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
+    private var rowTimer: Timer?
     private var actionFullConstraints: [NSLayoutConstraint] = []
     private var actionSplitConstraints: [NSLayoutConstraint] = []
 
@@ -1217,11 +1234,40 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         super.viewWillAppear(animated)
         QueueCenter.shared.sheetReappeared()
         reload()
+        startRowRefresh()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        rowTimer?.invalidate()
+        rowTimer = nil
         QueueCenter.shared.sheetClosed()
+    }
+
+    /// The bars are moved in place on a short timer: rebuilding the rows three
+    /// times a second made the progress look frozen between two snapshots.
+    private func startRowRefresh() {
+        rowTimer?.invalidate()
+        rowTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            self?.refreshVisibleRows()
+        }
+        if let rowTimer = rowTimer {
+            RunLoop.main.add(rowTimer, forMode: .common)
+        }
+    }
+
+    private func refreshVisibleRows() {
+        let snapshot = QueueCenter.shared.lastItems
+        guard snapshot.count == items.count else {
+            reload()
+            return
+        }
+        items = snapshot
+        for cell in table.visibleCells {
+            guard let indexPath = table.indexPath(for: cell), indexPath.row < items.count,
+                  let card = cell.contentView.subviews.first as? QueueCardCell else { continue }
+            card.configure(item: items[indexPath.row])
+        }
     }
 
     private func reload() {
