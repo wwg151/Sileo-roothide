@@ -99,7 +99,7 @@ extension SettingsViewController { // UITableViewDataSource
         case 1: // Themes
             return 5
         case 2:
-            return 13
+            return 14
         case 3: // About section
             return 5
         default:
@@ -224,6 +224,10 @@ extension SettingsViewController { // UITableViewDataSource
                 cell.amyPogLabel.text = String(localizationKey: "Floating_Tab_Bar")
                 cell.fallback = false
                 cell.defaultKey = "FloatingTabBar"
+            case 13:
+                cell.amyPogLabel.text = String(localizationKey: "Hide_Separators")
+                cell.fallback = true
+                cell.defaultKey = "HideSeparators"
             default:
                 fatalError("You done goofed")
             }

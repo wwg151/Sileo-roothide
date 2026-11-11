@@ -290,6 +290,7 @@
 "Conflict_Conflicts" = "Conflicts";
 "Conflict_Replaces" = "Replaces";
 "Floating_Tab_Bar" = "Floating Tab Bar";
+"Hide_Separators" = "Hide Separators";
 "Remove_Broken_Sources" = "Remove Broken Sources";
 "Remove_Broken_Sources.Title" = "Remove Broken Sources?";
 "Remove_Broken_Sources.Message" = "Sources that could not be loaded will be removed. This cannot be undone.";

@@ -160,6 +160,15 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
                 }
             }
         }
+        // The switch in Settings: apply it to the tables already on screen, not
+        // only to the ones built afterwards.
+        _ = NotificationCenter.default.addObserver(forName: Notification.Name("HideSeparators"), object: nil, queue: .main) { _ in
+            let color = UIColor.sileoSeparatorColor
+            UITableView.appearance().separatorColor = color
+            for window in UIApplication.shared.windows {
+                SileoAppDelegate.applySeparatorColor(color, in: window)
+            }
+        }
         self.updateTintColor()
         
         // Force all view controllers to load now
@@ -281,13 +290,26 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
         
         UICollectionView.appearance().tintColor = tintColor
         UITableView.appearance().tintColor = tintColor
-        // No hairlines between rows anywhere in the app: the lists are told
-        // apart by spacing and their own headers instead.
-        UITableView.appearance().separatorColor = .clear
+        // Hairlines between rows follow the switch in Settings; hidden unless
+        // the user asks for them.
+        UITableView.appearance().separatorColor = UIColor.sileoSeparatorColor
         DepictionBaseView.appearance().tintColor = tintColor
         self.window?.tintColor = tintColor
     }
     
+    /// Walks what is on screen and gives every table and hairline the colour the
+    /// switch asks for; anything built later takes it from the appearance above.
+    private static func applySeparatorColor(_ color: UIColor, in view: UIView) {
+        if let table = view as? UITableView {
+            table.separatorColor = color
+        } else if let separator = view as? SileoSeparatorView {
+            separator.backgroundColor = color
+        }
+        for subview in view.subviews {
+            applySeparatorColor(color, in: subview)
+        }
+    }
+
     private func aptEncoded(string: String) -> String {
         var encodedString = string.replacingOccurrences(of: "_", with: "%5f")
         encodedString = encodedString.replacingOccurrences(of: ":", with: "%3a")

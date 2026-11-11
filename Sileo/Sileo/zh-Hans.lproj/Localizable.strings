@@ -296,6 +296,7 @@
 "Conflict_Conflicts" = "冲突";
 "Conflict_Replaces" = "替换";
 "Floating_Tab_Bar" = "悬浮底栏";
+"Hide_Separators" = "隐藏分割线";
 "Remove_Broken_Sources" = "移除损坏的插件源";
 "Remove_Broken_Sources.Title" = "移除损坏的插件源？";
 "Remove_Broken_Sources.Message" = "将移除无法载入的插件源。此操作不可撤销。";
