@@ -299,6 +299,7 @@ final class QueueCenter {
     private var batchStartedAt: Date?
     private var downloadEndedAt: Date?
     private var displayedFraction: CGFloat = 0
+    private var lastAllDownloaded = false
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -504,6 +505,13 @@ final class QueueCenter {
     func confirmBatch() {
         DispatchQueue.main.async {
             guard self.holdForConfirmation else { return }
+            self.holdForConfirmation = false
+            // the downloads are already in: go straight to apt
+            if self.downloadPhase, self.lastAllDownloaded {
+                self.downloadPhaseSince = Date(timeIntervalSinceNow: -5)
+                self.syncNow()
+                return
+            }
             self.beginDownloadPhase()
             self.syncNow()
         }
@@ -562,6 +570,7 @@ final class QueueCenter {
         batchStartedAt = Date()
         downloadEndedAt = nil
         displayedFraction = 0
+        lastAllDownloaded = false
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -576,6 +585,8 @@ final class QueueCenter {
     /// it: the capsule counts the install, and its sheet carries the log.
     private func checkAptHandoff(allDownloaded: Bool) {
         guard downloadPhase, !handoffScheduled, !handedOff, allDownloaded else { return }
+        // a batch waiting for 确认 does not go on by itself
+        guard !holdForConfirmation else { return }
         // a stale, fully-finished download map from the previous batch must not
         // hand off before this batch's downloads are even queued
         guard let since = downloadPhaseSince,
@@ -754,6 +765,16 @@ final class QueueCenter {
                 // out again from what is left in the batch
                 manager.reloadData(recheckPackages: true)
             }
+            // a download failed while the rest went on: with the bad one gone
+            // the batch waits for 确认 instead of installing by itself
+            if self.downloadPhase, !self.installFailed,
+               !self.lastItems.contains(where: { $0.isFailed }) {
+                self.holdForConfirmation = true
+                self.autoSheetPending = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.presentSheetWhenSettled(3)
+                }
+            }
             self.syncNow()
         }
     }
@@ -828,6 +849,7 @@ final class QueueCenter {
     private func applySnapshot(_ snapshot: [QueueItem], allDownloaded: Bool,
                                hadDownloads: Bool, hadConversion: Bool) {
         var items = snapshot
+        lastAllDownloaded = allDownloaded
         // between the last download and apt the task is on its way to install:
         // show it as installing instead of flashing 等待开始
         if downloadPhase && allDownloaded {
