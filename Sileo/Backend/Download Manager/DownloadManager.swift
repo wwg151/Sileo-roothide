@@ -856,6 +856,15 @@ final class DownloadManager {
         self.vars.uninstalldeps.remove { $0.package.package == package }
     }
 
+    /// Takes the package out of the batch and forgets its transfer, so nothing
+    /// of it is left to show up in the queue again.
+    public func forgetDownload(package: String) {
+        DownloadManager.aptQueue.async {
+            self.vars.queuedDownloads[package]?.task?.cancel()
+            self.vars.queuedDownloads.removeValue(forKey: package)
+        }
+    }
+
     /// Holds a running download. The transfer is stopped for real — a
     /// suspended URLSession task kept going on this device — and resuming
     /// takes it from the start.

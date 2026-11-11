@@ -736,7 +736,7 @@ final class QueueCenter {
                     manager.remove(package: main.package)
                 }
             }
-            manager.queuedDownload(package: identifier)?.task?.cancel()
+            manager.forgetDownload(package: identifier)
             manager.remove(package: identifier)
             // a failed row lives only in the centre's own list, not in apt's
             if self.lastItems.contains(where: { $0.identifier == identifier && $0.isFailed }) {
@@ -1836,6 +1836,7 @@ final class QueueCardCell: UIView {
     private var barFillWidth: NSLayoutConstraint?
     private var progressFraction: CGFloat = 0
     private let actionButton = UIButton(type: .system)
+    private var cardTap: UITapGestureRecognizer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1906,6 +1907,12 @@ final class QueueCardCell: UIView {
             }
         }, for: .touchUpInside)
         addSubview(actionButton)
+        // a failed row is a big target: the whole card opens its log
+        let tap = UITapGestureRecognizer(target: self, action: #selector(cardTapped))
+        tap.isEnabled = false
+        addGestureRecognizer(tap)
+        cardTap = tap
+
 
         NSLayoutConstraint.activate([
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
@@ -1977,7 +1984,15 @@ final class QueueCardCell: UIView {
         positionBar(animated: true)
     }
 
+    @objc private func cardTapped() {
+        tapHandler?()
+    }
+
+
     func configure(item: QueueItem) {
+        // only a failed row answers a tap on its body
+        cardTap?.isEnabled = item.isFailed
+
         nameLabel.text = item.name
         var status = item.statusText
         if item.isPaused {
