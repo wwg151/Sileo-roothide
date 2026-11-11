@@ -399,6 +399,23 @@ final class QueueCenter {
         lastItems.first { $0.identifier == identifier }?.state
     }
 
+    /// Whether the batch on screen ended in a failure.
+    var lastRunFailed: Bool {
+        installFailed || lastItems.contains { $0.isFailed }
+    }
+
+    /// The result has been read: drop it, so the page's ring returns to its
+    /// own button and the capsule goes away.
+    func clearResult() {
+        DispatchQueue.main.async {
+            self.installFailed = false
+            self.doneShownAt = nil
+            self.lastItems = []
+            self.origins.removeAll()
+            self.syncNow()
+        }
+    }
+
     private func syncNow() {
         // Building the snapshot touches the apt queue's containers: never do
         // that on the main thread, the queue can be busy for seconds mid-download.
@@ -1105,7 +1122,9 @@ final class QueueLogSheetController: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(titleLabel)
 
-        let failed = QueueCenter.shared.lastItems.filter { $0.isFailed }.count
+        let failed = QueueCenter.shared.lastRunFailed
+            ? max(1, QueueCenter.shared.lastItems.filter { $0.isFailed }.count)
+            : 0
         subtitleLabel.text = failed > 0
             ? String(format: String(localizationKey: "Queue_Failed_N"), failed)
             : String(localizationKey: "Queue_Log_Hint")
@@ -1134,7 +1153,22 @@ final class QueueLogSheetController: UIViewController {
         doneButton.layer.cornerRadius = 22
         doneButton.layer.cornerCurve = .continuous
         doneButton.translatesAutoresizingMaskIntoConstraints = false
-        doneButton.addAction(UIAction { [weak self] _ in self?.dismiss(animated: true) }, for: .touchUpInside)
+        doneButton.addAction(UIAction { [weak self] _ in
+            guard let self = self else { return }
+            // reading the result is what closes it: the ring goes back to the
+            // button and the capsule goes away
+            guard failed > 0 else {
+                self.dismiss(animated: true)
+                return
+            }
+            QueueCenter.shared.clearResult()
+            // the queue sheet behind showed the same result: close it too
+            if let host = self.presentingViewController {
+                host.dismiss(animated: true)
+            } else {
+                self.dismiss(animated: true)
+            }
+        }, for: .touchUpInside)
         view.addSubview(doneButton)
 
         respringButton.setTitle(String(localizationKey: "After_Install_Respring"), for: .normal)
@@ -1145,9 +1179,11 @@ final class QueueLogSheetController: UIViewController {
         respringButton.layer.cornerCurve = .continuous
         respringButton.translatesAutoresizingMaskIntoConstraints = false
         respringButton.addAction(UIAction { [weak self] _ in self?.respring() }, for: .touchUpInside)
+        // a failed batch has nothing to respring for
+        respringButton.isHidden = failed > 0
         view.addSubview(respringButton)
 
-        NSLayoutConstraint.activate([
+        var constraints: [NSLayoutConstraint] = [
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18),
 
@@ -1162,14 +1198,21 @@ final class QueueLogSheetController: UIViewController {
 
             doneButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             doneButton.heightAnchor.constraint(equalToConstant: 44),
-            doneButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
-
-            respringButton.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 10),
-            respringButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            respringButton.widthAnchor.constraint(equalTo: doneButton.widthAnchor),
-            respringButton.heightAnchor.constraint(equalTo: doneButton.heightAnchor),
-            respringButton.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor)
-        ])
+            doneButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14)
+        ]
+        if failed > 0 {
+            // one answer only
+            constraints.append(doneButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20))
+        } else {
+            constraints += [
+                respringButton.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 10),
+                respringButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                respringButton.widthAnchor.constraint(equalTo: doneButton.widthAnchor),
+                respringButton.heightAnchor.constraint(equalTo: doneButton.heightAnchor),
+                respringButton.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor)
+            ]
+        }
+        NSLayoutConstraint.activate(constraints)
 
         observer = NotificationCenter.default.addObserver(forName: .queueLogDidChange, object: nil,
                                                           queue: .main) { [weak self] _ in
