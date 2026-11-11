@@ -280,13 +280,24 @@ class PackageQueueButton: PackageButton {
             fraction = value
             caption = String(localizationKey: "Queue_Downloading")
         case .converting:
+            // the conversion sits at the end of the download's bar
+            let converting = QueueCenter.shared.progress(for: package.package)
+            percent = converting.map { String(format: "%.0f%%", $0 * 100) }
+            fraction = converting
             caption = String(localizationKey: "Queue_Converting")
         case .installing:
+            let installing = QueueCenter.shared.progress(for: package.package)
+            percent = installing.map { String(format: "%.0f%%", $0 * 100) }
+            fraction = installing
             caption = String(localizationKey: "Queue_Installing")
         case .uninstalling:
+            let uninstalling = QueueCenter.shared.progress(for: package.package)
+            percent = uninstalling.map { String(format: "%.0f%%", $0 * 100) }
+            fraction = uninstalling
             caption = String(localizationKey: "Queue_Uninstalling")
         case .waiting:
             caption = String(localizationKey: "Queue_Waiting")
+            percent = "0%"
             fraction = 0
         case .failed:
             percent = "!"

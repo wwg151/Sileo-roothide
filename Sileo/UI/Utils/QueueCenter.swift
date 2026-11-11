@@ -527,6 +527,11 @@ final class QueueCenter {
         return item.state
     }
 
+    /// The task's share of its bar, for the ring on the page's own button.
+    func progress(for identifier: String) -> CGFloat? {
+        lastItems.first(where: { $0.identifier == identifier })?.progress
+    }
+
     /// Whether the batch on screen ended in a failure.
     var lastRunFailed: Bool {
         installFailed || lastItems.contains { $0.isFailed }
