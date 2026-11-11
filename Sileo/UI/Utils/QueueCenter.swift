@@ -1176,6 +1176,8 @@ final class QueueCenter {
     /// Whether the page on screen is already showing this batch as a ring, so
     /// the sheet would only repeat what the ring says.
     private func pageDrawsRing(for items: [QueueItem]) -> Bool {
+        // a batch already waiting for 确认 is not started by walking around
+        guard !holdForConfirmation else { return false }
         // an uninstall is read before it runs, wherever it was started
         guard !items.contains(where: { $0.isRemoval }) else { return false }
         guard let page = QueueCenter.currentPageController() else { return false }
