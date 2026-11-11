@@ -1367,7 +1367,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         cancelButton.layer.cornerRadius = 22
         cancelButton.layer.cornerCurve = .continuous
         cancelButton.addAction(UIAction { [weak self] _ in
-            QueueCenter.shared.discardBatch()
+            // 取消 only puts the sheet away: the batch keeps waiting, and the
+            // capsule brings it back with 确认 still on it
             self?.dismiss(animated: true)
         }, for: .touchUpInside)
         cancelButton.isHidden = true
