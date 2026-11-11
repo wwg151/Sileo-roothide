@@ -280,16 +280,6 @@ final class DownloadManager {
                     return
                 }
                 
-                // a held transfer that lost its connection is not a failure:
-                // resuming takes it again from the start
-                if download.paused {
-                    download.task = nil
-                    download.message = nil
-                    self.currentDownloads -= 1
-                    self.viewController.updateDownloadStatus(download: download)
-                    return
-                }
-                
                 download.failureReason = error?.localizedDescription ?? String(format: String(localizationKey: "Download_Failing_Status_Code", type: .error), statusCode)
                 download.message = nil
                 
@@ -331,8 +321,6 @@ final class DownloadManager {
         let package = download.package
         download.success = false
         download.progress = 0.99
-        download.converting = true
-        download.didConvert = true
         download.message = String(localizationKey: "Compat_Converting")
         self.viewController.updateDownloadStatus(download: download)
         
@@ -362,7 +350,6 @@ final class DownloadManager {
     
     private func finishConversion(download: Download, original: Package, converted: Package?, failure: String?, output: URL) {
         download.message = nil
-        download.converting = false
         
         guard download.session == self.currentDownloadSession else {
             try? FileManager.default.removeItem(at: output)
@@ -596,11 +583,6 @@ final class DownloadManager {
             throw APTParserErrors.blankJsonOutput(error: String(localizationKey: "APT_Uninstall_Mismatch", type: .error))
         }
         var uninstallDeps = Set<DownloadPackage>(rawUninstalls.compactMap { DownloadPackage(package: $0) })
-        // apt names every package it takes out, conflicts included (installing
-        // ellekit removes libhooker). They are all kept: the queue shows each
-        // one as a ➖ row and the install that causes it says so in red, the
-        // way the old queue did. A package the user asked to remove is dropped
-        // from this set further down.
         
         // Get the list of packages to be installed, including depends
         var installDepOperation = [String: (String, [String])]()
@@ -852,45 +834,6 @@ final class DownloadManager {
         self.vars.installdeps.remove { $0.package.package == package }
         self.vars.uninstallations.remove { $0.package.package == package }
         self.vars.uninstalldeps.remove { $0.package.package == package }
-    }
-
-    /// Takes the package out of the batch and forgets its transfer, so nothing
-    /// of it is left to show up in the queue again.
-    public func forgetDownload(package: String) {
-        DownloadManager.aptQueue.async {
-            self.vars.queuedDownloads[package]?.task?.cancel()
-            self.vars.queuedDownloads.removeValue(forKey: package)
-        }
-    }
-
-    /// Holds a running download. The transfer is stopped for real — a
-    /// suspended URLSession task kept going on this device — and resuming
-    /// takes it from the start.
-    public func pauseDownload(package: String) {
-        DownloadManager.aptQueue.async {
-            guard let download = self.vars.queuedDownloads[package] else { return }
-            download.paused = true
-            download.task?.cancel()
-            download.task = nil
-            if self.currentDownloads > 0 {
-                self.currentDownloads -= 1
-            }
-            self.viewController.updateDownloadStatus(download: download)
-        }
-    }
-
-    public func resumeDownload(package: String) {
-        DownloadManager.aptQueue.async {
-            guard let download = self.vars.queuedDownloads[package] else { return }
-            download.paused = false
-            if let task = download.task {
-                task.task?.resume()
-            } else {
-                // the transfer was stopped: take it again from the beginning
-                self.vars.queuedDownloads.removeValue(forKey: package)
-                self.startMoreDownloads()
-            }
-        }
     }
     
     
@@ -1355,26 +1298,6 @@ final class DownloadManager {
         }
     }
     
-    /// Packages that are never taken along, whatever the control files say.
-    /// Everything else the control files answer for themselves: `Essential: yes`
-    /// or `Priority: required` is the device's own word on what it needs, and a
-    /// compression tool that came in with Filza is not on that list.
-    private static let systemPackages: Set<String> = [
-        "sileo", "org.coolstar.sileo", "roothide", "ellekit", "com.roothide.patchloader",
-        "rootless-compat", "mobilesubstrate", "substrate", "libhooker", "org.coolstar.libhooker"
-    ]
-
-    static func isSystemPackage(_ package: Package) -> Bool {
-        if package.essential == "yes" {
-            return true
-        }
-        let priority = (package.rawControl["priority"] ?? package.rawControl["Priority"] ?? "").lowercased()
-        if priority == "required" {
-            return true
-        }
-        return DownloadManager.systemPackages.contains(package.package)
-    }
-
     public func isEssential(_ package: Package) -> Bool {
         // Check for essential
         var allowedHosts = [String]()

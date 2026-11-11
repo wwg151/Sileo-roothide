@@ -907,7 +907,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         guard isEnabled else { return }
         
         if DownloadManager.shared.queueRunning {
-            QueueCenter.shared.presentSheet()
+            TabBarController.singleton?.presentPopupController()
             return
         }
         
@@ -915,10 +915,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         hapticResponse()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             PackageListManager.shared.upgradeAll {
-                DispatchQueue.main.async {
-                    self?.isEnabled = true
-                    QueueCenter.shared.sync()
-                }
+                self?.isEnabled = true
             }
         }
     }

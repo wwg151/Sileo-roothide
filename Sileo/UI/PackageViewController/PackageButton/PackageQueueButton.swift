@@ -259,134 +259,6 @@ class PackageQueueButton: PackageButton {
     }
 
     // Context-menu previews are not in the view hierarchy, so present from what is actually on screen
-    // MARK: the task ring lives on this very button
-
-    private var queueRingOverlay: QueueRingOverlay?
-    private var savedButtonBackground: UIColor?
-
-    override func queueChanged() {
-        guard let package = self.package else {
-            endQueueRing()
-            return
-        }
-        let state = QueueCenter.shared.state(for: package.package)
-        var percent: String?
-        var caption: String?
-        var fraction: CGFloat?
-        var failed = false
-        switch state {
-        case .downloading(let value):
-            percent = String(format: "%.0f%%", value * 100)
-            fraction = value
-            caption = String(localizationKey: "Queue_Downloading")
-        case .converting:
-            // the conversion sits at the end of the download's bar
-            let converting = QueueCenter.shared.progress(for: package.package)
-            percent = converting.map { String(format: "%.0f%%", $0 * 100) }
-            fraction = converting
-            caption = String(localizationKey: "Queue_Converting")
-        case .installing:
-            let installing = QueueCenter.shared.progress(for: package.package)
-            percent = installing.map { String(format: "%.0f%%", $0 * 100) }
-            fraction = installing
-            caption = String(localizationKey: "Queue_Installing")
-        case .uninstalling:
-            let uninstalling = QueueCenter.shared.progress(for: package.package)
-            percent = uninstalling.map { String(format: "%.0f%%", $0 * 100) }
-            fraction = uninstalling
-            caption = String(localizationKey: "Queue_Uninstalling")
-        case .waiting:
-            caption = String(localizationKey: "Queue_Waiting")
-            percent = "0%"
-            fraction = 0
-        case .failed:
-            percent = "!"
-            caption = String(localizationKey: "Queue_Failed")
-            failed = true
-        default:
-            break
-        }
-
-        if let caption = caption {
-            if queueRingOverlay == nil {
-                guard let host = superview else { return }
-                let overlay = QueueRingOverlay()
-                // positioned by frame in layoutSubviews, so it always sits on
-                // the button whatever the container's layout does
-                overlay.translatesAutoresizingMaskIntoConstraints = true
-                host.addSubview(overlay)
-                queueRingOverlay = overlay
-            }
-            isHidden = true
-            titleLabel?.layer.opacity = 0
-            positionQueueRing()
-            queueRingOverlay?.configure(percent: percent, caption: caption, fraction: fraction, failed: failed)
-            queueRingOverlay?.isHidden = false
-        } else {
-            endQueueRing()
-        }
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        positionQueueRing()
-    }
-
-    private func positionQueueRing() {
-        guard let overlay = queueRingOverlay, let host = overlay.superview else { return }
-        let size = CGSize(width: 84, height: 68)
-        let topCenter = convert(CGPoint(x: bounds.midX, y: 0), to: host)
-        var frame = CGRect(x: topCenter.x - size.width / 2,
-                           y: topCenter.y,
-                           width: size.width,
-                           height: size.height)
-        // keep the whole ring inside its container, even a small one
-        let hostBounds = host.bounds
-        if hostBounds.width > 0 {
-            if frame.maxX > hostBounds.maxX - 2 { frame.origin.x = hostBounds.maxX - 2 - frame.width }
-            if frame.minX < 2 { frame.origin.x = 2 }
-        }
-        if hostBounds.height > 0 {
-            if frame.maxY > hostBounds.maxY - 2 { frame.origin.y = hostBounds.maxY - 2 - frame.height }
-            if frame.minY < 2 { frame.origin.y = 2 }
-        }
-        overlay.frame = frame
-        host.bringSubviewToFront(overlay)
-    }
-
-    private func endQueueRing() {
-        let overlayVisible = queueRingOverlay?.isHidden == false
-        guard overlayVisible || isHidden else { return }
-        queueRingOverlay?.isHidden = true
-        isHidden = false
-        titleLabel?.layer.opacity = 1
-        alpha = isEnabled ? customAlpha : customAlpha * 0.45
-        updateStyle()
-    }
-
-    /// While the ring is up the button is only a canvas for it: a filled pill
-    /// behind a ring of the same colour hides the ring completely.
-    private var isShowingQueueRing: Bool {
-        queueRingOverlay?.isHidden == false
-    }
-
-    override func updateStyle() {
-        if isShowingQueueRing {
-            backgroundColor = .clear
-            setTitleColor(.clear, for: .normal)
-            return
-        }
-        super.updateStyle()
-    }
-
-    override func updateSileoColors() {
-        if isShowingQueueRing {
-            backgroundColor = .clear
-            return
-        }
-        super.updateSileoColors()
-    }
-
     private func useVisiblePresenter() {
         guard viewControllerForPresentation?.view.window == nil else { return }
         var top = UIApplication.shared.keyWindow?.rootViewController
@@ -606,7 +478,7 @@ class PackageQueueButton: PackageButton {
             }
         }
         if DownloadManager.shared.queueRunning {
-            QueueCenter.shared.presentSheet()
+            TabBarController.singleton?.presentPopupController()
             return
         }
         self.hapticResponse()
@@ -615,7 +487,7 @@ class PackageQueueButton: PackageButton {
         
         if(checkQueued(package: package)) {
             // but it's a already queued! user changed their mind about installing this new package => nuke it from the queue
-            QueueCenter.shared.presentSheet()
+            TabBarController.singleton?.presentPopupController()
             downloadManager.reloadData(recheckPackages: true)
             
             NotificationCenter.default.post(name: PackageQueueButton.actionPerformedNotification, object: nil)

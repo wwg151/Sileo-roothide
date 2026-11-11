@@ -48,21 +48,6 @@ class DownloadsTableViewController: SileoViewController {
     private var refreshSileo = false
     private var hasErrored = false
     private var detailsAttributedString: NSMutableAttributedString?
-
-    /// The apt/dpkg output so far, for the queue's own log sheet.
-    var logText: String { detailsAttributedString?.string ?? "" }
-
-    /// The queue starts a batch without opening this page, so the flags a
-    /// finished run leaves behind have to be cleared by hand.
-    func prepareForQueueRun() {
-        isInstalling = false
-        isDownloading = false
-        isFinishedInstalling = false
-        returnButtonAction = .back
-        refreshSileo = false
-        hasErrored = false
-        actions.removeAll()
-    }
     
     public var backgroundCallback: (() -> Void)?
     
@@ -418,7 +403,7 @@ class DownloadsTableViewController: SileoViewController {
         return true
     }
     
-    func transferToAction() {
+    private func transferToAction() {
         NSLog("SileoLog: transferToAction \(isInstalling)")
         if isInstalling {
             return
@@ -581,18 +566,16 @@ class DownloadsTableViewController: SileoViewController {
         }
         
         DownloadManager.shared.aptRunning = true
-        QueueCenter.shared.installStarted()
         DownloadManager.shared.aptFinished = false
         
         TabBarController.singleton?.updatePopup()
 
         let installedToRecord = (installations + upgrades + installdeps).map { $0.package }
         let removedToForget = (uninstallations + uninstalldeps).map { $0.package.package }
-        APTWrapper.performOperations(installs: installations + upgrades, removals: uninstallations + uninstalldeps, installDeps: installdeps, progressCallback: { statusProgress, statusValid, statusReadable, package in
+        APTWrapper.performOperations(installs: installations + upgrades, removals: uninstallations + uninstalldeps, installDeps: installdeps, progressCallback: { _, statusValid, statusReadable, package in
             NSLog("SileoLog: progressCallback \(statusValid) \(package) \(statusReadable)")
             if statusValid {
                 self.statusWork(package: package, status: statusReadable)
-                QueueCenter.shared.aptPackageProgress(package, fraction: CGFloat(statusProgress / 100))
             }
         }, outputCallback: { output, pipe in
             NSLog("SileoLog: apt outputCallback \(pipe):\(output)")
@@ -612,7 +595,6 @@ class DownloadsTableViewController: SileoViewController {
             let substring = NSMutableAttributedString(string: APTLogTranslator.localize(output), attributes: [NSAttributedString.Key.foregroundColor: textColor])
             DispatchQueue.main.async {
                 self.detailsAttributedString?.append(substring)
-                NotificationCenter.default.post(name: .queueLogDidChange, object: nil)
                 
                 guard let detailsAttributedString = self.detailsAttributedString else {
                     return
@@ -624,7 +606,6 @@ class DownloadsTableViewController: SileoViewController {
             }
         }, completionCallback: { status, finish, refresh in
             NSLog("SileoLog: apt completionCallback \(status) \(finish) \(refresh)")
-            QueueCenter.shared.aptFinished(ok: status == 0)
             if status == 0 {
                 installedToRecord.forEach { InstalledSourceStore.record($0) }
                 removedToForget.forEach { InstalledSourceStore.remove(identifier: $0) }
@@ -700,11 +681,6 @@ class DownloadsTableViewController: SileoViewController {
     @IBAction private func showDetails(_ sender: Any?) {
         guard let detailsView = self.detailsView else {
             return
-        }
-        // the text view is only filled while output arrives; opening it later
-        // would leave the nib's placeholder on screen
-        if let detailsAttributedString = self.detailsAttributedString, detailsAttributedString.length > 0 {
-            detailsTextView?.attributedText = self.transform(attributedString: detailsAttributedString)
         }
         detailsView.alpha = 0
         detailsView.autoresizingMask = [.flexibleWidth, .flexibleHeight]

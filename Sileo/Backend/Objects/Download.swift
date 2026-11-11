@@ -22,12 +22,6 @@ final class Download {
     var completed = false
     var started = false
     var message: String?
-    /// the roothide conversion is running inside this download's slot
-    var converting = false
-    /// this download has been converted at least once
-    var didConvert = false
-    /// the user is holding this transfer
-    var paused = false
     var session: UInt32
     
     init(package: Package, session: UInt32) {
