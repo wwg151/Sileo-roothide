@@ -104,19 +104,16 @@ extension DownloadManager {
         }
 
         let aptFraction = QueueCenter.shared.aptFraction
-        // One bar per task: the download walks it to half, the conversion waits
-        // there, and apt takes the second half — the same shape whether or not
-        // the package has to be converted.
-        let hasDownloads = !downloads.isEmpty
+        // Each phase reports its own real share: the download counts to 100%,
+        // the conversion holds at its end, and apt counts from 0 again.
         func taskFraction(for state: QueueItemState) -> CGFloat? {
             switch state {
             case .downloading(let value):
-                return hasDownloads ? min(1, max(0, value)) * 0.5 : nil
+                return min(1, max(0, value))
             case .converting:
-                return hasDownloads ? 0.5 : nil
+                return 0.99
             case .installing, .uninstalling:
-                let apt = min(1, max(0, aptFraction))
-                return hasDownloads ? 0.5 + 0.5 * apt : apt
+                return min(1, max(0, aptFraction))
             case .waiting, .failed:
                 return nil
             }
@@ -237,7 +234,6 @@ final class QueueCenter {
     private var autoSheetPending = false
     private(set) var holdForConfirmation = false
     private var readFailures: Set<String> = []
-    private var taskFloors: [String: CGFloat] = [:]
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -329,7 +325,6 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
-            self.taskFloors.removeAll()
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -398,7 +393,6 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
-            self.taskFloors.removeAll()
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -447,7 +441,6 @@ final class QueueCenter {
             self.holdForConfirmation = false
             self.autoSheetPending = false
             self.readFailures.removeAll()
-            self.taskFloors.removeAll()
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
@@ -465,7 +458,6 @@ final class QueueCenter {
         let manager = DownloadManager.shared
         holdForConfirmation = false
         readFailures.removeAll()
-        taskFloors.removeAll()
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -573,7 +565,6 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
-            self.taskFloors.removeAll()
             self.syncNow()
         }
     }
@@ -692,21 +683,11 @@ final class QueueCenter {
                                  isRemoval: item.isRemoval,
                                  state: item.isRemoval ? .uninstalling : .installing,
                                  // the downloads are in and apt has not spoken:
-                                 // the task sits at the start of its last part
+                                 // a download batch stays full until it does
                                  aptFraction: 0,
                                  failureRead: item.failureRead,
-                                 taskFraction: hadDownloads ? 0.5 : 0)
+                                 taskFraction: hadDownloads ? 1 : 0)
             }
-        }
-        // a bar never walks backwards inside one batch: the phase that follows
-        // starts where the one before it stopped
-        items = items.map { item in
-            guard let fraction = item.taskFraction else { return item }
-            let floor = max(fraction, taskFloors[item.identifier] ?? 0)
-            taskFloors[item.identifier] = floor
-            var copy = item
-            copy.taskFraction = floor
-            return copy
         }
         for item in items where origins[item.identifier] == nil {
             origins[item.identifier] = QueueCenter.currentPageIdentifier()
