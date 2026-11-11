@@ -168,6 +168,7 @@ final class QueueCenter {
     static let snapshotQueue = DispatchQueue(label: "QueueCenter.snapshot", qos: .utility)
 
     private var capsule: QueueCapsuleView?
+    private weak var sheetController: QueueSheetController?
     private var window: UIWindow?
     private var timer: Timer?
     private var timerInterval: TimeInterval = 0
@@ -601,6 +602,13 @@ final class QueueCenter {
             origins.removeAll()
         }
 
+        // nothing left to watch: the sheet closes by itself, unless the batch
+        // failed and its log is the point
+        if sheetVisible, items.isEmpty, !hasFailure, let sheet = sheetController,
+           sheet.presentingViewController != nil {
+            sheet.dismiss(animated: true)
+        }
+
         updateCapsule(visible: showCapsule, items: items, failure: hasFailure && !items.isEmpty,
                       done: items.isEmpty && doneShownAt != nil && !installFailed)
         NotificationCenter.default.post(name: QueueCenter.queueChangedNotification, object: nil)
@@ -723,6 +731,7 @@ final class QueueCenter {
         }
         sheetVisible = true
         autoSheetPending = false
+        sheetController = sheet
         top.present(sheet, animated: true) {
             self.restartTimer()
         }
