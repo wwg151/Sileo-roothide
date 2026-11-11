@@ -187,7 +187,7 @@ extension DownloadManager {
             for entry in set.sorted(by: { ($0.package.name ?? $0.package.package) < ($1.package.name ?? $1.package.package) }) {
                 let package = entry.package
                 let identifier = package.package
-                let state: QueueItemState
+                var state: QueueItemState
                 if let download = downloads[identifier] {
                     if download.failureReason != nil {
                         state = .failed(download.failureReason)
@@ -207,6 +207,12 @@ extension DownloadManager {
                     state = .waiting
                 }
                 let converting = { if case .converting = state { return true }; return false }()
+                // apt already knows this one cannot go in: say so before the
+                // batch even starts instead of letting it wait
+                let blocked = brokenHint(for: identifier)
+                if blocked != nil, case .waiting = state {
+                    state = .failed(nil)
+                }
                 let downloading = { if case .downloading = state { return true }; return false }()
                 let speed = downloading
                     ? downloads[identifier].flatMap { downloadSpeedText(for: identifier, download: $0, now: sampledAt) }
@@ -504,6 +510,8 @@ final class QueueCenter {
         guard !handedOff else { return }
         // a failed batch waits for 重试: it must not start itself again
         guard !installFailed else { return }
+        // apt has already refused one of these: nothing starts until it is gone
+        guard !items.contains(where: { $0.isFailed }) else { return }
         guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning else { return }
 
         // a list, the news, a file or a batch import has no button to draw a
@@ -511,6 +519,9 @@ final class QueueCenter {
         if !QueueCenter.isButtonPage(QueueCenter.currentPageController()) {
             if !holdForConfirmation {
                 holdForConfirmation = true
+                // ask apt what it thinks before anything runs, so a package
+                // that cannot be installed already says why
+                manager.reloadData(recheckPackages: true)
                 autoSheetPending = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                     self?.presentSheetWhenSettled(3)
@@ -525,6 +536,11 @@ final class QueueCenter {
     func confirmBatch() {
         DispatchQueue.main.async {
             guard self.holdForConfirmation else { return }
+            // a package apt refuses holds the batch until it is taken out
+            guard !self.lastItems.contains(where: { $0.isFailed }) else {
+                self.syncNow()
+                return
+            }
             self.holdForConfirmation = false
             // the downloads are already in: go straight to apt
             if self.downloadPhase, self.lastAllDownloaded {
