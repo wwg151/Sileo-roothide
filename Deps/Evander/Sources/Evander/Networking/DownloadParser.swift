@@ -34,6 +34,9 @@ final public class EvanderDownloader: NSObject {
     static let sessionManager: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = timeoutInterval
+        // a download held by the user keeps its connection: the request timer
+        // must not kill it while nothing is being transferred
+        configuration.timeoutIntervalForResource = 60 * 60 * 24
         return URLSession(configuration: configuration, delegate: EvanderDownloadDelegate.shared, delegateQueue: OperationQueue())
     }()
     

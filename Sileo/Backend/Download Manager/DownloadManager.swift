@@ -280,6 +280,16 @@ final class DownloadManager {
                     return
                 }
                 
+                // a held transfer that lost its connection is not a failure:
+                // resuming takes it again from the start
+                if download.paused {
+                    download.task = nil
+                    download.message = nil
+                    self.currentDownloads -= 1
+                    self.viewController.updateDownloadStatus(download: download)
+                    return
+                }
+                
                 download.failureReason = error?.localizedDescription ?? String(format: String(localizationKey: "Download_Failing_Status_Code", type: .error), statusCode)
                 download.message = nil
                 
@@ -888,13 +898,23 @@ final class DownloadManager {
     /// resuming continues from the bytes already received.
     public func pauseDownload(package: String) {
         DownloadManager.aptQueue.async {
-            self.vars.queuedDownloads[package]?.task?.task?.suspend()
+            guard let download = self.vars.queuedDownloads[package] else { return }
+            download.paused = true
+            download.task?.task?.suspend()
         }
     }
 
     public func resumeDownload(package: String) {
         DownloadManager.aptQueue.async {
-            self.vars.queuedDownloads[package]?.task?.task?.resume()
+            guard let download = self.vars.queuedDownloads[package] else { return }
+            download.paused = false
+            if let task = download.task {
+                task.task?.resume()
+            } else {
+                // the connection died while it was held: take the transfer again
+                self.vars.queuedDownloads.removeValue(forKey: package)
+                self.startMoreDownloads()
+            }
         }
     }
     

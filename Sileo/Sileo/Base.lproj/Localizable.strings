@@ -483,3 +483,5 @@
 "Queue_Pause_All" = "Pause All";
 "Queue_Resume_All" = "Resume All";
 "Queue_Remove" = "Remove";
+
+"Queue_Paused_N" = "%lu held";

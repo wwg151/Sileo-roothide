@@ -488,3 +488,5 @@
 "Queue_Pause_All" = "全部暂停";
 "Queue_Resume_All" = "全部继续";
 "Queue_Remove" = "移除";
+
+"Queue_Paused_N" = "待继续 %lu 项";

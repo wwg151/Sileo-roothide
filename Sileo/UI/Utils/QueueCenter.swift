@@ -824,7 +824,17 @@ final class QueueCenter {
         }
         // the bar of a running task never stands still and never goes back: it
         // walks on with every tick, whatever the estimate does
-        if let estimate = items.compactMap({ $0.taskFraction }).max() {
+        // a held task does not move: the bar stays where the user stopped it
+        let active = items.filter { $0.taskFraction != nil }
+        let everyTaskHeld = !active.isEmpty && active.allSatisfy { $0.isPaused }
+        if everyTaskHeld {
+            items = items.map { item in
+                guard item.taskFraction != nil else { return item }
+                var copy = item
+                copy.taskFraction = displayedFraction
+                return copy
+            }
+        } else if let estimate = items.compactMap({ $0.taskFraction }).max() {
             // a small share of what is left, so it never overtakes the end
             let creep = displayedFraction + (1 - displayedFraction) * 0.004
             let next = min(0.995, max(estimate, creep))
@@ -1512,10 +1522,14 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         let snapshot = QueueCenter.shared.lastItems
         items = snapshot
         let failed = snapshot.filter { $0.isFailed }.count
+        let allHeld = !snapshot.isEmpty && snapshot.allSatisfy { $0.isPaused }
         titleLabel.text = String(localizationKey: "Queue_Title")
         if failed > 0 {
             subtitleLabel.text = String(format: String(localizationKey: "Queue_Failed_N"), failed)
             subtitleLabel.textColor = .systemRed
+        } else if allHeld {
+            subtitleLabel.text = String(format: String(localizationKey: "Queue_Paused_N"), snapshot.count)
+            subtitleLabel.textColor = .secondaryLabel
         } else {
             subtitleLabel.text = String(format: String(localizationKey: "Queue_Items"), snapshot.count)
             subtitleLabel.textColor = .secondaryLabel
@@ -1997,15 +2011,16 @@ final class QueueCardCell: UIView {
         setNeedsLayout()
 
         let title: String?
+        var symbol: String?
         switch item.state {
         case .waiting:
             // nothing to hold yet: removal is a swipe
             title = nil
         case .downloading:
-            title = item.isPaused ? "▶" : "⏸"
-            actionButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+            title = nil
+            symbol = item.isPaused ? "play.fill" : "pause.fill"
             actionButton.layer.borderColor = UIColor.separator.cgColor
-            actionButton.setTitleColor(.label, for: .normal)
+            actionButton.tintColor = .label
         case .failed:
             if item.failureRead {
                 // the log has been read: the row can be taken out now
@@ -2024,6 +2039,12 @@ final class QueueCardCell: UIView {
             title = nil
         }
         actionButton.setTitle(title, for: .normal)
-        actionButton.isHidden = title == nil
+        if let symbol = symbol {
+            let configuration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+            actionButton.setImage(UIImage(systemName: symbol, withConfiguration: configuration), for: .normal)
+        } else {
+            actionButton.setImage(nil, for: .normal)
+        }
+        actionButton.isHidden = title == nil && symbol == nil
     }
 }
