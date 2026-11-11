@@ -69,11 +69,13 @@ extension DownloadManager {
     /// every download is already in. The sets live on the apt queue, so the
     /// snapshot is built off the main thread — mid-download that queue can be
     /// busy for seconds.
-    func queueSnapshot(_ completion: @escaping ([QueueItem], Bool, Bool, Bool) -> Void) {
+    func queueSnapshot(elapsed: TimeInterval, downloadElapsed: TimeInterval,
+                       _ completion: @escaping ([QueueItem], Bool, Bool, Bool) -> Void) {
         // read on the main thread: the centre's own set is not thread safe
         let readFailures = QueueCenter.shared.readFailuresSnapshot()
         QueueCenter.snapshotQueue.async {
-            let result = self.buildSnapshot(readFailures: readFailures)
+            let result = self.buildSnapshot(readFailures: readFailures,
+                                            elapsed: elapsed, downloadElapsed: downloadElapsed)
             DispatchQueue.main.async { completion(result.0, result.1, result.2, result.3) }
         }
     }
@@ -86,7 +88,8 @@ extension DownloadManager {
         return min(1, CGFloat(download.totalBytesWritten) / CGFloat(download.totalBytesExpectedToWrite))
     }
 
-    private func buildSnapshot(readFailures: Set<String>) -> ([QueueItem], Bool, Bool, Bool) {
+    private func buildSnapshot(readFailures: Set<String>, elapsed: TimeInterval,
+                               downloadElapsed: TimeInterval) -> ([QueueItem], Bool, Bool, Bool) {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
@@ -104,23 +107,38 @@ extension DownloadManager {
         }
 
         let aptFraction = QueueCenter.shared.aptFraction
-        // The bar belongs to the whole task, and each phase owns a slice of it:
-        // the download the first tenth, a conversion up to a quarter, apt the
-        // rest. A phase change therefore never starts the bar over, and an
-        // uninstall — no download at all — simply runs the whole bar with apt.
-        let hasDownloads = !downloads.isEmpty
         let hasConversion = downloads.values.contains { $0.converting || $0.didConvert }
-        let downloadShare: CGFloat = hasDownloads ? 0.1 : 0
-        let aptBase: CGFloat = hasDownloads ? (hasConversion ? 0.25 : 0.1) : 0
+        // The bar belongs to the whole task and follows real time: what is
+        // already behind us over what is left, where what is left comes from
+        // the download's own speed and, once apt runs, from its own rate. So a
+        // download that took a tenth of the task leaves the bar at a tenth,
+        // and one that took a fifth leaves it at a fifth.
+        let now = max(0.001, elapsed)
+        var remaining: Double
+        if aptActive {
+            // everything after the downloads belongs to apt
+            let aptElapsed = max(0.3, now - max(0, downloadElapsed))
+            let progress = Double(max(aptFraction, 0.03))
+            remaining = aptElapsed * (1 - progress) / progress
+        } else {
+            // still downloading, or converting: the install has not been timed
+            // yet, so it is guessed from the number of packages
+            var guess = Double(max(installCount, 1)) * 1.2
+            let expected = downloads.values.reduce(0.0) { $0 + Double($1.totalBytesExpectedToWrite) }
+            let written = downloads.values.reduce(0.0) { $0 + Double($1.totalBytesWritten) }
+            if expected > 0, written > 0, now > 0.6 {
+                let speed = written / now
+                guess += max(0, (expected - written) / max(speed, 1))
+            } else {
+                guess += 3
+            }
+            remaining = guess
+        }
+        let batchFraction = CGFloat(min(0.99, max(0, now / (now + max(remaining, 0.2)))))
         func taskFraction(for state: QueueItemState) -> CGFloat? {
             switch state {
-            case .downloading(let value):
-                return min(1, max(0, value)) * downloadShare
-            case .converting:
-                return aptBase
-            case .installing, .uninstalling:
-                let apt = min(1, max(0, aptFraction))
-                return aptBase + (1 - aptBase) * apt
+            case .downloading, .converting, .installing, .uninstalling:
+                return batchFraction
             case .waiting, .failed:
                 return nil
             }
@@ -241,6 +259,9 @@ final class QueueCenter {
     private var autoSheetPending = false
     private(set) var holdForConfirmation = false
     private var readFailures: Set<String> = []
+    private var batchStartedAt: Date?
+    private var downloadEndedAt: Date?
+    private var lastBatchFraction: CGFloat = 0
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -332,6 +353,9 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.batchStartedAt = nil
+            self.downloadEndedAt = nil
+            self.lastBatchFraction = 0
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -400,6 +424,9 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.batchStartedAt = nil
+            self.downloadEndedAt = nil
+            self.lastBatchFraction = 0
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -448,6 +475,9 @@ final class QueueCenter {
             self.holdForConfirmation = false
             self.autoSheetPending = false
             self.readFailures.removeAll()
+            self.batchStartedAt = nil
+            self.downloadEndedAt = nil
+            self.lastBatchFraction = 0
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
@@ -465,6 +495,9 @@ final class QueueCenter {
         let manager = DownloadManager.shared
         holdForConfirmation = false
         readFailures.removeAll()
+        batchStartedAt = Date()
+        downloadEndedAt = nil
+        lastBatchFraction = 0
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -518,6 +551,7 @@ final class QueueCenter {
                 guard let self = self, let controller = controller else { return }
                 self.handedOff = true
                 self.handoffAt = Date()
+                self.downloadEndedAt = Date()
                 // a previous run leaves the page's own flags set; without this
                 // transferToAction answers at once and apt never starts
                 controller.prepareForQueueRun()
@@ -572,6 +606,9 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.batchStartedAt = nil
+            self.downloadEndedAt = nil
+            self.lastBatchFraction = 0
             self.syncNow()
         }
     }
@@ -672,7 +709,10 @@ final class QueueCenter {
     private func syncNow() {
         // Building the snapshot touches the apt queue's containers: never do
         // that on the main thread, the queue can be busy for seconds mid-download.
-        DownloadManager.shared.queueSnapshot { [weak self] items, allDownloaded, hadDownloads, hadConversion in
+        let elapsed = batchStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        let downloadElapsed = downloadEndedAt.map { $0.timeIntervalSince(batchStartedAt ?? $0) } ?? 0
+        DownloadManager.shared.queueSnapshot(elapsed: elapsed, downloadElapsed: downloadElapsed) {
+            [weak self] items, allDownloaded, hadDownloads, hadConversion in
             self?.applySnapshot(items, allDownloaded: allDownloaded,
                                 hadDownloads: hadDownloads, hadConversion: hadConversion)
         }
@@ -681,11 +721,14 @@ final class QueueCenter {
     private func applySnapshot(_ snapshot: [QueueItem], allDownloaded: Bool,
                                hadDownloads: Bool, hadConversion: Bool) {
         var items = snapshot
+        if let fraction = items.first(where: { $0.taskFraction != nil })?.taskFraction {
+            lastBatchFraction = fraction
+        }
         // between the last download and apt the task is on its way to install:
         // show it as installing instead of flashing 等待开始
         if downloadPhase && allDownloaded {
-            // where the bar stands when the download phase is over
-            let handedShare: CGFloat = hadDownloads ? (hadConversion ? 0.25 : 0.1) : 0
+            // the bar keeps where the download left it until apt reports
+            let handedShare = hadDownloads ? lastBatchFraction : 0
             items = items.map { item in
                 guard case .waiting = item.state else { return item }
                 return QueueItem(identifier: item.identifier,
