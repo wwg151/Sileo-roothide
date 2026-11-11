@@ -71,12 +71,12 @@ extension DownloadManager {
     /// every download is already in. The sets live on the apt queue, so the
     /// snapshot is built off the main thread — mid-download that queue can be
     /// busy for seconds.
-    func queueSnapshot(_ completion: @escaping ([QueueItem], Bool) -> Void) {
+    func queueSnapshot(_ completion: @escaping ([QueueItem], Bool, Bool) -> Void) {
         // read on the main thread: the centre's own set is not thread safe
         let readFailures = QueueCenter.shared.readFailuresSnapshot()
         QueueCenter.snapshotQueue.async {
             let result = self.buildSnapshot(readFailures: readFailures)
-            DispatchQueue.main.async { completion(result.0, result.1) }
+            DispatchQueue.main.async { completion(result.0, result.1, result.2) }
         }
     }
 
@@ -88,7 +88,7 @@ extension DownloadManager {
         return min(1, CGFloat(download.totalBytesWritten) / CGFloat(download.totalBytesExpectedToWrite))
     }
 
-    private func buildSnapshot(readFailures: Set<String>) -> ([QueueItem], Bool) {
+    private func buildSnapshot(readFailures: Set<String>) -> ([QueueItem], Bool, Bool) {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
@@ -191,7 +191,7 @@ extension DownloadManager {
             if a.groupRank != b.groupRank { return a.groupRank < b.groupRank }
             if rank(a) != rank(b) { return rank(a) < rank(b) }
             return a.sequence < b.sequence
-        }, allDownloaded)
+        }, allDownloaded, !downloads.isEmpty)
     }
 }
 
@@ -646,12 +646,12 @@ final class QueueCenter {
     private func syncNow() {
         // Building the snapshot touches the apt queue's containers: never do
         // that on the main thread, the queue can be busy for seconds mid-download.
-        DownloadManager.shared.queueSnapshot { [weak self] items, allDownloaded in
-            self?.applySnapshot(items, allDownloaded: allDownloaded)
+        DownloadManager.shared.queueSnapshot { [weak self] items, allDownloaded, hadDownloads in
+            self?.applySnapshot(items, allDownloaded: allDownloaded, hadDownloads: hadDownloads)
         }
     }
 
-    private func applySnapshot(_ snapshot: [QueueItem], allDownloaded: Bool) {
+    private func applySnapshot(_ snapshot: [QueueItem], allDownloaded: Bool, hadDownloads: Bool) {
         var items = snapshot
         // between the last download and apt the task is on its way to install:
         // show it as installing instead of flashing 等待开始
@@ -663,9 +663,9 @@ final class QueueCenter {
                                  version: item.version,
                                  isRemoval: item.isRemoval,
                                  state: item.isRemoval ? .uninstalling : .installing,
-                                 // the downloads are all in: the bar stays full
-                                 // until apt reports its first package
-                                 aptFraction: 1,
+                                 // only a batch that had downloads is all in:
+                                 // an uninstall starts its bar with apt itself
+                                 aptFraction: hadDownloads ? 1 : 0,
                                  failureRead: item.failureRead)
             }
         }
