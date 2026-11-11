@@ -465,11 +465,13 @@ final class QueueCenter {
         // The batch was handed to apt, apt is not running any more, and its
         // completion never came back: without this the ring and the capsule
         // would sit on 等待开始 forever.
+        let manager = DownloadManager.shared
+        let aptActive = manager.aptRunning && !manager.aptFinished
         if handedOff, !downloadPhase, !aptActive,
            let at = handoffAt, Date().timeIntervalSince(at) > 3 {
             handedOff = false
             handoffAt = nil
-            DownloadManager.shared.removeAllItems()
+            manager.removeAllItems()
             items = []
             installFailed = true
         }
