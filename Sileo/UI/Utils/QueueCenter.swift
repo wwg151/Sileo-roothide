@@ -1350,6 +1350,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         // without this the table holds every touch for a moment, and a button
         // inside a row needs a second tap to answer
         table.delaysContentTouches = false
+        // a touch that drifts a pixel must not be taken away from the button
+        table.canCancelContentTouches = false
         table.register(UITableViewCell.self, forCellReuseIdentifier: "QueueCard")
         view.addSubview(table)
 
@@ -1562,6 +1564,9 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     }
 
     private func openLog() {
+        // one log sheet at a time: a second tap while it is opening must not
+        // be swallowed by UIKit
+        guard presentedViewController == nil else { return }
         // the legacy log page is built for the old popup bar, so the queue
         // shows the apt output itself, in a sheet that always has it
         let log = QueueLogSheetController()
@@ -1875,7 +1880,7 @@ final class QueueCardCell: UIView {
         addSubview(headLabel)
 
         actionButton.translatesAutoresizingMaskIntoConstraints = false
-        actionButton.layer.cornerRadius = 19
+        actionButton.layer.cornerRadius = 22
         actionButton.layer.borderWidth = 1.4
         actionButton.layer.borderColor = UIColor.separator.cgColor
         actionButton.setTitleColor(.label, for: .normal)
@@ -1920,8 +1925,8 @@ final class QueueCardCell: UIView {
 
             actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             actionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            actionButton.widthAnchor.constraint(equalToConstant: 38),
-            actionButton.heightAnchor.constraint(equalToConstant: 38)
+            actionButton.widthAnchor.constraint(equalToConstant: 44),
+            actionButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
