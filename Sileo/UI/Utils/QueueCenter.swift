@@ -133,6 +133,30 @@ extension DownloadManager {
             }
             return parts.isEmpty ? nil : parts.joined(separator: ", ")
         }
+        // A package that has to be converted first is left out of apt's check
+        // until it is downloaded, so its own dependencies are looked at here.
+        func conversionHint(for package: Package) -> String? {
+            guard DownloadManager.needsConversion(package) else { return nil }
+            var names: [String] = []
+            for key in ["depends", "pre-depends", "Depends", "Pre-Depends"] {
+                guard let raw = package.rawControl[key], !raw.isEmpty else { continue }
+                for group in raw.components(separatedBy: ",") {
+                    for alternative in group.components(separatedBy: "|") {
+                        let name = alternative
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .components(separatedBy: CharacterSet(charactersIn: " (:[<"))
+                            .first ?? ""
+                        if !name.isEmpty, !names.contains(name) { names.append(name) }
+                    }
+                }
+            }
+            let missing = names.filter { name in
+                PackageListManager.shared.installedPackage(identifier: name) == nil
+                    && PackageListManager.shared.newestPackage(identifier: name, repoContext: nil) == nil
+            }
+            guard !missing.isEmpty else { return nil }
+            return String(localizationKey: "Conflict_Depends") + " " + missing.joined(separator: ", ")
+        }
         // only an uninstall-only batch is truly ready at that point
         let installCount = vars.installations.raw.count + vars.upgrades.raw.count + vars.installdeps.raw.count
         let allDownloaded: Bool
@@ -209,7 +233,7 @@ extension DownloadManager {
                 let converting = { if case .converting = state { return true }; return false }()
                 // apt already knows this one cannot go in: say so before the
                 // batch even starts instead of letting it wait
-                let blocked = brokenHint(for: identifier)
+                let blocked = brokenHint(for: identifier) ?? conversionHint(for: package)
                 if blocked != nil, case .waiting = state {
                     state = .failed(nil)
                 }
@@ -229,7 +253,7 @@ extension DownloadManager {
                                        sequence: sequence,
                                        taskFraction: taskFraction(for: state),
                                        speedText: speed,
-                                       hint: brokenHint(for: identifier),
+                                       hint: blocked,
                                        isPaused: paused.contains(identifier)))
                 sequence += 1
             }
@@ -267,7 +291,7 @@ extension DownloadManager {
                                    speedText: { if case .downloading = state {
                                        return downloadSpeedText(for: identifier, download: download, now: sampledAt)
                                    }; return nil }(),
-                                   hint: brokenHint(for: identifier),
+                                   hint: brokenHint(for: identifier) ?? conversionHint(for: download.package),
                                    isPaused: paused.contains(identifier)))
             sequence += 1
         }
