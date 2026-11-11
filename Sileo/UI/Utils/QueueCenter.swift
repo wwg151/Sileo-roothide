@@ -481,6 +481,8 @@ final class QueueCenter {
         // one download phase per batch: after the handoff the sets still hold
         // the packages, and starting over would restart the downloads
         guard !handedOff else { return }
+        // a failed batch waits for 重试: it must not start itself again
+        guard !installFailed else { return }
         guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning else { return }
 
         // a list, the news, a file or a batch import has no button to draw a
@@ -897,10 +899,9 @@ final class QueueCenter {
         // the queue now starts itself the moment something is queued.
         startQueueIfNeeded(items)
 
-        if !items.isEmpty {
+        if !items.isEmpty && !installFailed {
             // a new run supersedes the previous result
             doneShownAt = nil
-            installFailed = false
         } else if let done = doneShownAt, Date().timeIntervalSince(done) >= 2 {
             doneShownAt = nil
         }
