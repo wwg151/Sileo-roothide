@@ -223,8 +223,8 @@ extension DownloadManager {
                                        sequence: sequence,
                                        taskFraction: taskFraction(for: state),
                                        speedText: speed,
-                                       isPaused: paused.contains(identifier),
-                                       hint: brokenHint(for: identifier)))
+                                       hint: brokenHint(for: identifier),
+                                       isPaused: paused.contains(identifier)))
                 sequence += 1
             }
         }
@@ -261,8 +261,8 @@ extension DownloadManager {
                                    speedText: { if case .downloading = state {
                                        return downloadSpeedText(for: identifier, download: download, now: sampledAt)
                                    }; return nil }(),
-                                   isPaused: paused.contains(identifier),
-                                   hint: brokenHint(for: identifier)))
+                                   hint: brokenHint(for: identifier),
+                                   isPaused: paused.contains(identifier)))
             sequence += 1
         }
 
