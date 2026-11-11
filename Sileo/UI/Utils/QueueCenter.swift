@@ -39,6 +39,10 @@ struct QueueItem {
     var sequence = 0
     /// 0…1 across the whole task: the download, its conversion, then apt
     var taskFraction: CGFloat?
+    /// "1.2 MB/s" while a download moves
+    var speedText: String?
+    /// the download is held
+    var isPaused = false
 
     var isFailed: Bool {
         if case .failed = state { return true }
@@ -63,21 +67,42 @@ struct QueueItem {
 
 // MARK: - Snapshot from DownloadManager
 
+/// Byte samples for the speed readout; only touched on the snapshot queue.
+private var queueSpeedSamples: [String: (bytes: Int64, at: Date)] = [:]
+
 extension DownloadManager {
 
     /// Every entry of the queue, with the state the new UI shows, and whether
     /// every download is already in. The sets live on the apt queue, so the
     /// snapshot is built off the main thread — mid-download that queue can be
     /// busy for seconds.
-    func queueSnapshot(elapsed: TimeInterval, downloadElapsed: TimeInterval,
+    func queueSnapshot(elapsed: TimeInterval, downloadElapsed: TimeInterval, paused: Set<String>,
                        _ completion: @escaping ([QueueItem], Bool, Bool, Bool) -> Void) {
         // read on the main thread: the centre's own set is not thread safe
         let readFailures = QueueCenter.shared.readFailuresSnapshot()
         QueueCenter.snapshotQueue.async {
-            let result = self.buildSnapshot(readFailures: readFailures,
+            let result = self.buildSnapshot(readFailures: readFailures, paused: paused,
                                             elapsed: elapsed, downloadElapsed: downloadElapsed)
             DispatchQueue.main.async { completion(result.0, result.1, result.2, result.3) }
         }
+    }
+
+    /// Bytes per second, from the samples of the last snapshot.
+    private func downloadSpeedText(for identifier: String, download: Download, now: Date) -> String? {
+        let bytes = download.totalBytesWritten
+        guard let last = queueSpeedSamples[identifier] else {
+            queueSpeedSamples[identifier] = (bytes, now)
+            return nil
+        }
+        let interval = now.timeIntervalSince(last.at)
+        guard interval >= 0.4 else { return nil }
+        queueSpeedSamples[identifier] = (bytes, now)
+        let speed = Double(bytes - last.bytes) / interval
+        guard speed > 0 else { return nil }
+        if speed >= 1024 * 1024 {
+            return String(format: "%.1f MB/s", speed / 1024 / 1024)
+        }
+        return String(format: "%.0f KB/s", speed / 1024)
     }
 
     /// The download's share of the bar: the reported fraction, or the bytes
@@ -88,11 +113,12 @@ extension DownloadManager {
         return min(1, CGFloat(download.totalBytesWritten) / CGFloat(download.totalBytesExpectedToWrite))
     }
 
-    private func buildSnapshot(readFailures: Set<String>, elapsed: TimeInterval,
+    private func buildSnapshot(readFailures: Set<String>, paused: Set<String>, elapsed: TimeInterval,
                                downloadElapsed: TimeInterval) -> ([QueueItem], Bool, Bool, Bool) {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
+        let sampledAt = Date()
         // an empty download map means the downloads have not been queued yet —
         // only an uninstall-only batch is truly ready at that point
         let installCount = vars.installations.raw.count + vars.upgrades.raw.count + vars.installdeps.raw.count
@@ -168,6 +194,10 @@ extension DownloadManager {
                     state = .waiting
                 }
                 let converting = { if case .converting = state { return true }; return false }()
+                let downloading = { if case .downloading = state { return true }; return false }()
+                let speed = downloading
+                    ? downloads[identifier].flatMap { downloadSpeedText(for: identifier, download: $0, now: sampledAt) }
+                    : nil
                 items.append(QueueItem(identifier: identifier,
                                        name: package.name ?? identifier,
                                        version: package.version,
@@ -178,7 +208,9 @@ extension DownloadManager {
                                        failureRead: readFailures.contains(identifier),
                                        groupRank: group,
                                        sequence: sequence,
-                                       taskFraction: taskFraction(for: state)))
+                                       taskFraction: taskFraction(for: state),
+                                       speedText: speed,
+                                       isPaused: paused.contains(identifier)))
                 sequence += 1
             }
         }
@@ -211,7 +243,11 @@ extension DownloadManager {
                                    failureRead: readFailures.contains(identifier),
                                    groupRank: 1,
                                    sequence: sequence,
-                                   taskFraction: taskFraction(for: state)))
+                                   taskFraction: taskFraction(for: state),
+                                   speedText: { if case .downloading = state {
+                                       return downloadSpeedText(for: identifier, download: download, now: sampledAt)
+                                   }; return nil }(),
+                                   isPaused: paused.contains(identifier)))
             sequence += 1
         }
 
@@ -259,6 +295,7 @@ final class QueueCenter {
     private var autoSheetPending = false
     private(set) var holdForConfirmation = false
     private var readFailures: Set<String> = []
+    private(set) var pausedDownloads: Set<String> = []
     private var batchStartedAt: Date?
     private var downloadEndedAt: Date?
     private var displayedFraction: CGFloat = 0
@@ -353,6 +390,7 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.pausedDownloads.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
             self.displayedFraction = 0
@@ -424,6 +462,7 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.pausedDownloads.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
             self.displayedFraction = 0
@@ -475,6 +514,7 @@ final class QueueCenter {
             self.holdForConfirmation = false
             self.autoSheetPending = false
             self.readFailures.removeAll()
+            self.pausedDownloads.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
             self.displayedFraction = 0
@@ -495,6 +535,7 @@ final class QueueCenter {
         let manager = DownloadManager.shared
         holdForConfirmation = false
         readFailures.removeAll()
+        pausedDownloads.removeAll()
         batchStartedAt = Date()
         downloadEndedAt = nil
         displayedFraction = 0
@@ -587,6 +628,47 @@ final class QueueCenter {
         lastItems.first(where: { $0.identifier == identifier })?.progress
     }
 
+    /// Pause or resume one download. The connection is held, not dropped, so
+    /// resuming carries on from the bytes already received.
+    func togglePause(_ identifier: String) {
+        DispatchQueue.main.async {
+            if self.pausedDownloads.contains(identifier) {
+                self.pausedDownloads.remove(identifier)
+                DownloadManager.shared.resumeDownload(package: identifier)
+            } else {
+                self.pausedDownloads.insert(identifier)
+                DownloadManager.shared.pauseDownload(package: identifier)
+            }
+            self.syncNow()
+        }
+    }
+
+    /// Whether every download of the batch is held.
+    var allDownloadsPaused: Bool {
+        let downloading = lastItems.filter {
+            if case .downloading = $0.state { return true }
+            return false
+        }
+        guard !downloading.isEmpty else { return false }
+        return downloading.allSatisfy { self.pausedDownloads.contains($0.identifier) }
+    }
+
+    func setDownloadsPaused(_ paused: Bool) {
+        DispatchQueue.main.async {
+            for item in self.lastItems {
+                guard case .downloading = item.state else { continue }
+                if paused {
+                    self.pausedDownloads.insert(item.identifier)
+                    DownloadManager.shared.pauseDownload(package: item.identifier)
+                } else {
+                    self.pausedDownloads.remove(item.identifier)
+                    DownloadManager.shared.resumeDownload(package: item.identifier)
+                }
+            }
+            self.syncNow()
+        }
+    }
+
     /// Whether the batch on screen ended in a failure.
     var lastRunFailed: Bool {
         installFailed || lastItems.contains { $0.isFailed }
@@ -606,6 +688,7 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.pausedDownloads.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
             self.displayedFraction = 0
@@ -711,7 +794,8 @@ final class QueueCenter {
         // that on the main thread, the queue can be busy for seconds mid-download.
         let elapsed = batchStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         let downloadElapsed = downloadEndedAt.map { $0.timeIntervalSince(batchStartedAt ?? $0) } ?? 0
-        DownloadManager.shared.queueSnapshot(elapsed: elapsed, downloadElapsed: downloadElapsed) {
+        DownloadManager.shared.queueSnapshot(elapsed: elapsed, downloadElapsed: downloadElapsed,
+                                             paused: pausedDownloads) {
             [weak self] items, allDownloaded, hadDownloads, hadConversion in
             self?.applySnapshot(items, allDownloaded: allDownloaded,
                                 hadDownloads: hadDownloads, hadConversion: hadConversion)
@@ -794,19 +878,10 @@ final class QueueCenter {
         checkAptHandoff(allDownloaded: allDownloaded)
 
         // The capsule yields to the page that shows the task's own ring.
-        var showCapsule = false
-        if hasFailure {
-            showCapsule = true
-        } else if !items.isEmpty {
-            if items.count == 1, let origin = origins[items[0].identifier],
-               QueueCenter.currentPageIdentifier() == origin {
-                showCapsule = false
-            } else {
-                showCapsule = true
-            }
-        } else if doneShownAt != nil {
-            showCapsule = true
-        }
+        // The capsule is the queue's door: it is there whenever the queue has
+        // something in it, so the sheet can always be opened again after it
+        // was swiped away.
+        var showCapsule = hasFailure || !items.isEmpty || doneShownAt != nil
         // an open sheet already carries the same information
         showCapsule = showCapsule && !sheetVisible
 
@@ -1296,6 +1371,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     private let actionButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
     private var rowTimer: Timer?
+    private let pauseAllButton = UIButton(type: .system)
     private var actionFullConstraints: [NSLayoutConstraint] = []
     private var actionSplitConstraints: [NSLayoutConstraint] = []
 
@@ -1313,6 +1389,15 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         header.spacing = 2
         header.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(header)
+
+        pauseAllButton.translatesAutoresizingMaskIntoConstraints = false
+        pauseAllButton.titleLabel?.font = .systemFont(ofSize: 15)
+        pauseAllButton.setTitleColor(.tintColor, for: .normal)
+        pauseAllButton.isHidden = true
+        pauseAllButton.addAction(UIAction { _ in
+            QueueCenter.shared.setDownloadsPaused(!QueueCenter.shared.allDownloadsPaused)
+        }, for: .touchUpInside)
+        view.addSubview(pauseAllButton)
 
         table.translatesAutoresizingMaskIntoConstraints = false
         table.dataSource = self
@@ -1361,7 +1446,9 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         NSLayoutConstraint.activate([
             header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18),
-            header.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+            header.trailingAnchor.constraint(lessThanOrEqualTo: pauseAllButton.leadingAnchor, constant: -8),
+            pauseAllButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            pauseAllButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             table.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             table.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 14),
@@ -1433,6 +1520,14 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             subtitleLabel.text = String(format: String(localizationKey: "Queue_Items"), snapshot.count)
             subtitleLabel.textColor = .secondaryLabel
         }
+        let hasDownloading = snapshot.contains {
+            if case .downloading = $0.state { return true }
+            return false
+        }
+        pauseAllButton.isHidden = !hasDownloading
+        pauseAllButton.setTitle(QueueCenter.shared.allDownloadsPaused
+            ? String(localizationKey: "Queue_Resume_All")
+            : String(localizationKey: "Queue_Pause_All"), for: .normal)
         let held = QueueCenter.shared.holdForConfirmation && !snapshot.isEmpty
         if held {
             NSLayoutConstraint.deactivate(actionFullConstraints)
@@ -1518,10 +1613,14 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         card.translatesAutoresizingMaskIntoConstraints = false
         card.tag = indexPath.row
         card.tapHandler = { [weak self] in
-            if item.isFailed && !item.failureRead {
-                self?.openLog()
-            } else {
-                QueueCenter.shared.removeFromBatch(item.identifier)
+            if item.isFailed {
+                if item.failureRead {
+                    QueueCenter.shared.removeFromBatch(item.identifier)
+                } else {
+                    self?.openLog()
+                }
+            } else if case .downloading = item.state {
+                QueueCenter.shared.togglePause(item.identifier)
             }
         }
         cell.contentView.addSubview(card)
@@ -1539,6 +1638,21 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         if items[indexPath.row].isFailed {
             openLog()
         }
+    }
+
+    /// Swipe a row to take it out of the batch: the right-hand button now
+    /// holds the download instead.
+    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard indexPath.row < items.count else { return nil }
+        let identifier = items[indexPath.row].identifier
+        let action = UIContextualAction(style: .destructive,
+                                        title: String(localizationKey: "Queue_Remove")) { [weak self] _, _, done in
+            QueueCenter.shared.removeFromBatch(identifier)
+            done(true)
+            self?.reload()
+        }
+        action.backgroundColor = .systemRed
+        return UISwipeActionsConfiguration(actions: [action])
     }
 }
 
@@ -1849,7 +1963,13 @@ final class QueueCardCell: UIView {
 
     func configure(item: QueueItem) {
         nameLabel.text = item.name
-        statusLabel.text = item.statusText
+        var status = item.statusText
+        if item.isPaused {
+            status = String(localizationKey: "Queue_Paused")
+        } else if let speed = item.speedText {
+            status += " · " + speed
+        }
+        statusLabel.text = status
         statusLabel.textColor = item.isFailed ? .systemRed : .secondaryLabel
         iconLabel.text = String(item.name.prefix(1)).uppercased()
         iconView.backgroundColor = item.isFailed ? .systemRed : .tintColor
@@ -1878,9 +1998,12 @@ final class QueueCardCell: UIView {
 
         let title: String?
         switch item.state {
-        case .waiting, .downloading:
-            title = "✕"
-            actionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        case .waiting:
+            // nothing to hold yet: removal is a swipe
+            title = nil
+        case .downloading:
+            title = item.isPaused ? "▶" : "⏸"
+            actionButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
             actionButton.layer.borderColor = UIColor.separator.cgColor
             actionButton.setTitleColor(.label, for: .normal)
         case .failed:

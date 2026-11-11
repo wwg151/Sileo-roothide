@@ -883,6 +883,20 @@ final class DownloadManager {
         self.vars.uninstallations.remove { $0.package.package == package }
         self.vars.uninstalldeps.remove { $0.package.package == package }
     }
+
+    /// Holds a running download where it is. The connection stays open, so
+    /// resuming continues from the bytes already received.
+    public func pauseDownload(package: String) {
+        DownloadManager.aptQueue.async {
+            self.vars.queuedDownloads[package]?.task?.task?.suspend()
+        }
+    }
+
+    public func resumeDownload(package: String) {
+        DownloadManager.aptQueue.async {
+            self.vars.queuedDownloads[package]?.task?.task?.resume()
+        }
+    }
     
     
     private func checkRootlessV2(package: Package, fileURL: URL) {

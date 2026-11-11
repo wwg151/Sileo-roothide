@@ -478,3 +478,8 @@
 "Queue_Log_Title" = "Install Log";
 "Queue_Log_Hint" = "apt and dpkg output";
 "Queue_Log_Empty" = "No log yet.";
+
+"Queue_Paused" = "Paused";
+"Queue_Pause_All" = "Pause All";
+"Queue_Resume_All" = "Resume All";
+"Queue_Remove" = "Remove";
