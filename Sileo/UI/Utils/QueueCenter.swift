@@ -491,6 +491,22 @@ final class QueueCenter {
         }
     }
 
+    /// ✕ on a row: the package leaves the batch, and so do the dependencies
+    /// that were queued only for it.
+    func removeFromBatch(_ identifier: String) {
+        DispatchQueue.main.async {
+            let manager = DownloadManager.shared
+            manager.queuedDownload(package: identifier)?.task?.cancel()
+            manager.remove(package: identifier)
+            if !manager.queueRunning && !manager.aptRunning {
+                // nothing has run yet: apt's resolver works the dependencies
+                // out again from what is left in the batch
+                manager.reloadData(recheckPackages: true)
+            }
+            self.syncNow()
+        }
+    }
+
     private func syncNow() {
         // Building the snapshot touches the apt queue's containers: never do
         // that on the main thread, the queue can be busy for seconds mid-download.
@@ -1227,7 +1243,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        74
+        90
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -1241,11 +1257,13 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         card.configure(item: item)
         card.translatesAutoresizingMaskIntoConstraints = false
         card.tag = indexPath.row
-        card.cancelHandler = { [weak self] in
-            DownloadManager.shared.remove(package: item.identifier)
-            QueueCenter.shared.sync()
+        card.tapHandler = { [weak self] in
+            if item.isFailed {
+                self?.openLog()
+            } else {
+                QueueCenter.shared.removeFromBatch(item.identifier)
+            }
         }
-        card.logHandler = { [weak self] in self?.openLog() }
         cell.contentView.addSubview(card)
         NSLayoutConstraint.activate([
             card.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
@@ -1418,6 +1436,8 @@ final class QueueCardCell: UIView {
 
     var cancelHandler: (() -> Void)?
     var logHandler: (() -> Void)?
+    /// what the round button on the right does: remove the row, or open the log
+    var tapHandler: (() -> Void)?
 
     private let iconView = UIView()
     private let iconLabel = UILabel()
@@ -1488,7 +1508,16 @@ final class QueueCardCell: UIView {
         actionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
         actionButton.tintColor = .label
         actionButton.setTitleColor(.label, for: .normal)
-        actionButton.setTitleColor(.label, for: .normal)
+        actionButton.addAction(UIAction { [weak self] _ in
+            guard let self = self else { return }
+            if let tapHandler = self.tapHandler {
+                tapHandler()
+            } else if self.actionButton.title(for: .normal) == String(localizationKey: "Queue_View_Log_Short") {
+                self.logHandler?()
+            } else {
+                self.cancelHandler?()
+            }
+        }, for: .touchUpInside)
         addSubview(actionButton)
 
         NSLayoutConstraint.activate([
@@ -1509,7 +1538,7 @@ final class QueueCardCell: UIView {
 
             barTrack.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             barTrack.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -12),
-            barTrack.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 6),
+            barTrack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
             barTrack.heightAnchor.constraint(equalToConstant: 3.5),
             barFill.leadingAnchor.constraint(equalTo: barTrack.leadingAnchor),
             barFill.topAnchor.constraint(equalTo: barTrack.topAnchor),
@@ -1534,9 +1563,9 @@ final class QueueCardCell: UIView {
         let head = barTrack.frame.minX + width
         let size = headLabel.intrinsicContentSize
         let maxX = bounds.width - 12
-        let x = min(head + 5, maxX - size.width)
-        headLabel.frame = CGRect(x: max(x, barTrack.frame.minX),
-                                 y: barTrack.frame.midY - size.height / 2,
+        let x = min(max(head - size.width / 2, barTrack.frame.minX), maxX - size.width)
+        headLabel.frame = CGRect(x: x,
+                                 y: barTrack.frame.minY - size.height - 2,
                                  width: size.width, height: size.height)
     }
 
