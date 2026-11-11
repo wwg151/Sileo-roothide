@@ -181,6 +181,7 @@ final class QueueCenter {
     private var handedOff = false
     private var handoffAt: Date?
     private var autoSheetPending = false
+    private(set) var holdForConfirmation = false
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -270,6 +271,7 @@ final class QueueCenter {
             self.handedOff = false
             self.handoffAt = nil
             self.autoSheetPending = false
+            self.holdForConfirmation = false
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -323,6 +325,7 @@ final class QueueCenter {
             self.handedOff = false
             self.handoffAt = nil
             self.autoSheetPending = false
+            self.holdForConfirmation = false
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -339,6 +342,53 @@ final class QueueCenter {
         // the packages, and starting over would restart the downloads
         guard !handedOff else { return }
         guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning else { return }
+
+        // a list, the news, a file or a batch import has no button to draw a
+        // ring on: the queue opens and waits for 确认 before it runs anything
+        if !QueueCenter.isButtonPage(QueueCenter.currentPageController()) {
+            if !holdForConfirmation {
+                holdForConfirmation = true
+                autoSheetPending = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                    self?.presentSheetWhenSettled(3)
+                }
+            }
+            return
+        }
+        beginDownloadPhase()
+    }
+
+    /// 确认 in the queue sheet: the batch the user has just read starts now.
+    func confirmBatch() {
+        DispatchQueue.main.async {
+            guard self.holdForConfirmation else { return }
+            self.beginDownloadPhase()
+            self.syncNow()
+        }
+    }
+
+    /// 取消 in the queue sheet: nothing of the batch runs.
+    func discardBatch() {
+        DispatchQueue.main.async {
+            let manager = DownloadManager.shared
+            self.holdForConfirmation = false
+            self.autoSheetPending = false
+            self.downloadPhase = false
+            self.handedOff = false
+            self.handoffAt = nil
+            manager.removeAllItems()
+            manager.queueRunning = false
+            manager.aptRunning = false
+            manager.aptFinished = false
+            self.lastItems = []
+            self.origins.removeAll()
+            self.syncNow()
+        }
+    }
+
+    private func beginDownloadPhase() {
+        let manager = DownloadManager.shared
+        holdForConfirmation = false
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -347,15 +397,6 @@ final class QueueCenter {
         downloadPhaseSince = Date()
         NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
         manager.startDownloads()
-
-        // a list, the news, a file or a batch import has no button to draw a
-        // ring on: the queue opens by itself there
-        if !QueueCenter.isButtonPage(QueueCenter.currentPageController()) {
-            autoSheetPending = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.presentSheetWhenSettled(3)
-            }
-        }
     }
 
     /// Downloads are all in: hand the batch to apt. Nothing is presented for
@@ -445,6 +486,7 @@ final class QueueCenter {
             self.handoffAt = nil
             self.downloadPhase = false
             self.autoSheetPending = false
+            self.holdForConfirmation = false
             self.syncNow()
         }
     }
@@ -490,6 +532,12 @@ final class QueueCenter {
         }
 
         let hasFailure = installFailed || items.contains { $0.isFailed }
+
+        // the batch was emptied while it waited (each row can be removed):
+        // nothing is left to confirm
+        if holdForConfirmation, items.isEmpty {
+            holdForConfirmation = false
+        }
 
         // The legacy popup carried the 开始 button that started the queue;
         // the queue now starts itself the moment something is queued.
@@ -677,6 +725,10 @@ final class QueueCenter {
 
     func sheetClosed() {
         sheetVisible = false
+        // closing the sheet without 确认 is a 取消: nothing of the batch runs
+        if holdForConfirmation {
+            discardBatch()
+        }
         restartTimer()
     }
 
@@ -990,6 +1042,9 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
     private let actionButton = UIButton(type: .system)
+    private let cancelButton = UIButton(type: .system)
+    private var actionFullConstraints: [NSLayoutConstraint] = []
+    private var actionSplitConstraints: [NSLayoutConstraint] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1030,6 +1085,33 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         actionButton.addAction(UIAction { [weak self] _ in self?.primaryAction() }, for: .touchUpInside)
         view.addSubview(actionButton)
 
+        cancelButton.translatesAutoresizingMaskIntoConstraints = false
+        cancelButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        cancelButton.setTitle(String(localizationKey: "Cancel"), for: .normal)
+        cancelButton.setTitleColor(.label, for: .normal)
+        cancelButton.backgroundColor = .tertiarySystemFill
+        cancelButton.layer.cornerRadius = 22
+        cancelButton.layer.cornerCurve = .continuous
+        cancelButton.addAction(UIAction { [weak self] _ in
+            QueueCenter.shared.discardBatch()
+            self?.dismiss(animated: true)
+        }, for: .touchUpInside)
+        cancelButton.isHidden = true
+        view.addSubview(cancelButton)
+
+        actionFullConstraints = [
+            actionButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            actionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+        ]
+        actionSplitConstraints = [
+            cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            cancelButton.widthAnchor.constraint(equalTo: actionButton.widthAnchor),
+            cancelButton.heightAnchor.constraint(equalTo: actionButton.heightAnchor),
+            cancelButton.centerYAnchor.constraint(equalTo: actionButton.centerYAnchor),
+            actionButton.leadingAnchor.constraint(equalTo: cancelButton.trailingAnchor, constant: 10),
+            actionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+        ]
+
         NSLayoutConstraint.activate([
             header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18),
@@ -1039,11 +1121,9 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             table.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 14),
             table.bottomAnchor.constraint(equalTo: actionButton.topAnchor, constant: -12),
-            actionButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            actionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             actionButton.heightAnchor.constraint(equalToConstant: 44),
             actionButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12)
-        ])
+        ] + actionFullConstraints)
 
         NotificationCenter.default.addObserver(forName: QueueCenter.queueChangedNotification,
                                                object: nil, queue: .main) { [weak self] _ in
@@ -1077,23 +1157,41 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             subtitleLabel.text = String(format: String(localizationKey: "Queue_Items"), snapshot.count)
             subtitleLabel.textColor = .secondaryLabel
         }
-        if snapshot.isEmpty {
-            actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
-            actionButton.backgroundColor = .tertiarySystemFill
-            actionButton.setTitleColor(.label, for: .normal)
-        } else if failed > 0 {
-            actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
+        let held = QueueCenter.shared.holdForConfirmation && !snapshot.isEmpty
+        if held {
+            NSLayoutConstraint.deactivate(actionFullConstraints)
+            NSLayoutConstraint.activate(actionSplitConstraints)
+            cancelButton.isHidden = false
+            actionButton.setTitle(String(localizationKey: "Queue_Confirm_Button"), for: .normal)
             actionButton.backgroundColor = .tintColor
             actionButton.setTitleColor(.white, for: .normal)
         } else {
-            actionButton.setTitle(String(localizationKey: "Queue_Cancel_All"), for: .normal)
-            actionButton.backgroundColor = .tintColor
-            actionButton.setTitleColor(.white, for: .normal)
+            NSLayoutConstraint.deactivate(actionSplitConstraints)
+            NSLayoutConstraint.activate(actionFullConstraints)
+            cancelButton.isHidden = true
+            if snapshot.isEmpty {
+                actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
+                actionButton.backgroundColor = .tertiarySystemFill
+                actionButton.setTitleColor(.label, for: .normal)
+            } else if failed > 0 {
+                actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
+                actionButton.backgroundColor = .tintColor
+                actionButton.setTitleColor(.white, for: .normal)
+            } else {
+                actionButton.setTitle(String(localizationKey: "Queue_Cancel_All"), for: .normal)
+                actionButton.backgroundColor = .tintColor
+                actionButton.setTitleColor(.white, for: .normal)
+            }
         }
         table.reloadData()
     }
 
     private func primaryAction() {
+        if QueueCenter.shared.holdForConfirmation, !items.isEmpty {
+            // the batch runs now; the sheet stays to show it
+            QueueCenter.shared.confirmBatch()
+            return
+        }
         if items.isEmpty {
             dismiss(animated: true)
             return
