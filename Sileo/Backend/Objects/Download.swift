@@ -24,6 +24,8 @@ final class Download {
     var message: String?
     /// the roothide conversion is running inside this download's slot
     var converting = false
+    /// this download has been converted at least once
+    var didConvert = false
     var session: UInt32
     
     init(package: Package, session: UInt32) {

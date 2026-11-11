@@ -322,6 +322,7 @@ final class DownloadManager {
         download.success = false
         download.progress = 0.99
         download.converting = true
+        download.didConvert = true
         download.message = String(localizationKey: "Compat_Converting")
         self.viewController.updateDownloadStatus(download: download)
         
