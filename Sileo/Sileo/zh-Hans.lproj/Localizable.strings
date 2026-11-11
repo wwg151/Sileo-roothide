@@ -479,3 +479,7 @@
 "Queue_Failed" = "失败";
 "Queue_Failed_N" = "失败 %lu 项";
 "Queue_Items" = "%lu 项";
+
+"Queue_Log_Title" = "安装日志";
+"Queue_Log_Hint" = "apt 与 dpkg 输出";
+"Queue_Log_Empty" = "暂无日志";

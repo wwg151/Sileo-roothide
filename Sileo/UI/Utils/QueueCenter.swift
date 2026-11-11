@@ -334,8 +334,8 @@ final class QueueCenter {
         manager.startDownloads()
     }
 
-    /// Downloads are all in: hand the batch to apt. The log sheet opens with
-    /// it, because the install phase is the part worth watching.
+    /// Downloads are all in: hand the batch to apt. Nothing is presented for
+    /// it: the capsule counts the install, and its sheet carries the log.
     private func checkAptHandoff(allDownloaded: Bool) {
         guard downloadPhase, !handoffScheduled, allDownloaded else { return }
         // a stale, fully-finished download map from the previous batch must not
@@ -370,7 +370,6 @@ final class QueueCenter {
             }
 
             let controller = manager.viewController
-            let presented = tab.logController ?? controller
             self.downloadPhase = false
             // straight into the install phase: confirmQueued would start the
             // downloads over again, and they are all in already
@@ -382,35 +381,17 @@ final class QueueCenter {
             let removals = manager.vars.uninstallations.raw.map { $0.package }
                 + manager.vars.uninstalldeps.raw.map { $0.package }
             let essentials = removals.filter { manager.isEssential($0) }
-            let start: () -> Void = {
-                if essentials.isEmpty {
-                    beginInstall()
-                } else {
-                    let names = essentials.map { $0.name ?? $0.package }.joined(separator: "\n")
-                    let message = String(format: String(localizationKey: "Essential_Warning"), names)
-                    SileoPanelViewController.confirm(title: String(localizationKey: "Warning"),
-                                                     message: message,
-                                                     confirmTitle: String(localizationKey: "Dangerous_Repo.Last_Chance.Continue")) {
-                        beginInstall()
-                    }.present(from: controller)
-                }
-            }
-            if host === presented {
-                start()
+            if essentials.isEmpty {
+                beginInstall()
                 return
             }
-            guard presented.presentingViewController == nil else {
-                start()
-                return
-            }
-            presented.modalPresentationStyle = .pageSheet
-            if let presentation = presented.sheetPresentationController {
-                presentation.detents = [.large()]
-                presentation.prefersGrabberVisible = true
-            }
-            host.present(presented, animated: true) {
-                start()
-            }
+            let names = essentials.map { $0.name ?? $0.package }.joined(separator: "\n")
+            let message = String(format: String(localizationKey: "Essential_Warning"), names)
+            SileoPanelViewController.confirm(title: String(localizationKey: "Warning"),
+                                             message: message,
+                                             confirmTitle: String(localizationKey: "Dangerous_Repo.Last_Chance.Continue")) {
+                beginInstall()
+            }.present(from: host)
         }
     }
 
@@ -1042,18 +1023,15 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     }
 
     private func openLog() {
-        guard let controller = TabBarController.singleton?.logController else { return }
-        // already up: get the sheet out of the way so the log can be read
-        if controller.presentingViewController != nil {
-            dismiss(animated: true)
-            return
-        }
-        controller.modalPresentationStyle = .pageSheet
-        if let presentation = controller.sheetPresentationController {
+        // the legacy log page is built for the old popup bar, so the queue
+        // shows the apt output itself, in a sheet that always has it
+        let log = QueueLogSheetController()
+        log.modalPresentationStyle = .pageSheet
+        if let presentation = log.sheetPresentationController {
             presentation.detents = [.large()]
             presentation.prefersGrabberVisible = true
         }
-        present(controller, animated: true)
+        present(log, animated: true)
     }
 
     // MARK: table
@@ -1096,6 +1074,128 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         tableView.deselectRow(at: indexPath, animated: true)
         if items[indexPath.row].isFailed {
             openLog()
+        }
+    }
+}
+
+// MARK: - Log sheet
+
+extension Notification.Name {
+    static let queueLogDidChange = Notification.Name("QueueCenterLogDidChange")
+}
+
+/// The apt/dpkg output, in a sheet of its own. The legacy log page belongs to
+/// the old popup bar and shows its placeholder text when it is opened after a
+/// run, so the queue reads the output straight from it instead.
+final class QueueLogSheetController: UIViewController {
+
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let textView = UITextView()
+    private let doneButton = UIButton(type: .system)
+    private let respringButton = UIButton(type: .system)
+    private var observer: NSObjectProtocol?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        titleLabel.text = String(localizationKey: "Queue_Log_Title")
+        titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(titleLabel)
+
+        let failed = QueueCenter.shared.lastItems.filter { $0.isFailed }.count
+        subtitleLabel.text = failed > 0
+            ? String(format: String(localizationKey: "Queue_Failed_N"), failed)
+            : String(localizationKey: "Queue_Log_Hint")
+        subtitleLabel.font = .systemFont(ofSize: 13)
+        subtitleLabel.textColor = failed > 0 ? .systemRed : .secondaryLabel
+        subtitleLabel.numberOfLines = 0
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(subtitleLabel)
+
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.alwaysBounceVertical = true
+        textView.backgroundColor = .secondarySystemBackground
+        textView.layer.cornerRadius = 14
+        textView.layer.cornerCurve = .continuous
+        textView.textContainerInset = UIEdgeInsets(top: 12, left: 10, bottom: 12, right: 10)
+        textView.font = UIFont(name: "Menlo-Regular", size: 12) ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textColor = .label
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(textView)
+
+        doneButton.setTitle(String(localizationKey: "Done"), for: .normal)
+        doneButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        doneButton.setTitleColor(.label, for: .normal)
+        doneButton.backgroundColor = .tertiarySystemFill
+        doneButton.layer.cornerRadius = 22
+        doneButton.layer.cornerCurve = .continuous
+        doneButton.translatesAutoresizingMaskIntoConstraints = false
+        doneButton.addAction(UIAction { [weak self] _ in self?.dismiss(animated: true) }, for: .touchUpInside)
+        view.addSubview(doneButton)
+
+        respringButton.setTitle(String(localizationKey: "After_Install_Respring"), for: .normal)
+        respringButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        respringButton.setTitleColor(.white, for: .normal)
+        respringButton.backgroundColor = .tintColor
+        respringButton.layer.cornerRadius = 22
+        respringButton.layer.cornerCurve = .continuous
+        respringButton.translatesAutoresizingMaskIntoConstraints = false
+        respringButton.addAction(UIAction { [weak self] _ in self?.respring() }, for: .touchUpInside)
+        view.addSubview(respringButton)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18),
+
+            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            subtitleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+
+            textView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            textView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            textView.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 14),
+            textView.bottomAnchor.constraint(equalTo: doneButton.topAnchor, constant: -14),
+
+            doneButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            doneButton.heightAnchor.constraint(equalToConstant: 44),
+            doneButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
+
+            respringButton.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 10),
+            respringButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            respringButton.widthAnchor.constraint(equalTo: doneButton.widthAnchor),
+            respringButton.heightAnchor.constraint(equalTo: doneButton.heightAnchor),
+            respringButton.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor)
+        ])
+
+        observer = NotificationCenter.default.addObserver(forName: .queueLogDidChange, object: nil,
+                                                          queue: .main) { [weak self] _ in
+            self?.refresh()
+        }
+        refresh()
+    }
+
+    deinit {
+        if let observer = observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func refresh() {
+        let text = DownloadManager.shared.viewController.logText
+        textView.text = text.isEmpty ? String(localizationKey: "Queue_Log_Empty") : text
+        textView.textColor = text.isEmpty ? .secondaryLabel : .label
+        guard !text.isEmpty else { return }
+        let end = NSRange(location: (text as NSString).length, length: 0)
+        textView.scrollRangeToVisible(end)
+    }
+
+    private func respring() {
+        dismiss(animated: true) {
+            spawnAsRoot(args: [jbroot("/usr/bin/sbreload")])
         }
     }
 }

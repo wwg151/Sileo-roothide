@@ -474,3 +474,7 @@
 "Queue_Uninstalling" = "Removing";
 "Queue_Downloading" = "Downloading";
 "Queue_Failed" = "Failed";
+
+"Queue_Log_Title" = "Install Log";
+"Queue_Log_Hint" = "apt and dpkg output";
+"Queue_Log_Empty" = "No log yet.";

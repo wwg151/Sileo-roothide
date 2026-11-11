@@ -16,11 +16,6 @@ private var popupTitleShiftKey: UInt8 = 0
 class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupPresentationDelegate {
     static var singleton: TabBarController?
     private var downloadsController: UINavigationController?
-    /// The log page the queue shows: its view controller already lives inside
-    /// this navigation controller, so it can never be presented on its own.
-    var logController: UIViewController? {
-        downloadsController ?? DownloadManager.shared.viewController
-    }
     private(set) public var popupIsPresented = false
     private var popupLock = DispatchSemaphore(value: 1)
     private var shouldSelectIndex = -1
