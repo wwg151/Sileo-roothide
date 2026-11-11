@@ -33,6 +33,10 @@ struct QueueItem {
     var convertingFraction: CGFloat = 0
     /// a failed task whose log has been read: it can be removed now
     var failureRead = false
+    /// 0 for the package the user queued, 1 for a dependency queued for it
+    var groupRank = 0
+    /// the order the entry was added in, so rows keep their place
+    var sequence = 0
 
     var isFailed: Bool {
         if case .failed = state { return true }
@@ -102,8 +106,9 @@ extension DownloadManager {
         }
 
         let aptFraction = QueueCenter.shared.aptFraction
-        func add(_ set: Set<DownloadPackage>, removal: Bool) {
-            for entry in set {
+        var sequence = 0
+        func add(_ set: Set<DownloadPackage>, removal: Bool, group: Int) {
+            for entry in set.sorted(by: { ($0.package.name ?? $0.package.package) < ($1.package.name ?? $1.package.package) }) {
                 let package = entry.package
                 let identifier = package.package
                 let state: QueueItemState
@@ -133,15 +138,18 @@ extension DownloadManager {
                                        state: state,
                                        aptFraction: aptActive ? aptFraction : 0,
                                        convertingFraction: converting ? 0.99 : 0,
-                                       failureRead: readFailures.contains(identifier)))
+                                       failureRead: readFailures.contains(identifier),
+                                       groupRank: group,
+                                       sequence: sequence))
+                sequence += 1
             }
         }
 
-        add(vars.installations.raw, removal: false)
-        add(vars.upgrades.raw, removal: false)
-        add(vars.installdeps.raw, removal: false)
-        add(vars.uninstallations.raw, removal: true)
-        add(vars.uninstalldeps.raw, removal: true)
+        add(vars.installations.raw, removal: false, group: 0)
+        add(vars.upgrades.raw, removal: false, group: 0)
+        add(vars.uninstallations.raw, removal: true, group: 0)
+        add(vars.installdeps.raw, removal: false, group: 1)
+        add(vars.uninstalldeps.raw, removal: true, group: 1)
 
         // a download that lost its slot in the sets still shows while it runs
         let known = Set(items.map { $0.identifier })
@@ -162,7 +170,10 @@ extension DownloadManager {
                                    isRemoval: false,
                                    state: state,
                                    convertingFraction: { if case .converting = state { return 0.99 }; return 0 }(),
-                                   failureRead: readFailures.contains(identifier)))
+                                   failureRead: readFailures.contains(identifier),
+                                   groupRank: 1,
+                                   sequence: sequence))
+            sequence += 1
         }
 
         let rank: (QueueItem) -> Int = { item in
@@ -174,8 +185,13 @@ extension DownloadManager {
             case .waiting: return 4
             }
         }
-        return (items.sorted { rank($0) != rank($1) ? rank($0) < rank($1) : $0.identifier < $1.identifier },
-                allDownloaded)
+        return (items.sorted { a, b in
+            // the package the user asked for stays on top, its dependencies
+            // follow, and only then does the state decide
+            if a.groupRank != b.groupRank { return a.groupRank < b.groupRank }
+            if rank(a) != rank(b) { return rank(a) < rank(b) }
+            return a.sequence < b.sequence
+        }, allDownloaded)
     }
 }
 
@@ -539,6 +555,20 @@ final class QueueCenter {
     func removeFromBatch(_ identifier: String) {
         DispatchQueue.main.async {
             let manager = DownloadManager.shared
+            let dependencies = manager.vars.installdeps.raw.map { $0.package }
+                + manager.vars.uninstalldeps.raw.map { $0.package }
+            if dependencies.contains(where: { $0.package == identifier }) {
+                // a dependency does not go on its own: the package that asked
+                // for it leaves too, and apt then drops its dependencies
+                let mains = manager.vars.installations.raw.map { $0.package }
+                    + manager.vars.upgrades.raw.map { $0.package }
+                let all = mains + dependencies
+                var dependent = mains.filter { self.depends($0, on: identifier, among: all) }
+                if dependent.isEmpty { dependent = mains }
+                for main in dependent {
+                    manager.remove(package: main.package)
+                }
+            }
             manager.queuedDownload(package: identifier)?.task?.cancel()
             manager.remove(package: identifier)
             // a failed row lives only in the centre's own list, not in apt's
@@ -577,6 +607,40 @@ final class QueueCenter {
             }
             self.syncNow()
         }
+    }
+
+    /// Names a package depends on, whatever the case of the field and however
+    /// the alternatives are written.
+    private func dependencyNames(of package: Package) -> [String] {
+        var names: [String] = []
+        for key in ["depends", "pre-depends", "Depends", "Pre-Depends"] {
+            guard let raw = package.rawControl[key], !raw.isEmpty else { continue }
+            for group in raw.components(separatedBy: ",") {
+                for alternative in group.components(separatedBy: "|") {
+                    let name = alternative
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .components(separatedBy: CharacterSet(charactersIn: " (:[<"))
+                        .first ?? ""
+                    if !name.isEmpty { names.append(name) }
+                }
+            }
+        }
+        return names
+    }
+
+    /// Whether this package needs `identifier`, directly or through the other
+    /// packages of the batch.
+    private func depends(_ package: Package, on identifier: String, among all: [Package]) -> Bool {
+        var seen = Set<String>()
+        var pending = dependencyNames(of: package)
+        while let name = pending.popLast() {
+            if name == identifier { return true }
+            guard seen.insert(name).inserted else { continue }
+            if let next = all.first(where: { $0.package == name }) {
+                pending += dependencyNames(of: next)
+            }
+        }
+        return false
     }
 
     private func syncNow() {
