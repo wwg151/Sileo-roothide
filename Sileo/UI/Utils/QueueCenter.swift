@@ -1086,13 +1086,6 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         header.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(header)
 
-        let logButton = UIButton(type: .system)
-        logButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
-        logButton.titleLabel?.font = .systemFont(ofSize: 15)
-        logButton.translatesAutoresizingMaskIntoConstraints = false
-        logButton.addAction(UIAction { [weak self] _ in self?.openLog() }, for: .touchUpInside)
-        view.addSubview(logButton)
-
         table.translatesAutoresizingMaskIntoConstraints = false
         table.dataSource = self
         table.delegate = self
@@ -1140,8 +1133,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         NSLayoutConstraint.activate([
             header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18),
-            logButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            logButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            header.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
             table.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             table.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 14),
@@ -1611,10 +1603,13 @@ final class QueueCardCell: UIView {
         switch item.state {
         case .waiting, .downloading:
             title = "✕"
+            actionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
             actionButton.layer.borderColor = UIColor.separator.cgColor
             actionButton.setTitleColor(.label, for: .normal)
         case .failed:
             title = String(localizationKey: "Queue_View_Log_Short")
+            // the word, not the glyph, has to fit the round button
+            actionButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
             actionButton.layer.borderColor = UIColor.systemRed.withAlphaComponent(0.5).cgColor
             actionButton.setTitleColor(.systemRed, for: .normal)
         default:
