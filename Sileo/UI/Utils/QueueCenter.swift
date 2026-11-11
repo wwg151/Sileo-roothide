@@ -1164,7 +1164,7 @@ final class QueueCapsuleView: UIView {
 
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
         isHidden = true
-        configure()
+        configure(count: 0)
     }
 
     required init?(coder: NSCoder) {
