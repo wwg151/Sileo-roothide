@@ -845,8 +845,16 @@ final class SourcesViewController: SileoViewController {
     /// it keeps its action and opens Sileo's own card.
     @objc private func refreshAddMenu() {
         guard let plusItem = navigationItem.rightBarButtonItems?.first else { return }
-        SileoActionMenu.attachMenu(to: plusItem, header: nil) { [weak self] in
+        let attached = SileoActionMenu.attachMenu(to: plusItem, header: nil) { [weak self] in
             self?.addMenuItems() ?? []
+        }
+        if attached {
+            // The menu answers the tap itself, so the card's action must not.
+            plusItem.target = nil
+            plusItem.action = nil
+        } else if plusItem.action == nil {
+            plusItem.target = self
+            plusItem.action = #selector(presentAddCard(_:))
         }
     }
 

@@ -36,6 +36,8 @@ final class SileoActionMenu: UIViewController {
     private let header: String?
     private let items: [SileoActionMenuItem]
     private let sourceFrame: CGRect?
+    /// Hairlines between the rows, the way the system's menu draws them.
+    private let hairlines: Bool
 
     private let dimView = UIView()
     private let card = UIView()
@@ -49,10 +51,11 @@ final class SileoActionMenu: UIViewController {
     private static let cardWidth: CGFloat = 264
     private static let cornerRadius: CGFloat = 14
 
-    init(header: String?, items: [SileoActionMenuItem], sourceFrame: CGRect? = nil) {
+    init(header: String?, items: [SileoActionMenuItem], sourceFrame: CGRect? = nil, hairlines: Bool = false) {
         self.header = header
         self.items = items
         self.sourceFrame = sourceFrame
+        self.hairlines = hairlines
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
         modalTransitionStyle = .crossDissolve
@@ -207,6 +210,22 @@ final class SileoActionMenu: UIViewController {
             label.trailingAnchor.constraint(lessThanOrEqualTo: imageView.leadingAnchor, constant: -12)
         ])
 
+        // The system's menus keep their rows apart with a hairline: draw the
+        // same one here when the switch asks for it.
+        if hairlines, index < items.count - 1 {
+            let line = UIView()
+            line.backgroundColor = .separator
+            line.translatesAutoresizingMaskIntoConstraints = false
+            line.isUserInteractionEnabled = false
+            row.addSubview(line)
+            NSLayoutConstraint.activate([
+                line.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+                line.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+                line.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+                line.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
+            ])
+        }
+
         // A highlight while the finger is down, the same in both appearances.
         row.addAction(UIAction { [weak row] _ in
             UIView.animate(withDuration: 0.12) { row?.backgroundColor = .clear }
@@ -255,7 +274,12 @@ extension SileoActionMenu {
                         from host: UIViewController,
                         source: UIView? = nil,
                         sourceFrame: CGRect? = nil) {
-        host.present(SileoActionMenu(header: header, items: items, sourceFrame: sourceFrame),
+        // With the switch off the card keeps the system's hairlines, without
+        // the full-screen blur its context menu brings.
+        host.present(SileoActionMenu(header: header,
+                                     items: items,
+                                     sourceFrame: sourceFrame,
+                                     hairlines: !UIColor.hidesSeparators),
                      animated: true)
     }
 

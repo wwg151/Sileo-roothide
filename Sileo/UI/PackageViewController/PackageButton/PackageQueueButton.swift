@@ -675,21 +675,13 @@ private final class PackageQueueMenuDelegate: NSObject, UIContextMenuInteraction
             return nil
         }
 
-        // The switch in Settings decides which menu a long press brings: the
-        // system's own, with its hairlines, or Sileo's card without them.
-        if UIColor.hidesSeparators {
-            DispatchQueue.main.async { [weak button] in
-                button?.presentActionCard()
-            }
-            return nil
+        // A context menu blurs the whole screen behind it; Sileo's own card
+        // does not, and it carries the system's hairlines when the switch asks
+        // for them. So the card is what a long press opens either way.
+        DispatchQueue.main.async { [weak button] in
+            button?.presentActionCard()
         }
-
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak button] _ in
-            guard let button = button else { return nil }
-            let items = button.actionItems(for: package)
-            guard !items.isEmpty else { return nil }
-            return UIMenu(title: package.name ?? "", children: SileoActionMenu.menuElements(items))
-        }
+        return nil
     }
 }
 
