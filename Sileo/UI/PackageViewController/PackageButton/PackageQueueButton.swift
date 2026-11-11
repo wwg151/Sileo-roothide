@@ -79,10 +79,11 @@ class PackageQueueButton: PackageButton {
                                 handler: item.handler)
         }
         guard !items.isEmpty, let host = viewControllerForPresentation ?? hostViewController() else { return }
-        host.present(SileoActionMenu(header: nil,
-                                     items: items,
-                                     sourceFrame: convert(bounds, to: nil)),
-                     animated: true)
+        SileoActionMenu.present(header: nil,
+                                items: items,
+                                from: host,
+                                source: self,
+                                sourceFrame: convert(bounds, to: nil))
     }
 
     @objc private func presentActionCard(_ gesture: UILongPressGestureRecognizer) {

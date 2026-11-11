@@ -246,3 +246,41 @@ final class SileoActionMenu: UIViewController {
         dismiss(animated: true)
     }
 }
+
+extension SileoActionMenu {
+    /// The switch in Settings picks the menu: Sileo's own card, which draws no
+    /// hairlines, or the system's, whose rows carry them.
+    static func present(header: String?,
+                        items: [SileoActionMenuItem],
+                        from host: UIViewController,
+                        source: UIView? = nil,
+                        sourceFrame: CGRect? = nil) {
+        guard !UIColor.hidesSeparators else {
+            host.present(SileoActionMenu(header: header, items: items, sourceFrame: sourceFrame),
+                         animated: true)
+            return
+        }
+        let alert = UIAlertController(title: header, message: nil, preferredStyle: .actionSheet)
+        for item in items {
+            let action = UIAlertAction(title: item.title,
+                                       style: item.destructive ? .destructive : .default) { _ in
+                item.handler()
+            }
+            action.isEnabled = item.enabled
+            alert.addAction(action)
+        }
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            if let source = source {
+                popover.sourceView = source
+                popover.sourceRect = source.bounds
+            } else {
+                popover.sourceView = host.view
+                popover.sourceRect = CGRect(x: host.view.bounds.midX,
+                                            y: host.view.bounds.maxY,
+                                            width: 1, height: 1)
+            }
+        }
+        host.present(alert, animated: true)
+    }
+}
