@@ -891,6 +891,10 @@ final class QueueCenter {
         // The capsule is the queue's door: it is there whenever the queue has
         // something in it, so the sheet can always be opened again after it
         // was swiped away.
+        // the sheet is what hides it: trust the screen, not a flag
+        if sheetVisible, let sheet = sheetController, sheet.presentingViewController == nil {
+            sheetVisible = false
+        }
         var showCapsule = hasFailure || !items.isEmpty || doneShownAt != nil
         // an open sheet already carries the same information
         showCapsule = showCapsule && !sheetVisible
@@ -1066,6 +1070,8 @@ final class QueueCenter {
         if holdForConfirmation {
             discardBatch()
         }
+        // the capsule is the way back in: put it up at once
+        syncNow()
         restartTimer()
     }
 
@@ -1502,24 +1508,19 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
 
     private func refreshVisibleRows() {
         let snapshot = QueueCenter.shared.lastItems
-        guard snapshot.count == items.count else {
+        guard snapshot.map({ $0.identifier }) == items.map({ $0.identifier }) else {
             reload()
             return
         }
         items = snapshot
-        for cell in table.visibleCells {
-            guard let indexPath = table.indexPath(for: cell), indexPath.row < items.count,
-                  let card = cell.contentView.subviews.first as? QueueCardCell else { continue }
-            card.configure(item: items[indexPath.row])
-            // the bar walks to its new place instead of jumping
-            card.animateProgress()
-        }
+        updateVisibleRows()
     }
 
     private func reload() {
         // the centre keeps the last snapshot, failures included, even after
         // the manager has emptied the queue
         let snapshot = QueueCenter.shared.lastItems
+        let rowsChanged = snapshot.map { $0.identifier } != items.map { $0.identifier }
         items = snapshot
         let failed = snapshot.filter { $0.isFailed }.count
         let allHeld = !snapshot.isEmpty && snapshot.allSatisfy { $0.isPaused }
@@ -1568,7 +1569,23 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
                 actionButton.setTitleColor(.white, for: .normal)
             }
         }
-        table.reloadData()
+        // rebuilding the rows on every tick cancels a swipe the user has begun:
+        // only a different set of rows needs a new table
+        if rowsChanged {
+            table.reloadData()
+        } else {
+            updateVisibleRows()
+        }
+    }
+
+    /// Refresh the rows in place, so a swipe or a bar animation is not cut off.
+    private func updateVisibleRows() {
+        for cell in table.visibleCells {
+            guard let indexPath = table.indexPath(for: cell), indexPath.row < items.count,
+                  let card = cell.contentView.subviews.first as? QueueCardCell else { continue }
+            card.configure(item: items[indexPath.row])
+            card.animateProgress()
+        }
     }
 
     private func primaryAction() {
