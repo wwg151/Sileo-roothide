@@ -288,8 +288,8 @@ extension SileoActionMenu {
         anchor.alpha = 0.02
         host.view.addSubview(anchor)
         menuAnchors.append(anchor)
-        // Tapping a menu button opens its menu: do the same from here.
-        anchor.performPrimaryAction()
+        // Tapping a menu button opens its menu: send the event a tap would.
+        anchor.sendActions(for: .menuActionTriggered)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
             if menuAnchors.contains(where: { $0 === anchor }) {
