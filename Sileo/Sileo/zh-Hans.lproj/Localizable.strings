@@ -495,3 +495,5 @@
 "Queue_Log_Failed_Header" = "失败任务：";
 
 "Queue_Entry" = "队列";
+
+"Queue_Clear" = "清除";

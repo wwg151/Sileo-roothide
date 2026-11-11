@@ -490,3 +490,5 @@
 "Queue_Log_Failed_Header" = "Failed tasks:";
 
 "Queue_Entry" = "Queue";
+
+"Queue_Clear" = "Clear";

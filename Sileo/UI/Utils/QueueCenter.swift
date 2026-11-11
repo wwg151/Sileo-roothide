@@ -1309,7 +1309,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
     private let actionButton = UIButton(type: .system)
-    private let cancelButton = UIButton(type: .system)
+    private let clearButton = UIButton(type: .system)
     private var rowTimer: Timer?
     private let pauseAllButton = UIButton(type: .system)
     private var actionFullConstraints: [NSLayoutConstraint] = []
@@ -1359,31 +1359,31 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         actionButton.addAction(UIAction { [weak self] _ in self?.primaryAction() }, for: .touchUpInside)
         view.addSubview(actionButton)
 
-        cancelButton.translatesAutoresizingMaskIntoConstraints = false
-        cancelButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
-        cancelButton.setTitle(String(localizationKey: "Cancel"), for: .normal)
-        cancelButton.setTitleColor(.label, for: .normal)
-        cancelButton.backgroundColor = .tertiarySystemFill
-        cancelButton.layer.cornerRadius = 22
-        cancelButton.layer.cornerCurve = .continuous
-        cancelButton.addAction(UIAction { [weak self] _ in
-            // 取消 only puts the sheet away: the batch keeps waiting, and the
-            // capsule brings it back with 确认 still on it
+        // the left button empties the queue in one go; 确认 keeps its place
+        clearButton.translatesAutoresizingMaskIntoConstraints = false
+        clearButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        clearButton.setTitle(String(localizationKey: "Queue_Clear"), for: .normal)
+        clearButton.setTitleColor(.label, for: .normal)
+        clearButton.backgroundColor = .tertiarySystemFill
+        clearButton.layer.cornerRadius = 22
+        clearButton.layer.cornerCurve = .continuous
+        clearButton.addAction(UIAction { [weak self] _ in
+            QueueCenter.shared.cancelAll()
             self?.dismiss(animated: true)
         }, for: .touchUpInside)
-        cancelButton.isHidden = true
-        view.addSubview(cancelButton)
+        clearButton.isHidden = true
+        view.addSubview(clearButton)
 
         actionFullConstraints = [
             actionButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             actionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
         ]
         actionSplitConstraints = [
-            cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            cancelButton.widthAnchor.constraint(equalTo: actionButton.widthAnchor),
-            cancelButton.heightAnchor.constraint(equalTo: actionButton.heightAnchor),
-            cancelButton.centerYAnchor.constraint(equalTo: actionButton.centerYAnchor),
-            actionButton.leadingAnchor.constraint(equalTo: cancelButton.trailingAnchor, constant: 10),
+            clearButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            clearButton.widthAnchor.constraint(equalTo: actionButton.widthAnchor),
+            clearButton.heightAnchor.constraint(equalTo: actionButton.heightAnchor),
+            clearButton.centerYAnchor.constraint(equalTo: actionButton.centerYAnchor),
+            actionButton.leadingAnchor.constraint(equalTo: clearButton.trailingAnchor, constant: 10),
             actionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
         ]
 
@@ -1472,30 +1472,44 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             ? String(localizationKey: "Queue_Resume_All")
             : String(localizationKey: "Queue_Pause_All"), for: .normal)
         let held = QueueCenter.shared.holdForConfirmation && !snapshot.isEmpty
-        if held {
+        let failed = snapshot.contains { $0.isFailed }
+        // the left button clears everything, and is there whenever a row is
+        let showClear = !snapshot.isEmpty
+        if showClear {
             NSLayoutConstraint.deactivate(actionFullConstraints)
             NSLayoutConstraint.activate(actionSplitConstraints)
-            cancelButton.isHidden = false
-            actionButton.setTitle(String(localizationKey: "Queue_Confirm_Button"), for: .normal)
-            actionButton.backgroundColor = .tintColor
-            actionButton.setTitleColor(.white, for: .normal)
+            clearButton.isHidden = false
         } else {
             NSLayoutConstraint.deactivate(actionSplitConstraints)
             NSLayoutConstraint.activate(actionFullConstraints)
-            cancelButton.isHidden = true
-            if snapshot.isEmpty {
-                actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
-                actionButton.backgroundColor = .tertiarySystemFill
-                actionButton.setTitleColor(.label, for: .normal)
-            } else if snapshot.contains(where: { $0.isFailed }) {
-                actionButton.setTitle(String(localizationKey: "Queue_Retry"), for: .normal)
-                actionButton.backgroundColor = .tintColor
-                actionButton.setTitleColor(.white, for: .normal)
-            } else {
-                actionButton.setTitle(String(localizationKey: "Queue_Cancel_All"), for: .normal)
-                actionButton.backgroundColor = .tintColor
-                actionButton.setTitleColor(.white, for: .normal)
-            }
+            clearButton.isHidden = true
+        }
+        if held {
+            actionButton.setTitle(String(localizationKey: "Queue_Confirm_Button"), for: .normal)
+            actionButton.backgroundColor = .tintColor
+            actionButton.setTitleColor(.white, for: .normal)
+        } else if snapshot.isEmpty {
+            actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
+            actionButton.backgroundColor = .tertiarySystemFill
+            actionButton.setTitleColor(.label, for: .normal)
+        } else if failed {
+            actionButton.setTitle(String(localizationKey: "Queue_Retry"), for: .normal)
+            actionButton.backgroundColor = .tintColor
+            actionButton.setTitleColor(.white, for: .normal)
+        } else if hasDownloading {
+            actionButton.setTitle(QueueCenter.shared.allDownloadsPaused
+                ? String(localizationKey: "Queue_Resume_All")
+                : String(localizationKey: "Queue_Pause_All"), for: .normal)
+            actionButton.backgroundColor = .tintColor
+            actionButton.setTitleColor(.white, for: .normal)
+        } else {
+            // nothing to hold and nothing to retry: the left button is enough
+            NSLayoutConstraint.deactivate(actionSplitConstraints)
+            NSLayoutConstraint.activate(actionFullConstraints)
+            clearButton.isHidden = true
+            actionButton.setTitle(String(localizationKey: "Queue_Clear"), for: .normal)
+            actionButton.backgroundColor = .tertiarySystemFill
+            actionButton.setTitleColor(.label, for: .normal)
         }
         // rebuilding the rows on every tick cancels a swipe the user has begun:
         // only a different set of rows needs a new table
@@ -1532,12 +1546,17 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             QueueCenter.shared.retryBatch()
             return
         }
-        SileoPanelViewController.confirm(title: String(localizationKey: "Queue_Cancel_All"),
-                                         message: String(localizationKey: "Queue_Cancel_All_Message"),
-                                         confirmTitle: String(localizationKey: "Queue_Cancel_All")) { [weak self] in
-            QueueCenter.shared.cancelAll()
-            self?.dismiss(animated: true)
-        }.present(from: self)
+        let downloading = items.contains {
+            if case .downloading = $0.state { return true }
+            return false
+        }
+        if downloading {
+            QueueCenter.shared.setDownloadsPaused(!QueueCenter.shared.allDownloadsPaused)
+            return
+        }
+        // nothing else to offer: empty the queue
+        QueueCenter.shared.cancelAll()
+        dismiss(animated: true)
     }
 
     private func openLog() {
