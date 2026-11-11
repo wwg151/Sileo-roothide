@@ -408,8 +408,7 @@ final class QueueCenter {
         DispatchQueue.main.async {
             self.installFailed = false
             self.doneShownAt = nil
-            // a second apt pass in the same batch (the auto-remove of orphans,
-            // for instance) must not start the bar over
+            // a second apt pass in the same batch must not start the bar over
             let continuing = self.aptFraction > 0 || !self.aptCounted.isEmpty || !self.aptPartial.isEmpty
             if !continuing {
                 self.aptTotal = max(DownloadManager.shared.operationCount(), 1)
@@ -730,16 +729,18 @@ final class QueueCenter {
         }
     }
 
-    /// ✕ on a row: the package leaves the batch, and so do the dependencies
-    /// that were queued only for it.
+    /// ✕ on a row: the package leaves the batch. A dependency takes the
+    /// package that asked for it along; a package on its own leaves its
+    /// dependencies where they are.
     func removeFromBatch(_ identifier: String) {
         DispatchQueue.main.async {
             let manager = DownloadManager.shared
             let dependencies = manager.vars.installdeps.raw.map { $0.package }
                 + manager.vars.uninstalldeps.raw.map { $0.package }
-            if dependencies.contains(where: { $0.package == identifier }) {
+            let isDependency = dependencies.contains { $0.package == identifier }
+            if isDependency {
                 // a dependency does not go on its own: the package that asked
-                // for it leaves too, and apt then drops its dependencies
+                // for it leaves too
                 let mains = manager.vars.installations.raw.map { $0.package }
                     + manager.vars.upgrades.raw.map { $0.package }
                 let all = mains + dependencies
@@ -760,9 +761,9 @@ final class QueueCenter {
                     self.doneShownAt = nil
                 }
             }
-            if !manager.queueRunning && !manager.aptRunning {
-                // nothing has run yet: apt's resolver works the dependencies
-                // out again from what is left in the batch
+            if isDependency, !manager.queueRunning, !manager.aptRunning {
+                // the package that asked for it is gone: let apt work the
+                // remaining dependencies out again
                 manager.reloadData(recheckPackages: true)
             }
             // a download failed while the rest went on: with the bad one gone
@@ -1495,7 +1496,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             ? String(localizationKey: "Queue_Resume_All")
             : String(localizationKey: "Queue_Pause_All"), for: .normal)
         let held = QueueCenter.shared.holdForConfirmation && !snapshot.isEmpty
-        let failed = snapshot.contains { $0.isFailed }
+        let anyFailed = snapshot.contains { $0.isFailed }
         // the left button clears everything, and is there whenever a row is
         let showClear = !snapshot.isEmpty
         if showClear {
@@ -1515,7 +1516,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
             actionButton.backgroundColor = .tertiarySystemFill
             actionButton.setTitleColor(.label, for: .normal)
-        } else if failed {
+        } else if anyFailed {
             actionButton.setTitle(String(localizationKey: "Queue_Retry"), for: .normal)
             actionButton.backgroundColor = .tintColor
             actionButton.setTitleColor(.white, for: .normal)

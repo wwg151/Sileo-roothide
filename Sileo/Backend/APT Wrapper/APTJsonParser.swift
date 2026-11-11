@@ -177,18 +177,13 @@ extension APTWrapper {
             throw APTParserErrors.blankRequest
         }
         
-        // Taking a package away on its own: apt can say which of the packages it
-        // brought in nothing else needs any more. While installing, it must not
-        // sweep anything up.
-        let autoRemove = installList.isEmpty && !removeList.isEmpty
-
         var queryArguments = [
             "-sqf",
             "--allow-remove-essential",
             "--allow-change-held-packages",
             "--allow-downgrades",
             "-oquiet::NoUpdate=true",
-            "-oApt::Get::HideAutoRemove=\(autoRemove ? "false" : "true")",
+
             "-oquiet::NoProgress=true",
             "-oquiet::NoStatistic=true",
             "-oDir::State::lists=sileolists/",
@@ -197,9 +192,6 @@ extension APTWrapper {
             "-oAPT::Format::for-sileo=true",
             "-oAPT::Format::JSON=true"
         ]
-        if autoRemove {
-            queryArguments.append("--auto-remove")
-        }
         queryArguments.append(contentsOf: ["install", "--reinstall"])
         var packageOperations: [String] = []
         for downloadPackage in installList {

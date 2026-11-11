@@ -572,14 +572,6 @@ final class DownloadManager {
         #if TARGET_SANDBOX || targetEnvironment(simulator)
         return
         #endif
-        // What the removal would take with it, worked out before apt is asked,
-        // so an apt failure cannot leave the dependencies behind.
-        var orphaned: [Package] = []
-        if installationsAndUpgrades.isEmpty && !self.vars.uninstallations.isEmpty {
-            let removing = self.vars.uninstallations.raw.map { $0.package }
-            orphaned = OrphanDependencies.orphaned(by: removing,
-                                                   installed: PackageListManager.shared.installedPackages)
-        }
 
         var aptOutput: APTOutput
         do {
@@ -587,9 +579,6 @@ final class DownloadManager {
             aptOutput = try APTWrapper.operationList(installList: installationsAndUpgrades, removeList: self.vars.uninstallations.raw)
             NSLog("SileoLog: aptOutput=\(aptOutput.operations), \(aptOutput.conflicts)")
         } catch {
-            if !orphaned.isEmpty {
-                self.vars.uninstalldeps.setTo(Set(orphaned.map { DownloadPackage(package: $0) }))
-            }
             throw error
         }
         
@@ -685,33 +674,6 @@ final class DownloadManager {
             uninstallDeps.removeAll { uninstallations.contains($0) }
             installDeps.removeAll { installations.contains($0) }
             installDeps.removeAll { upgrades.contains($0) }
-        }
-
-        // The dependencies worked out above join apt's own answer.
-        for orphan in orphaned
-        where !uninstallations.contains(where: { $0.package.package == orphan.package })
-            && !uninstallDeps.contains(where: { $0.package.package == orphan.package }) {
-            uninstallDeps.insert(DownloadPackage(package: orphan))
-        }
-
-        // apt's own list is put through the same question: nothing a package
-        // that stays still needs goes along with it, and once something is kept
-        // what it needs is kept too.
-        let removingIdentifiers = Set(uninstallations.map { $0.package.package })
-        var changed = true
-        while changed {
-            let identifiers = Set(uninstallDeps.map { $0.package.package })
-            let needed = OrphanDependencies.neededByStaying(identifiers,
-                                                            removing: removingIdentifiers,
-                                                            installed: PackageListManager.shared.installedPackages)
-            changed = false
-            if !needed.isEmpty {
-                let before = uninstallDeps.count
-                uninstallDeps = Set(uninstallDeps.filter { !needed.contains($0.package.package) })
-                changed = uninstallDeps.count != before
-                if changed {
-                }
-            }
         }
   
         self.vars.upgrades.setTo(upgrades)
@@ -1452,172 +1414,3 @@ final class DownloadManager {
     }
 }
 
-/// Works out which packages came along as dependencies of the ones being
-/// removed and are wanted by nothing else, so that taking a package off the
-/// device takes what it dragged in with it.
-///
-/// It reads the control files of what is installed — the dependencies, the
-/// alternatives inside them, and the names a package provides — rather than
-/// leaning on apt's own answer, which never covers a package installed from a
-/// local file.
-enum OrphanDependencies {
-
-    /// The package name in one way of writing a dependency, with its version
-    /// and architecture qualifier taken off.
-    static func packageName(fromDependency dependency: String) -> String? {
-        var name = dependency.trimmingCharacters(in: .whitespaces)
-        if let bracket = name.firstIndex(of: "(") {
-            name = String(name[..<bracket])
-        }
-        if let colon = name.firstIndex(of: ":") {
-            name = String(name[..<colon])
-        }
-        name = name.trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? nil : name
-    }
-
-    /// A package's dependencies, one clause at a time. The ways of satisfying a
-    /// clause are alternatives: `openssh-server | wiki.qaq.irisin` is met by
-    /// either of them, so neither has to stay if the other does.
-    static func dependencyClauses(of package: Package) -> [[String]] {
-        var clauses = [[String]]()
-        // Control fields are kept with lowercased keys, but both spellings are
-        // read so a field kept as written cannot be missed.
-        for key in ["depends", "pre-depends", "Depends", "Pre-Depends"] {
-            guard let raw = package.rawControl[key] else { continue }
-            for clause in raw.components(separatedBy: ",") {
-                let alternatives = clause.components(separatedBy: "|").compactMap {
-                    packageName(fromDependency: $0)
-                }
-                if !alternatives.isEmpty {
-                    clauses.append(alternatives)
-                }
-            }
-        }
-        return clauses
-    }
-
-    /// Every name a package asks for, whichever way it is written.
-    static func dependencyNames(of package: Package) -> Set<String> {
-        var names = Set<String>()
-        for clause in dependencyClauses(of: package) {
-            for name in clause {
-                names.insert(name)
-            }
-        }
-        return names
-    }
-
-    /// The names a package answers to besides its own, from Provides.
-    static func providedNames(of package: Package) -> Set<String> {
-        var names = Set<String>()
-        for key in ["provides", "Provides"] {
-            guard let raw = package.rawControl[key] else { continue }
-            for clause in raw.components(separatedBy: ",") {
-                if let name = packageName(fromDependency: clause) {
-                    names.insert(name)
-                }
-            }
-        }
-        return names
-    }
-
-    /// Which package carries each name: its own, and the ones it provides.
-    static func providers(among identifiers: Set<String>, installed: [String: Package]) -> [String: Set<String>] {
-        var providers = [String: Set<String>]()
-        for (identifier, package) in installed where identifiers.contains(identifier) {
-            providers[identifier, default: []].insert(identifier)
-            for provided in providedNames(of: package) {
-                providers[provided, default: []].insert(identifier)
-            }
-        }
-        return providers
-    }
-
-    /// What would be left behind, and unwanted, if these packages went.
-    ///
-    /// A package installed from a local file never reaches apt's record of what
-    /// came in automatically, so that record is not what decides here: being a
-    /// dependency of the package that goes, and being wanted by nothing that
-    /// stays, is enough. Wanted is counted again after each package is dropped,
-    /// because what a kept package needs must stay as well: libpam2 needs
-    /// libpam-modules, and sudo needs libpam2.
-    static func orphaned(by removing: [Package], installed: [String: Package]) -> [Package] {
-        guard !removing.isEmpty else { return [] }
-        let removedIdentifiers = Set(removing.map { $0.package })
-
-        // Everything those packages pulled in, and what that pulled in.
-        var candidates = Set<String>()
-        var visited = removedIdentifiers
-        var queue = Array(removedIdentifiers)
-        while !queue.isEmpty {
-            let identifier = queue.removeFirst()
-            guard let package = installed[identifier] else { continue }
-            for dependency in dependencyNames(of: package) {
-                guard installed[dependency] != nil,
-                      !removedIdentifiers.contains(dependency),
-                      candidates.insert(dependency).inserted else {
-                    continue
-                }
-                if visited.insert(dependency).inserted {
-                    queue.append(dependency)
-                }
-            }
-        }
-        guard !candidates.isEmpty else { return [] }
-        let carriers = providers(among: Set(installed.keys), installed: installed)
-
-        // Drop what anything that stays still needs, and look again, since what
-        // that needs must stay too.
-        var changed = true
-        while changed {
-            changed = false
-            for (identifier, package) in installed
-            where !removedIdentifiers.contains(identifier) && !candidates.contains(identifier) {
-                for clause in dependencyClauses(of: package) {
-                    // One way of meeting the clause that stays is enough.
-                    let met = clause.contains { name in
-                        (carriers[name] ?? []).contains { !candidates.contains($0) && !removedIdentifiers.contains($0) }
-                    }
-                    guard !met else { continue }
-                    for name in clause {
-                        for carrier in carriers[name] ?? [] where candidates.remove(carrier) != nil {
-                            changed = true
-                        }
-                    }
-                }
-            }
-        }
-
-        // A dependency is never taken along if the device cannot do without it.
-        return candidates.compactMap { identifier in
-            guard let package = installed[identifier] else { return nil }
-            return DownloadManager.isSystemPackage(package) ? nil : package
-        }
-    }
-
-    /// Of these packages, the ones a package that stays still needs, directly or
-    /// through a name they provide.
-    static func neededByStaying(_ identifiers: Set<String>,
-                                removing: Set<String>,
-                                installed: [String: Package]) -> Set<String> {
-        guard !identifiers.isEmpty else { return [] }
-        let carriers = providers(among: Set(installed.keys), installed: installed)
-        var needed = Set<String>()
-        for (identifier, package) in installed
-        where !removing.contains(identifier) && !identifiers.contains(identifier) {
-            for clause in dependencyClauses(of: package) {
-                let met = clause.contains { name in
-                    (carriers[name] ?? []).contains { !identifiers.contains($0) && !removing.contains($0) }
-                }
-                guard !met else { continue }
-                for name in clause {
-                    for carrier in carriers[name] ?? [] where identifiers.contains(carrier) {
-                        needed.insert(carrier)
-                    }
-                }
-            }
-        }
-        return needed
-    }
-}
