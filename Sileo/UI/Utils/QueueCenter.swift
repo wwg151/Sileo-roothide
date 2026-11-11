@@ -1003,12 +1003,14 @@ final class QueueCenter {
                 // showing a window can take the key: hand it back to the app
                 TabBarController.singleton?.view.window?.makeKey()
             }
-            if capsule.isHidden {
-                capsule.alpha = 0
+            if capsule.isHidden || capsule.alpha < 1 {
+                // a hide that was cut short can leave it visible but clear:
+                // either way it has to come back
                 capsule.isHidden = false
+                capsule.alpha = max(capsule.alpha, 0)
                 UIView.animate(withDuration: 0.3, delay: 0,
                                usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
-                               options: [.curveEaseOut]) {
+                               options: [.curveEaseOut, .beginFromCurrentState]) {
                     capsule.alpha = 1
                     capsule.transform = .identity
                 }
@@ -1058,6 +1060,11 @@ final class QueueCenter {
     /// queue, and try again if the page was still animating.
     private func presentSheetWhenSettled(_ attempts: Int) {
         guard autoSheetPending, attempts > 0 else { return }
+        // an empty queue has nothing to show: never open a blank sheet
+        guard !lastItems.isEmpty else {
+            autoSheetPending = false
+            return
+        }
         if presentSheet() { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             self?.presentSheetWhenSettled(attempts - 1)
@@ -1066,11 +1073,9 @@ final class QueueCenter {
 
     func sheetClosed() {
         sheetVisible = false
-        // closing the sheet without 确认 is a 取消: nothing of the batch runs
-        if holdForConfirmation {
-            discardBatch()
-        }
-        // the capsule is the way back in: put it up at once
+        autoSheetPending = false
+        // the batch waits where it is: the capsule brings the sheet back, and
+        // 确认 is still there when it opens
         syncNow()
         restartTimer()
     }
