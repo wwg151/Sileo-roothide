@@ -133,6 +133,58 @@ extension DownloadManager {
             }
             return parts.isEmpty ? nil : parts.joined(separator: ", ")
         }
+        // apt rarely blames the package the user queued: it names the meta
+        // package that stands in the way (`preferenceloader.top`) or the
+        // dependency itself, and the queued package only mentions it in a
+        // Depends line. So the names apt refuses are collected here and looked
+        // up in each package's dependency tree.
+        var refusedNames: Set<String> = []
+        for error in broken {
+            let blamed = error.packageID
+            if !blamed.hasSuffix(".top") {
+                refusedNames.insert(blamed)
+            }
+            for conflict in error.conflictingPackages where blamed.hasSuffix(".top") || blamed == conflict.package {
+                refusedNames.insert(conflict.package)
+            }
+        }
+        let refusedKey = refusedNames.sorted().joined(separator: ",")
+        var refusedCache: [String: String] = [:]
+        func refusedHint(for package: Package) -> String? {
+            guard !refusedNames.isEmpty else { return nil }
+            let cacheKey = package.package + "|" + refusedKey
+            if let cached = refusedCache[cacheKey] {
+                return cached.isEmpty ? nil : cached
+            }
+            var hits: [String] = []
+            var seen: Set<String> = [package.package]
+            var pending: [Package] = [package]
+            while let next = pending.popLast() {
+                for key in ["depends", "pre-depends", "Depends", "Pre-Depends"] {
+                    guard let raw = next.rawControl[key], !raw.isEmpty else { continue }
+                    for group in raw.components(separatedBy: ",") {
+                        for alternative in group.components(separatedBy: "|") {
+                            let clause = alternative.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let name = clause
+                                .components(separatedBy: CharacterSet(charactersIn: " (:[<"))
+                                .first ?? ""
+                            guard !name.isEmpty else { continue }
+                            if refusedNames.contains(name) {
+                                let text = String(localizationKey: "Conflict_Depends") + " " + clause
+                                if !hits.contains(text) { hits.append(text) }
+                            } else if seen.insert(name).inserted,
+                                      PackageListManager.shared.installedPackage(identifier: name) == nil,
+                                      let candidate = PackageListManager.shared.newestPackage(identifier: name, repoContext: nil) {
+                                pending.append(candidate)
+                            }
+                        }
+                    }
+                }
+            }
+            let result = hits.joined(separator: ", ")
+            refusedCache[cacheKey] = result
+            return result.isEmpty ? nil : result
+        }
         // A package that has to be converted first is left out of apt's check
         // until it is downloaded, so its own dependencies are looked at here.
         func conversionHint(for package: Package) -> String? {
@@ -233,7 +285,7 @@ extension DownloadManager {
                 let converting = { if case .converting = state { return true }; return false }()
                 // apt already knows this one cannot go in: say so before the
                 // batch even starts instead of letting it wait
-                let blocked = brokenHint(for: identifier) ?? conversionHint(for: package)
+                let blocked = brokenHint(for: identifier) ?? refusedHint(for: package) ?? conversionHint(for: package)
                 if blocked != nil, case .waiting = state {
                     state = .failed(nil)
                 }
@@ -291,7 +343,7 @@ extension DownloadManager {
                                    speedText: { if case .downloading = state {
                                        return downloadSpeedText(for: identifier, download: download, now: sampledAt)
                                    }; return nil }(),
-                                   hint: brokenHint(for: identifier) ?? conversionHint(for: download.package),
+                                   hint: brokenHint(for: identifier) ?? refusedHint(for: download.package) ?? conversionHint(for: download.package),
                                    isPaused: paused.contains(identifier)))
             sequence += 1
         }
@@ -534,8 +586,18 @@ final class QueueCenter {
         guard !handedOff else { return }
         // a failed batch waits for 重试: it must not start itself again
         guard !installFailed else { return }
-        // apt has already refused one of these: nothing starts until it is gone
-        guard !items.contains(where: { $0.isFailed }) else { return }
+        // apt has already refused one of these: nothing starts until it is gone,
+        // and the reason is brought up instead of the tap doing nothing
+        if items.contains(where: { $0.isFailed }) {
+            if !holdForConfirmation, items.contains(where: { $0.hint != nil }) {
+                holdForConfirmation = true
+                autoSheetPending = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.presentSheetWhenSettled(3)
+                }
+            }
+            return
+        }
         guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning else { return }
 
         // a list, the news, a file or a batch import has no button to draw a
@@ -1554,7 +1616,13 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             NSLayoutConstraint.activate(actionFullConstraints)
             clearButton.isHidden = true
         }
-        if held {
+        if anyFailed {
+            // a refused or failed row is what the sheet is for: the log says
+            // why, and 确认 has nothing to run while it is there
+            actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
+            actionButton.backgroundColor = .tintColor
+            actionButton.setTitleColor(.white, for: .normal)
+        } else if held {
             actionButton.setTitle(String(localizationKey: "Queue_Confirm_Button"), for: .normal)
             actionButton.backgroundColor = .tintColor
             actionButton.setTitleColor(.white, for: .normal)
@@ -1562,10 +1630,6 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
             actionButton.backgroundColor = .tertiarySystemFill
             actionButton.setTitleColor(.label, for: .normal)
-        } else if anyFailed {
-            actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
-            actionButton.backgroundColor = .tintColor
-            actionButton.setTitleColor(.white, for: .normal)
         } else if hasDownloading {
             actionButton.setTitle(QueueCenter.shared.allDownloadsPaused
                 ? String(localizationKey: "Queue_Resume_All")
@@ -1838,6 +1902,9 @@ final class QueueLogSheetController: UIViewController {
                 text += "· \(item.name) (\(item.identifier))\n"
                 if let reason = reasonLine(for: item.identifier, in: log) {
                     text += "  \(reason)\n"
+                } else if let hint = item.hint {
+                    // apt refused it before anything ran: there is no log line
+                    text += "  \(hint)\n"
                 }
             }
             text += "\n"
