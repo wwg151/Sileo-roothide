@@ -173,6 +173,11 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             // A card of Sileo's own, opened from the button.
             backupButton.addTarget(self, action: #selector(self.presentBackupCard(_:)), for: .touchUpInside)
             self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: backupButton)
+            self.refreshBackupMenu()
+            NotificationCenter.default.addObserver(self,
+                                                   selector: #selector(self.refreshBackupMenu),
+                                                   name: Notification.Name("HideSeparators"),
+                                                   object: nil)
         }
         
         if packagesLoadIdentifier.contains("--wishlist") {
@@ -461,6 +466,18 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                                 items: backupMenuItems(),
                                 sourceFrame: sender.convert(sender.bounds, to: nil)),
                 animated: true)
+    }
+
+    /// The system's own menu when hairlines are wanted, Sileo's card otherwise.
+    @objc private func refreshBackupMenu() {
+        guard let button = navigationItem.rightBarButtonItem?.customView as? UIButton else { return }
+        button.removeTarget(self, action: #selector(presentBackupCard(_:)), for: .touchUpInside)
+        let attached = SileoActionMenu.attachMenu(to: button, header: nil) { [weak self] in
+            self?.backupMenuItems() ?? []
+        }
+        if !attached {
+            button.addTarget(self, action: #selector(presentBackupCard(_:)), for: .touchUpInside)
+        }
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {

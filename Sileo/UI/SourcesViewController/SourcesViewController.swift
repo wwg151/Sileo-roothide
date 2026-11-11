@@ -219,6 +219,7 @@ final class SourcesViewController: SileoViewController {
         }
         
         deselectRepos()
+        refreshAddMenu()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -832,7 +833,25 @@ final class SourcesViewController: SileoViewController {
     
     /// The add button's choices, in Sileo's own card under the button.
     @objc private func presentAddCard(_ sender: UIBarButtonItem) {
-        let items = [
+        let items = addMenuItems()
+        var frame: CGRect?
+        if let button = sender.value(forKey: "view") as? UIView {
+            frame = button.convert(button.bounds, to: nil)
+        }
+        present(SileoActionMenu(header: nil, items: items, sourceFrame: frame), animated: true)
+    }
+
+    /// The + hands its menu to the system when hairlines are wanted; below that
+    /// it keeps its action and opens Sileo's own card.
+    @objc private func refreshAddMenu() {
+        guard let plusItem = navigationItem.rightBarButtonItems?.first else { return }
+        SileoActionMenu.attachMenu(to: plusItem, header: nil) { [weak self] in
+            self?.addMenuItems() ?? []
+        }
+    }
+
+    private func addMenuItems() -> [SileoActionMenuItem] {
+        [
             SileoActionMenuItem(title: String(localizationKey: "Add_Source.Button.Add"),
                                 imageName: "plus.circle") { [weak self] in self?.addSource(nil) },
             SileoActionMenuItem(title: String(localizationKey: "Import_Sources_File"),
@@ -845,11 +864,6 @@ final class SourcesViewController: SileoViewController {
                                 imageName: "wand.and.rays",
                                 destructive: true) { [weak self] in self?.removeBrokenSources() }
         ]
-        var frame: CGRect?
-        if let button = sender.value(forKey: "view") as? UIView {
-            frame = button.convert(button.bounds, to: nil)
-        }
-        present(SileoActionMenu(header: nil, items: items, sourceFrame: frame), animated: true)
     }
 
     private func presentRemovedSources() {

@@ -33,10 +33,6 @@ struct SileoActionMenuItem {
 
 final class SileoActionMenu: UIViewController {
 
-    /// The stand-in buttons a system menu hangs from, kept so the next one can
-    /// take the last away.
-    fileprivate static var menuAnchors: [UIButton] = []
-
     private let header: String?
     private let items: [SileoActionMenuItem]
     private let sourceFrame: CGRect?
@@ -259,17 +255,15 @@ extension SileoActionMenu {
                         from host: UIViewController,
                         source: UIView? = nil,
                         sourceFrame: CGRect? = nil) {
-        guard !UIColor.hidesSeparators, #available(iOS 14.0, *) else {
-            host.present(SileoActionMenu(header: header, items: items, sourceFrame: sourceFrame),
-                         animated: true)
-            return
-        }
-        for anchor in menuAnchors {
-            anchor.removeFromSuperview()
-        }
-        menuAnchors.removeAll()
+        host.present(SileoActionMenu(header: header, items: items, sourceFrame: sourceFrame),
+                     animated: true)
+    }
 
-        let actions = items.map { item -> UIAction in
+    /// The items as system menu elements: rows the system draws, hairlines and
+    /// all.
+    @available(iOS 13.0, *)
+    static func menuElements(_ items: [SileoActionMenuItem]) -> [UIMenuElement] {
+        items.map { item -> UIMenuElement in
             var attributes: UIMenuElement.Attributes = []
             if item.destructive { attributes.insert(.destructive) }
             if !item.enabled { attributes.insert(.disabled) }
@@ -278,24 +272,44 @@ extension SileoActionMenu {
                 item.handler()
             }
         }
-        let menu = UIMenu(title: header ?? "", children: actions)
+    }
 
-        let anchor = UIButton(type: .system)
-        anchor.menu = menu
-        anchor.showsMenuAsPrimaryAction = true
-        anchor.frame = source.map { $0.convert($0.bounds, to: host.view) }
-            ?? CGRect(x: host.view.bounds.midX, y: host.view.bounds.maxY - 1, width: 1, height: 1)
-        anchor.alpha = 0.02
-        host.view.addSubview(anchor)
-        menuAnchors.append(anchor)
-        // Tapping a menu button opens its menu: send the event a tap would.
-        anchor.sendActions(for: .menuActionTriggered)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
-            if menuAnchors.contains(where: { $0 === anchor }) {
-                anchor.removeFromSuperview()
-                menuAnchors.removeAll { $0 === anchor }
+    /// Gives the button the menu itself, so a tap opens it beside the button.
+    /// Answers false when the card is what the switch asks for.
+    @discardableResult
+    static func attachMenu(to button: UIButton,
+                           header: String?,
+                           items: @escaping () -> [SileoActionMenuItem]) -> Bool {
+        if #available(iOS 14.0, *), !UIColor.hidesSeparators {
+            let deferred = UIDeferredMenuElement { completion in
+                completion(menuElements(items()))
             }
+            button.menu = UIMenu(title: header ?? "", children: [deferred])
+            button.showsMenuAsPrimaryAction = true
+            return true
         }
+        if #available(iOS 14.0, *) {
+            button.menu = nil
+            button.showsMenuAsPrimaryAction = false
+        }
+        return false
+    }
+
+    /// The same for a bar button item, which opens its menu on a tap by itself.
+    @discardableResult
+    static func attachMenu(to item: UIBarButtonItem,
+                           header: String?,
+                           items: @escaping () -> [SileoActionMenuItem]) -> Bool {
+        if #available(iOS 14.0, *), !UIColor.hidesSeparators {
+            let deferred = UIDeferredMenuElement { completion in
+                completion(menuElements(items()))
+            }
+            item.menu = UIMenu(title: header ?? "", children: [deferred])
+            return true
+        }
+        if #available(iOS 14.0, *) {
+            item.menu = nil
+        }
+        return false
     }
 }

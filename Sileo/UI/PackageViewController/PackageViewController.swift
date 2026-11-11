@@ -812,12 +812,27 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.present(sharePopup, animated: true)
     }
 
-    /// The "…" opens a card of Sileo's own: one list, no separators, colours
-    /// that follow the system's appearance. What it holds is worked out when it
-    /// opens, never on every change of state.
+    /// The "…" opens the package's actions: the system's menu beside the button
+    /// when hairlines are wanted, Sileo's own card when they are hidden. What it
+    /// holds is worked out when it opens, never on every change of state.
     private func installShareMenu() {
         guard let shareButton = shareButton else { return }
-        shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
+        refreshShareMenu()
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(refreshShareMenu),
+                                               name: Notification.Name("HideSeparators"),
+                                               object: nil)
+    }
+
+    @objc private func refreshShareMenu() {
+        guard let shareButton = shareButton else { return }
+        shareButton.removeTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
+        let attached = SileoActionMenu.attachMenu(to: shareButton, header: nil) { [weak self] in
+            self?.shareMenuActions() ?? []
+        }
+        if !attached {
+            shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
+        }
     }
 
     @objc private func presentShareCard(_ sender: UIButton) {
