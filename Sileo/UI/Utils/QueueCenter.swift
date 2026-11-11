@@ -1403,6 +1403,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             guard let indexPath = table.indexPath(for: cell), indexPath.row < items.count,
                   let card = cell.contentView.subviews.first as? QueueCardCell else { continue }
             card.configure(item: items[indexPath.row])
+            // the bar walks to its new place instead of jumping
+            card.animateProgress()
         }
     }
 
@@ -1801,8 +1803,23 @@ final class QueueCardCell: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        positionBar(animated: false)
+    }
+
+    /// The fill and the percentage that rides its head.
+    private func positionBar(animated: Bool) {
         let width = barTrack.bounds.width * progressFraction
-        barFillWidth?.constant = width
+        if let constraint = barFillWidth, abs(constraint.constant - width) > 0.5 {
+            constraint.constant = width
+            if animated {
+                UIView.animate(withDuration: 0.24, delay: 0,
+                               options: [.curveLinear, .beginFromCurrentState]) {
+                    self.layoutIfNeeded()
+                }
+            }
+        } else {
+            barFillWidth?.constant = width
+        }
         guard !headLabel.isHidden else { return }
         let head = barTrack.frame.minX + width
         let size = headLabel.intrinsicContentSize
@@ -1811,6 +1828,12 @@ final class QueueCardCell: UIView {
         headLabel.frame = CGRect(x: x,
                                  y: barTrack.frame.minY - size.height - 2,
                                  width: size.width, height: size.height)
+    }
+
+    /// Called while the sheet is open: the bar walks to the new value instead
+    /// of jumping to it.
+    func animateProgress() {
+        positionBar(animated: true)
     }
 
     func configure(item: QueueItem) {
