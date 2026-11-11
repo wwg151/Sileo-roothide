@@ -29,6 +29,8 @@ struct QueueItem {
     let state: QueueItemState
     /// 0…1 while apt works through the batch
     var aptFraction: CGFloat = 0
+    /// a failed task whose log has been read: it can be removed now
+    var failureRead = false
 
     var isFailed: Bool {
         if case .failed = state { return true }
@@ -63,13 +65,15 @@ extension DownloadManager {
     /// snapshot is built off the main thread — mid-download that queue can be
     /// busy for seconds.
     func queueSnapshot(_ completion: @escaping ([QueueItem], Bool) -> Void) {
+        // read on the main thread: the centre's own set is not thread safe
+        let readFailures = QueueCenter.shared.readFailuresSnapshot()
         QueueCenter.snapshotQueue.async {
-            let result = self.buildSnapshot()
+            let result = self.buildSnapshot(readFailures: readFailures)
             DispatchQueue.main.async { completion(result.0, result.1) }
         }
     }
 
-    private func buildSnapshot() -> ([QueueItem], Bool) {
+    private func buildSnapshot(readFailures: Set<String>) -> ([QueueItem], Bool) {
         var items: [QueueItem] = []
         let downloads = vars.queuedDownloads.raw
         let aptActive = aptRunning && !aptFinished
@@ -115,7 +119,8 @@ extension DownloadManager {
                                        version: package.version,
                                        isRemoval: removal,
                                        state: state,
-                                       aptFraction: aptActive ? aptFraction : 0))
+                                       aptFraction: aptActive ? aptFraction : 0,
+                                       failureRead: readFailures.contains(identifier)))
             }
         }
 
@@ -142,7 +147,8 @@ extension DownloadManager {
                                    name: download.package.name ?? identifier,
                                    version: download.package.version,
                                    isRemoval: false,
-                                   state: state))
+                                   state: state,
+                                   failureRead: readFailures.contains(identifier)))
         }
 
         let rank: (QueueItem) -> Int = { item in
@@ -183,6 +189,7 @@ final class QueueCenter {
     private var handoffAt: Date?
     private var autoSheetPending = false
     private(set) var holdForConfirmation = false
+    private var readFailures: Set<String> = []
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -273,6 +280,7 @@ final class QueueCenter {
             self.handoffAt = nil
             self.autoSheetPending = false
             self.holdForConfirmation = false
+            self.readFailures.removeAll()
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -327,6 +335,7 @@ final class QueueCenter {
             self.handoffAt = nil
             self.autoSheetPending = false
             self.holdForConfirmation = false
+            self.readFailures.removeAll()
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -374,6 +383,7 @@ final class QueueCenter {
             let manager = DownloadManager.shared
             self.holdForConfirmation = false
             self.autoSheetPending = false
+            self.readFailures.removeAll()
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
@@ -390,6 +400,7 @@ final class QueueCenter {
     private func beginDownloadPhase() {
         let manager = DownloadManager.shared
         holdForConfirmation = false
+        readFailures.removeAll()
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -467,7 +478,10 @@ final class QueueCenter {
     }
 
     func state(for identifier: String) -> QueueItemState? {
-        lastItems.first { $0.identifier == identifier }?.state
+        guard let item = lastItems.first(where: { $0.identifier == identifier }) else { return nil }
+        // a failure whose log has been read no longer holds the page's ring
+        if item.isFailed && item.failureRead { return nil }
+        return item.state
     }
 
     /// Whether the batch on screen ended in a failure.
@@ -488,6 +502,7 @@ final class QueueCenter {
             self.downloadPhase = false
             self.autoSheetPending = false
             self.holdForConfirmation = false
+            self.readFailures.removeAll()
             self.syncNow()
         }
     }
@@ -499,10 +514,39 @@ final class QueueCenter {
             let manager = DownloadManager.shared
             manager.queuedDownload(package: identifier)?.task?.cancel()
             manager.remove(package: identifier)
+            // a failed row lives only in the centre's own list, not in apt's
+            if self.lastItems.contains(where: { $0.identifier == identifier && $0.isFailed }) {
+                self.lastItems.removeAll { $0.identifier == identifier }
+                self.readFailures.remove(identifier)
+                if !self.lastItems.contains(where: { $0.isFailed }) {
+                    self.installFailed = false
+                    self.doneShownAt = nil
+                }
+            }
             if !manager.queueRunning && !manager.aptRunning {
                 // nothing has run yet: apt's resolver works the dependencies
                 // out again from what is left in the batch
                 manager.reloadData(recheckPackages: true)
+            }
+            self.syncNow()
+        }
+    }
+
+    /// Whether the log of this failed task has been read: its row offers ✕.
+    func hasReadFailure(_ identifier: String) -> Bool {
+        readFailures.contains(identifier)
+    }
+
+    /// The snapshot is built off the main thread, so it takes a copy.
+    func readFailuresSnapshot() -> Set<String> {
+        readFailures
+    }
+
+    /// 完成 in the log sheet: the failure is read, and its row can be removed.
+    func markFailureRead() {
+        DispatchQueue.main.async {
+            for item in self.lastItems where item.isFailed {
+                self.readFailures.insert(item.identifier)
             }
             self.syncNow()
         }
@@ -591,9 +635,14 @@ final class QueueCenter {
         // Without entries the failure note stands alone until the queue runs again.
         if items.isEmpty && installFailed {
             items = lastItems.map { item in
-                if case .failed = item.state { return item }
+                let read = hasReadFailure(item.identifier)
+                if case .failed = item.state {
+                    var copy = item
+                    copy.failureRead = read
+                    return copy
+                }
                 return QueueItem(identifier: item.identifier, name: item.name, version: item.version,
-                                 isRemoval: item.isRemoval, state: .failed(nil))
+                                 isRemoval: item.isRemoval, state: .failed(nil), failureRead: read)
             }
         }
         lastItems = items
@@ -1190,7 +1239,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
                 actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
                 actionButton.backgroundColor = .tertiarySystemFill
                 actionButton.setTitleColor(.label, for: .normal)
-            } else if failed > 0 {
+            } else if snapshot.contains(where: { $0.isFailed && !$0.failureRead }) {
                 actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
                 actionButton.backgroundColor = .tintColor
                 actionButton.setTitleColor(.white, for: .normal)
@@ -1213,7 +1262,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             dismiss(animated: true)
             return
         }
-        if items.contains(where: { $0.isFailed }) {
+        if items.contains(where: { $0.isFailed && !$0.failureRead }) {
             openLog()
             return
         }
@@ -1259,7 +1308,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         card.translatesAutoresizingMaskIntoConstraints = false
         card.tag = indexPath.row
         card.tapHandler = { [weak self] in
-            if item.isFailed {
+            if item.isFailed && !item.failureRead {
                 self?.openLog()
             } else {
                 QueueCenter.shared.removeFromBatch(item.identifier)
@@ -1349,13 +1398,10 @@ final class QueueLogSheetController: UIViewController {
                 self.dismiss(animated: true)
                 return
             }
-            QueueCenter.shared.clearResult()
-            // the queue sheet behind showed the same result: close it too
-            if let host = self.presentingViewController {
-                host.dismiss(animated: true)
-            } else {
-                self.dismiss(animated: true)
-            }
+            // the failure is read: its row turns back into ✕, so the task can
+            // be removed, and the queue sheet stays where it is
+            QueueCenter.shared.markFailureRead()
+            self.dismiss(animated: true)
         }, for: .touchUpInside)
         view.addSubview(doneButton)
 
@@ -1607,11 +1653,19 @@ final class QueueCardCell: UIView {
             actionButton.layer.borderColor = UIColor.separator.cgColor
             actionButton.setTitleColor(.label, for: .normal)
         case .failed:
-            title = String(localizationKey: "Queue_View_Log_Short")
-            // the word, not the glyph, has to fit the round button
-            actionButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
-            actionButton.layer.borderColor = UIColor.systemRed.withAlphaComponent(0.5).cgColor
-            actionButton.setTitleColor(.systemRed, for: .normal)
+            if item.failureRead {
+                // the log has been read: the row can be taken out now
+                title = "✕"
+                actionButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+                actionButton.layer.borderColor = UIColor.separator.cgColor
+                actionButton.setTitleColor(.label, for: .normal)
+            } else {
+                title = String(localizationKey: "Queue_View_Log_Short")
+                // the word, not the glyph, has to fit the round button
+                actionButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
+                actionButton.layer.borderColor = UIColor.systemRed.withAlphaComponent(0.5).cgColor
+                actionButton.setTitleColor(.systemRed, for: .normal)
+            }
         default:
             title = nil
         }
