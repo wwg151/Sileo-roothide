@@ -470,8 +470,14 @@ final class QueueCenter {
             self.doneShownAt = nil
             self.origins.removeAll()
             self.lastItems = []
+            self.notifyPackageStateChanged()
             self.syncNow()
         }
+    }
+
+    /// The package lists draw a badge from the queue: tell them it moved.
+    private func notifyPackageStateChanged() {
+        NotificationCenter.default.post(name: PackageListManager.stateChange, object: false)
     }
 
     // MARK: execution
@@ -536,6 +542,7 @@ final class QueueCenter {
             manager.aptFinished = false
             self.lastItems = []
             self.origins.removeAll()
+            self.notifyPackageStateChanged()
             self.syncNow()
         }
     }
@@ -755,6 +762,7 @@ final class QueueCenter {
                     self?.presentSheetWhenSettled(3)
                 }
             }
+            self.notifyPackageStateChanged()
             self.syncNow()
         }
     }
