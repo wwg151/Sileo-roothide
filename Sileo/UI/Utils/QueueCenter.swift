@@ -43,6 +43,8 @@ struct QueueItem {
     var speedText: String?
     /// what apt says is missing or in the way, for a task that cannot run
     var hint: String?
+    /// an installed package apt will take out to make room for this one
+    var warning: String?
     /// the download is held
     var isPaused = false
 
@@ -209,6 +211,54 @@ extension DownloadManager {
             guard !missing.isEmpty else { return nil }
             return String(localizationKey: "Conflict_Depends") + " " + missing.joined(separator: ", ")
         }
+        // apt takes a conflicting package out to make room (installing ellekit
+        // removes libhooker): name it on the row that does it, before the
+        // batch runs, the way the old queue showed a ➖ row for it
+        let aptRemovals = vars.uninstalldeps.raw
+        func conflictWarning(for package: Package) -> String? {
+            guard !aptRemovals.isEmpty else { return nil }
+            var names: [String] = []
+            for removal in aptRemovals {
+                let target = removal.package
+                // the package itself, and every virtual name it answers to:
+                // ellekit stands in for mobilesubstrate and libhooker
+                var targetIDs: Set<String> = [target.package]
+                for key in ["provides", "Provides"] {
+                    guard let raw = target.rawControl[key], !raw.isEmpty else { continue }
+                    for clause in raw.components(separatedBy: CharacterSet(charactersIn: ",|")) {
+                        let name = clause
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .components(separatedBy: CharacterSet(charactersIn: " (:[<"))
+                            .first ?? ""
+                        if !name.isEmpty { targetIDs.insert(name) }
+                    }
+                }
+                var matched = false
+                for key in ["conflicts", "replaces", "breaks", "provides",
+                            "Conflicts", "Replaces", "Breaks", "Provides"] {
+                    guard let raw = package.rawControl[key], !raw.isEmpty else { continue }
+                    let ids = raw
+                        .components(separatedBy: CharacterSet(charactersIn: ",|"))
+                        .map { clause -> String in
+                            clause
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                .components(separatedBy: CharacterSet(charactersIn: " (:[<"))
+                                .first ?? ""
+                        }
+                    if ids.contains(where: { targetIDs.contains($0) }) {
+                        matched = true
+                        break
+                    }
+                }
+                if matched {
+                    let name = target.name ?? target.package
+                    if !names.contains(name) { names.append(name) }
+                }
+            }
+            guard !names.isEmpty else { return nil }
+            return String(format: String(localizationKey: "Queue_Will_Remove"),
+                          names.sorted().joined(separator: ", "))
+        }
         // only an uninstall-only batch is truly ready at that point
         let installCount = vars.installations.raw.count + vars.upgrades.raw.count + vars.installdeps.raw.count
         let allDownloaded: Bool
@@ -306,6 +356,7 @@ extension DownloadManager {
                                        taskFraction: taskFraction(for: state),
                                        speedText: speed,
                                        hint: blocked,
+                                       warning: removal ? nil : conflictWarning(for: package),
                                        isPaused: paused.contains(identifier)))
                 sequence += 1
             }
@@ -1579,8 +1630,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         // the manager has emptied the queue
         let snapshot = QueueCenter.shared.lastItems
         // a new hint changes the row height, so the table has to be told
-        let rowsChanged = snapshot.map { "\($0.identifier)|\($0.hint ?? "")" }
-            != items.map { "\($0.identifier)|\($0.hint ?? "")" }
+        let rowsChanged = snapshot.map { "\($0.identifier)|\($0.hint ?? "")|\($0.warning ?? "")" }
+            != items.map { "\($0.identifier)|\($0.hint ?? "")|\($0.warning ?? "")" }
         items = snapshot
         let failed = snapshot.filter { $0.isFailed }.count
         let allHeld = !snapshot.isEmpty && snapshot.allSatisfy { $0.isPaused }
@@ -2092,9 +2143,11 @@ final class QueueCardCell: UIView {
         statusLabel.text = status
         statusLabel.textColor = item.isFailed ? .systemRed : .secondaryLabel
         iconLabel.text = String(item.name.prefix(1)).uppercased()
-        // apt says what is missing: the row carries it under the status
-        hintLabel.text = item.hint
-        hintLabel.isHidden = item.hint == nil
+        // apt says what is missing, or what it will take out to make room: the
+        // row carries it under the status
+        let hintText = item.hint ?? item.warning
+        hintLabel.text = hintText
+        hintLabel.isHidden = hintText == nil
         iconView.backgroundColor = item.isFailed ? .systemRed : .tintColor
 
         if let progress = item.progress {

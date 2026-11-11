@@ -596,13 +596,11 @@ final class DownloadManager {
             throw APTParserErrors.blankJsonOutput(error: String(localizationKey: "APT_Uninstall_Mismatch", type: .error))
         }
         var uninstallDeps = Set<DownloadPackage>(rawUninstalls.compactMap { DownloadPackage(package: $0) })
-        // apt says which dependencies nothing else needs any more. Only those
-        // are checked against the system list: a package the user asked to
-        // remove goes whatever it is, that is their call.
-        let askedFor = Set(self.vars.uninstallations.raw.map { $0.package.package })
-        uninstallDeps = Set(uninstallDeps.filter { downloadPackage in
-            askedFor.contains(downloadPackage.package.package) || !DownloadManager.isSystemPackage(downloadPackage.package)
-        })
+        // apt names every package it takes out, conflicts included (installing
+        // ellekit removes libhooker). They are all kept: the queue shows each
+        // one as a ➖ row and the install that causes it says so in red, the
+        // way the old queue did. A package the user asked to remove is dropped
+        // from this set further down.
         
         // Get the list of packages to be installed, including depends
         var installDepOperation = [String: (String, [String])]()

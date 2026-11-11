@@ -492,3 +492,5 @@
 "Queue_Entry" = "Queue";
 
 "Queue_Clear" = "Clear";
+
+"Queue_Will_Remove" = "Will remove %@";
