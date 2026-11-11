@@ -41,6 +41,8 @@ struct QueueItem {
     var taskFraction: CGFloat?
     /// "1.2 MB/s" while a download moves
     var speedText: String?
+    /// what apt says is missing or in the way, for a task that cannot run
+    var hint: String?
     /// the download is held
     var isPaused = false
 
@@ -120,6 +122,17 @@ extension DownloadManager {
         let aptActive = aptRunning && !aptFinished
         let sampledAt = Date()
         // an empty download map means the downloads have not been queued yet —
+        // apt names what is missing or in the way for a package it refuses
+        let broken = vars.errors.raw
+        func brokenHint(for identifier: String) -> String? {
+            guard let error = broken.first(where: { $0.packageID == identifier }) else { return nil }
+            let parts = error.conflictingPackages.map { conflict -> String in
+                var name = conflict.package
+                if let summary = conflict.versionSummary { name += "(\(summary))" }
+                return "\(conflict.conflict.localizedName) \(name)"
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: ", ")
+        }
         // only an uninstall-only batch is truly ready at that point
         let installCount = vars.installations.raw.count + vars.upgrades.raw.count + vars.installdeps.raw.count
         let allDownloaded: Bool
@@ -210,7 +223,8 @@ extension DownloadManager {
                                        sequence: sequence,
                                        taskFraction: taskFraction(for: state),
                                        speedText: speed,
-                                       isPaused: paused.contains(identifier)))
+                                       isPaused: paused.contains(identifier),
+                                       hint: brokenHint(for: identifier)))
                 sequence += 1
             }
         }
@@ -247,7 +261,8 @@ extension DownloadManager {
                                    speedText: { if case .downloading = state {
                                        return downloadSpeedText(for: identifier, download: download, now: sampledAt)
                                    }; return nil }(),
-                                   isPaused: paused.contains(identifier)))
+                                   isPaused: paused.contains(identifier),
+                                   hint: brokenHint(for: identifier)))
             sequence += 1
         }
 
@@ -1461,7 +1476,9 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         // the centre keeps the last snapshot, failures included, even after
         // the manager has emptied the queue
         let snapshot = QueueCenter.shared.lastItems
-        let rowsChanged = snapshot.map { $0.identifier } != items.map { $0.identifier }
+        // a new hint changes the row height, so the table has to be told
+        let rowsChanged = snapshot.map { "\($0.identifier)|\($0.hint ?? "")" }
+            != items.map { "\($0.identifier)|\($0.hint ?? "")" }
         items = snapshot
         let failed = snapshot.filter { $0.isFailed }.count
         let allHeld = !snapshot.isEmpty && snapshot.allSatisfy { $0.isPaused }
@@ -1593,7 +1610,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        90
+        // a row that carries apt hint needs one more line
+        indexPath.row < items.count && items[indexPath.row].hint != nil ? 106 : 90
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -1814,6 +1832,7 @@ final class QueueCardCell: UIView {
     private let iconLabel = UILabel()
     private let nameLabel = UILabel()
     private let statusLabel = UILabel()
+    private let hintLabel = UILabel()
     private let barTrack = UIView()
     private let barFill = UIView()
     private let headLabel = UILabel()
@@ -1851,6 +1870,14 @@ final class QueueCardCell: UIView {
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabel
+        hintLabel.translatesAutoresizingMaskIntoConstraints = false
+        hintLabel.font = .systemFont(ofSize: 11)
+        hintLabel.textColor = .systemRed
+        hintLabel.numberOfLines = 1
+        hintLabel.lineBreakMode = .byTruncatingTail
+        hintLabel.isHidden = true
+        addSubview(hintLabel)
+
         addSubview(statusLabel)
 
         barTrack.translatesAutoresizingMaskIntoConstraints = false
@@ -1888,6 +1915,10 @@ final class QueueCardCell: UIView {
             statusLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             statusLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
             statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
+
+            hintLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            hintLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
+            hintLabel.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 2),
 
             barTrack.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             barTrack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
@@ -1954,6 +1985,9 @@ final class QueueCardCell: UIView {
         statusLabel.text = status
         statusLabel.textColor = item.isFailed ? .systemRed : .secondaryLabel
         iconLabel.text = String(item.name.prefix(1)).uppercased()
+        // apt says what is missing: the row carries it under the status
+        hintLabel.text = item.hint
+        hintLabel.isHidden = item.hint == nil
         iconView.backgroundColor = item.isFailed ? .systemRed : .tintColor
 
         if let progress = item.progress {
