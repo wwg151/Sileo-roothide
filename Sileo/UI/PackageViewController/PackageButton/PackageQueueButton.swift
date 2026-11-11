@@ -61,12 +61,14 @@ class PackageQueueButton: PackageButton {
         if #available(iOS 13.0, *) {
             // A long press on any package opens its actions: the system's menu
             // beside the button, or Sileo's own card when hairlines are hidden.
-            addInteraction(UIContextMenuInteraction(delegate: self))
+            let delegate = PackageQueueMenuDelegate(button: self)
+            contextMenuDelegate = delegate
+            addInteraction(UIContextMenuInteraction(delegate: delegate))
         }
     }
 
     /// The package's actions, in Sileo's own card dropped from the button.
-    private func presentActionCard() {
+    fileprivate func presentActionCard() {
         guard let package = package, !(package.isProvisional ?? false) else { return }
         let items = actionItems(for: package)
         guard !items.isEmpty, let host = viewControllerForPresentation ?? hostViewController() else { return }
@@ -77,7 +79,7 @@ class PackageQueueButton: PackageButton {
                                 sourceFrame: convert(bounds, to: nil))
     }
 
-    private func actionItems(for package: Package) -> [SileoActionMenuItem] {
+    fileprivate func actionItems(for package: Package) -> [SileoActionMenuItem] {
         longPressMenuItems(for: package).map { item in
             SileoActionMenuItem(title: item.title,
                                 imageName: item.image,
@@ -673,14 +675,20 @@ private final class PackageQueueMenuDelegate: NSObject, UIContextMenuInteraction
             return nil
         }
 
+        // The switch in Settings decides which menu a long press brings: the
+        // system's own, with its hairlines, or Sileo's card without them.
+        if UIColor.hidesSeparators {
+            DispatchQueue.main.async { [weak button] in
+                button?.presentActionCard()
+            }
+            return nil
+        }
+
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak button] _ in
             guard let button = button else { return nil }
-            let actions = button.longPressMenuItems(for: package).map { item in
-                UIAction(title: item.title, image: UIImage(systemName: item.image), attributes: item.enabled ? [] : .disabled) { _ in
-                    item.handler()
-                }
-            }
-            return UIMenu(title: package.name, children: actions)
+            let items = button.actionItems(for: package)
+            guard !items.isEmpty else { return nil }
+            return UIMenu(title: package.name ?? "", children: SileoActionMenu.menuElements(items))
         }
     }
 }
@@ -809,22 +817,3 @@ private final class PackageControlInfoViewController: UIViewController {
     }
 }
 
-@available(iOS 13.0, *)
-extension PackageQueueButton: UIContextMenuInteractionDelegate {
-    /// A long press: the system's menu when hairlines are wanted, otherwise
-    /// Sileo's own card, which the system knows nothing about.
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
-                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-        guard let package = package, !(package.isProvisional ?? false) else { return nil }
-        let items = actionItems(for: package)
-        guard !items.isEmpty else { return nil }
-        if !UIColor.hidesSeparators, #available(iOS 14.0, *) {
-            let menu = UIMenu(title: "", children: SileoActionMenu.menuElements(items))
-            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in menu }
-        }
-        DispatchQueue.main.async { [weak self] in
-            self?.presentActionCard()
-        }
-        return nil
-    }
-}
