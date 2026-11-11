@@ -225,6 +225,8 @@ extension SettingsViewController { // UITableViewDataSource
                 cell.fallback = false
                 cell.defaultKey = "FloatingTabBar"
             case 13:
+                // Rows between lists follow the same switch: the app's own card
+                // when they are hidden, the system's menu when they are shown.
                 cell.amyPogLabel.text = String(localizationKey: "Hide_Separators")
                 cell.fallback = true
                 cell.defaultKey = "HideSeparators"
