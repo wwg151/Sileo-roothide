@@ -261,7 +261,7 @@ final class QueueCenter {
     private var readFailures: Set<String> = []
     private var batchStartedAt: Date?
     private var downloadEndedAt: Date?
-    private var lastBatchFraction: CGFloat = 0
+    private var displayedFraction: CGFloat = 0
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -355,7 +355,7 @@ final class QueueCenter {
             self.readFailures.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
-            self.lastBatchFraction = 0
+            self.displayedFraction = 0
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -426,7 +426,7 @@ final class QueueCenter {
             self.readFailures.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
-            self.lastBatchFraction = 0
+            self.displayedFraction = 0
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -477,7 +477,7 @@ final class QueueCenter {
             self.readFailures.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
-            self.lastBatchFraction = 0
+            self.displayedFraction = 0
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
@@ -497,7 +497,7 @@ final class QueueCenter {
         readFailures.removeAll()
         batchStartedAt = Date()
         downloadEndedAt = nil
-        lastBatchFraction = 0
+        displayedFraction = 0
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -608,7 +608,7 @@ final class QueueCenter {
             self.readFailures.removeAll()
             self.batchStartedAt = nil
             self.downloadEndedAt = nil
-            self.lastBatchFraction = 0
+            self.displayedFraction = 0
             self.syncNow()
         }
     }
@@ -721,14 +721,11 @@ final class QueueCenter {
     private func applySnapshot(_ snapshot: [QueueItem], allDownloaded: Bool,
                                hadDownloads: Bool, hadConversion: Bool) {
         var items = snapshot
-        if let fraction = items.first(where: { $0.taskFraction != nil })?.taskFraction {
-            lastBatchFraction = fraction
-        }
         // between the last download and apt the task is on its way to install:
         // show it as installing instead of flashing 等待开始
         if downloadPhase && allDownloaded {
             // the bar keeps where the download left it until apt reports
-            let handedShare = hadDownloads ? lastBatchFraction : 0
+            let handedShare = hadDownloads ? displayedFraction : 0
             items = items.map { item in
                 guard case .waiting = item.state else { return item }
                 return QueueItem(identifier: item.identifier,
@@ -739,6 +736,20 @@ final class QueueCenter {
                                  aptFraction: 0,
                                  failureRead: item.failureRead,
                                  taskFraction: handedShare)
+            }
+        }
+        // the bar of a running task never stands still and never goes back: it
+        // walks on with every tick, whatever the estimate does
+        if let estimate = items.compactMap({ $0.taskFraction }).max() {
+            // a small share of what is left, so it never overtakes the end
+            let creep = displayedFraction + (1 - displayedFraction) * 0.004
+            let next = min(0.995, max(estimate, creep))
+            displayedFraction = next
+            items = items.map { item in
+                guard item.taskFraction != nil else { return item }
+                var copy = item
+                copy.taskFraction = next
+                return copy
             }
         }
         for item in items where origins[item.identifier] == nil {
