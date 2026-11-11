@@ -1536,7 +1536,7 @@ final class QueueCardCell: UIView {
         let maxX = bounds.width - 12
         let x = min(head + 5, maxX - size.width)
         headLabel.frame = CGRect(x: max(x, barTrack.frame.minX),
-                                 y: barTrack.midY - size.height / 2,
+                                 y: barTrack.frame.midY - size.height / 2,
                                  width: size.width, height: size.height)
     }
 
