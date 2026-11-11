@@ -37,6 +37,8 @@ struct QueueItem {
     var groupRank = 0
     /// the order the entry was added in, so rows keep their place
     var sequence = 0
+    /// 0…1 across the whole task: the download, its conversion, then apt
+    var taskFraction: CGFloat?
 
     var isFailed: Bool {
         if case .failed = state { return true }
@@ -55,11 +57,7 @@ struct QueueItem {
     }
 
     var progress: CGFloat? {
-        if case .downloading(let fraction) = state { return fraction }
-        if case .installing = state { return aptFraction }
-        if case .uninstalling = state { return aptFraction }
-        if case .converting = state { return convertingFraction }
-        return nil
+        taskFraction
     }
 }
 
@@ -106,6 +104,22 @@ extension DownloadManager {
         }
 
         let aptFraction = QueueCenter.shared.aptFraction
+        // One bar per task: the download takes it to half, the conversion to
+        // 60%, and apt walks the rest, so a phase change never starts over.
+        let hasDownloads = !downloads.isEmpty
+        func taskFraction(for state: QueueItemState) -> CGFloat? {
+            switch state {
+            case .downloading(let value):
+                return hasDownloads ? min(1, max(0, value)) * 0.5 : nil
+            case .converting:
+                return hasDownloads ? 0.6 : nil
+            case .installing, .uninstalling:
+                let apt = min(1, max(0, aptFraction))
+                return hasDownloads ? 0.6 + 0.4 * apt : apt
+            case .waiting, .failed:
+                return nil
+            }
+        }
         var sequence = 0
         func add(_ set: Set<DownloadPackage>, removal: Bool, group: Int) {
             for entry in set.sorted(by: { ($0.package.name ?? $0.package.package) < ($1.package.name ?? $1.package.package) }) {
@@ -140,7 +154,8 @@ extension DownloadManager {
                                        convertingFraction: converting ? 0.99 : 0,
                                        failureRead: readFailures.contains(identifier),
                                        groupRank: group,
-                                       sequence: sequence))
+                                       sequence: sequence,
+                                       taskFraction: taskFraction(for: state)))
                 sequence += 1
             }
         }
@@ -172,7 +187,8 @@ extension DownloadManager {
                                    convertingFraction: { if case .converting = state { return 0.99 }; return 0 }(),
                                    failureRead: readFailures.contains(identifier),
                                    groupRank: 1,
-                                   sequence: sequence))
+                                   sequence: sequence,
+                                   taskFraction: taskFraction(for: state)))
             sequence += 1
         }
 
@@ -668,10 +684,11 @@ final class QueueCenter {
                                  version: item.version,
                                  isRemoval: item.isRemoval,
                                  state: item.isRemoval ? .uninstalling : .installing,
-                                 // only a batch that had downloads is all in:
-                                 // an uninstall starts its bar with apt itself
-                                 aptFraction: hadDownloads ? 1 : 0,
-                                 failureRead: item.failureRead)
+                                 // the downloads are in and apt has not spoken:
+                                 // the task sits at the start of its last part
+                                 aptFraction: 0,
+                                 failureRead: item.failureRead,
+                                 taskFraction: hadDownloads ? 0.6 : 0)
             }
         }
         for item in items where origins[item.identifier] == nil {
