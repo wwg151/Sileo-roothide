@@ -80,7 +80,10 @@ extension DownloadManager {
         if downloads.isEmpty {
             allDownloaded = installCount == 0
         } else {
-            allDownloaded = downloads.values.allSatisfy { $0.success || $0.progress >= 1 }
+            // success is set once the file is in place: progress alone can be
+            // 1 while the archive is still being moved, and apt would read a
+            // file that is not there yet
+            allDownloaded = downloads.values.allSatisfy { $0.success }
         }
 
         let aptFraction = QueueCenter.shared.aptFraction
@@ -175,6 +178,8 @@ final class QueueCenter {
     private var downloadPhase = false
     private var downloadPhaseSince: Date?
     private var handoffScheduled = false
+    private var handedOff = false
+    private var handoffAt: Date?
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -261,6 +266,8 @@ final class QueueCenter {
             // the snapshot, and new work can be queued straight away
             manager.removeAllItems()
             self.downloadPhase = false
+            self.handedOff = false
+            self.handoffAt = nil
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -311,6 +318,8 @@ final class QueueCenter {
             manager.aptRunning = false
             manager.aptFinished = false
             self.downloadPhase = false
+            self.handedOff = false
+            self.handoffAt = nil
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -323,6 +332,9 @@ final class QueueCenter {
 
     private func startQueueIfNeeded(_ items: [QueueItem]) {
         let manager = DownloadManager.shared
+        // one download phase per batch: after the handoff the sets still hold
+        // the packages, and starting over would restart the downloads
+        guard !handedOff else { return }
         guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning else { return }
         manager.queueRunning = true
         manager.currentDownloads = 0
@@ -337,7 +349,7 @@ final class QueueCenter {
     /// Downloads are all in: hand the batch to apt. Nothing is presented for
     /// it: the capsule counts the install, and its sheet carries the log.
     private func checkAptHandoff(allDownloaded: Bool) {
-        guard downloadPhase, !handoffScheduled, allDownloaded else { return }
+        guard downloadPhase, !handoffScheduled, !handedOff, allDownloaded else { return }
         // a stale, fully-finished download map from the previous batch must not
         // hand off before this batch's downloads are even queued
         guard let since = downloadPhaseSince,
@@ -373,8 +385,13 @@ final class QueueCenter {
             self.downloadPhase = false
             // straight into the install phase: confirmQueued would start the
             // downloads over again, and they are all in already
-            let beginInstall: () -> Void = { [weak controller] in
-                guard let controller = controller else { return }
+            let beginInstall: () -> Void = { [weak self, weak controller] in
+                guard let self = self, let controller = controller else { return }
+                self.handedOff = true
+                self.handoffAt = Date()
+                // a previous run leaves the page's own flags set; without this
+                // transferToAction answers at once and apt never starts
+                controller.prepareForQueueRun()
                 controller.reloadData()
                 controller.transferToAction()
             }
@@ -412,6 +429,9 @@ final class QueueCenter {
             self.doneShownAt = nil
             self.lastItems = []
             self.origins.removeAll()
+            self.handedOff = false
+            self.handoffAt = nil
+            self.downloadPhase = false
             self.syncNow()
         }
     }
@@ -441,6 +461,19 @@ final class QueueCenter {
         for item in items where origins[item.identifier] == nil {
             origins[item.identifier] = QueueCenter.currentPageIdentifier()
         }
+
+        // The batch was handed to apt, apt is not running any more, and its
+        // completion never came back: without this the ring and the capsule
+        // would sit on 等待开始 forever.
+        if handedOff, !downloadPhase, !aptActive,
+           let at = handoffAt, Date().timeIntervalSince(at) > 3 {
+            handedOff = false
+            handoffAt = nil
+            DownloadManager.shared.removeAllItems()
+            items = []
+            installFailed = true
+        }
+
         let hasFailure = installFailed || items.contains { $0.isFailed }
 
         // The legacy popup carried the 开始 button that started the queue;

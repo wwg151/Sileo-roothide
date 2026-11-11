@@ -51,6 +51,18 @@ class DownloadsTableViewController: SileoViewController {
 
     /// The apt/dpkg output so far, for the queue's own log sheet.
     var logText: String { detailsAttributedString?.string ?? "" }
+
+    /// The queue starts a batch without opening this page, so the flags a
+    /// finished run leaves behind have to be cleared by hand.
+    func prepareForQueueRun() {
+        isInstalling = false
+        isDownloading = false
+        isFinishedInstalling = false
+        returnButtonAction = .back
+        refreshSileo = false
+        hasErrored = false
+        actions.removeAll()
+    }
     
     public var backgroundCallback: (() -> Void)?
     
