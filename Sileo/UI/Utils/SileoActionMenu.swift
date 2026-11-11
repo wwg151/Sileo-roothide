@@ -33,6 +33,10 @@ struct SileoActionMenuItem {
 
 final class SileoActionMenu: UIViewController {
 
+    /// The stand-in buttons a system menu hangs from, kept so the next one can
+    /// take the last away.
+    fileprivate static var menuAnchors: [UIButton] = []
+
     private let header: String?
     private let items: [SileoActionMenuItem]
     private let sourceFrame: CGRect?
@@ -249,38 +253,49 @@ final class SileoActionMenu: UIViewController {
 
 extension SileoActionMenu {
     /// The switch in Settings picks the menu: Sileo's own card, which draws no
-    /// hairlines, or the system's, whose rows carry them.
+    /// hairlines, or the system's, which drops down beside the button.
     static func present(header: String?,
                         items: [SileoActionMenuItem],
                         from host: UIViewController,
                         source: UIView? = nil,
                         sourceFrame: CGRect? = nil) {
-        guard !UIColor.hidesSeparators else {
+        guard !UIColor.hidesSeparators, #available(iOS 14.0, *) else {
             host.present(SileoActionMenu(header: header, items: items, sourceFrame: sourceFrame),
                          animated: true)
             return
         }
-        let alert = UIAlertController(title: header, message: nil, preferredStyle: .actionSheet)
-        for item in items {
-            let action = UIAlertAction(title: item.title,
-                                       style: item.destructive ? .destructive : .default) { _ in
+        for anchor in menuAnchors {
+            anchor.removeFromSuperview()
+        }
+        menuAnchors.removeAll()
+
+        let actions = items.map { item -> UIAction in
+            var attributes: UIMenuElement.Attributes = []
+            if item.destructive { attributes.insert(.destructive) }
+            if !item.enabled { attributes.insert(.disabled) }
+            let image = item.image ?? item.imageName.flatMap { UIImage(systemName: $0) }
+            return UIAction(title: item.title, image: image, attributes: attributes) { _ in
                 item.handler()
             }
-            action.isEnabled = item.enabled
-            alert.addAction(action)
         }
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            if let source = source {
-                popover.sourceView = source
-                popover.sourceRect = source.bounds
-            } else {
-                popover.sourceView = host.view
-                popover.sourceRect = CGRect(x: host.view.bounds.midX,
-                                            y: host.view.bounds.maxY,
-                                            width: 1, height: 1)
+        let menu = UIMenu(title: header ?? "", children: actions)
+
+        let anchor = UIButton(type: .system)
+        anchor.menu = menu
+        anchor.showsMenuAsPrimaryAction = true
+        anchor.frame = source.map { $0.convert($0.bounds, to: host.view) }
+            ?? CGRect(x: host.view.bounds.midX, y: host.view.bounds.maxY - 1, width: 1, height: 1)
+        anchor.alpha = 0.02
+        host.view.addSubview(anchor)
+        menuAnchors.append(anchor)
+        // Tapping a menu button opens its menu: do the same from here.
+        anchor.performPrimaryAction()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+            if menuAnchors.contains(where: { $0 === anchor }) {
+                anchor.removeFromSuperview()
+                menuAnchors.removeAll { $0 === anchor }
             }
         }
-        host.present(alert, animated: true)
     }
 }
