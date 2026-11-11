@@ -516,27 +516,6 @@ final class QueueCenter {
         }
     }
 
-    /// 重试: whatever is left of the batch runs again from the start.
-    func retryBatch() {
-        DispatchQueue.main.async {
-            let manager = DownloadManager.shared
-            guard manager.operationCount() > 0 else { return }
-            self.installFailed = false
-            self.readFailures.removeAll()
-            self.doneShownAt = nil
-            self.aptFraction = 0
-            self.aptTotal = 0
-            self.aptCounted.removeAll()
-            self.aptPartial.removeAll()
-            self.handedOff = false
-            self.handoffAt = nil
-            self.displayedFraction = 0
-            manager.cancelDownloads()
-            self.beginDownloadPhase()
-            self.syncNow()
-        }
-    }
-
     /// 取消 in the queue sheet: nothing of the batch runs.
     func discardBatch() {
         DispatchQueue.main.async {
@@ -1517,7 +1496,7 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             actionButton.backgroundColor = .tertiarySystemFill
             actionButton.setTitleColor(.label, for: .normal)
         } else if anyFailed {
-            actionButton.setTitle(String(localizationKey: "Queue_Retry"), for: .normal)
+            actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
             actionButton.backgroundColor = .tintColor
             actionButton.setTitleColor(.white, for: .normal)
         } else if hasDownloading {
@@ -1565,9 +1544,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             return
         }
         if items.contains(where: { $0.isFailed }) {
-            // what is left of the batch runs again; the failed rows the user
-            // kept are taken out by hand first
-            QueueCenter.shared.retryBatch()
+            // a failure is read in the log; the rows are taken out by hand
+            openLog()
             return
         }
         let downloading = items.contains {
