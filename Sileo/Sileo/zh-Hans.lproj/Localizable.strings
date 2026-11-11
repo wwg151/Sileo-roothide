@@ -493,3 +493,5 @@
 
 "Queue_Retry" = "重试";
 "Queue_Log_Failed_Header" = "失败任务：";
+
+"Queue_Entry" = "队列";

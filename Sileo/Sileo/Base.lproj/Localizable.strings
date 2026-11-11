@@ -488,3 +488,5 @@
 
 "Queue_Retry" = "Retry";
 "Queue_Log_Failed_Header" = "Failed tasks:";
+
+"Queue_Entry" = "Queue";

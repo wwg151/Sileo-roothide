@@ -916,9 +916,8 @@ final class QueueCenter {
         if sheetVisible, let sheet = sheetController, sheet.presentingViewController == nil {
             sheetVisible = false
         }
-        var showCapsule = hasFailure || !items.isEmpty || doneShownAt != nil
-        // an open sheet already carries the same information
-        showCapsule = showCapsule && !sheetVisible
+        // only a queue with something in it, and only while its sheet is away
+        let showCapsule = !items.isEmpty && !sheetVisible
 
         // Without entries the failure note stands alone until the queue runs again.
         if installFailed {
@@ -951,8 +950,7 @@ final class QueueCenter {
             sheet.dismiss(animated: true)
         }
 
-        updateCapsule(visible: showCapsule, items: items, failure: hasFailure && !items.isEmpty,
-                      done: items.isEmpty && doneShownAt != nil && !installFailed)
+        updateCapsule(visible: showCapsule)
         NotificationCenter.default.post(name: QueueCenter.queueChangedNotification, object: nil)
         restartTimer()
     }
@@ -1014,7 +1012,7 @@ final class QueueCenter {
 
     // MARK: capsule
 
-    private func updateCapsule(visible: Bool, items: [QueueItem], failure: Bool, done: Bool) {
+    private func updateCapsule(visible: Bool) {
         guard let capsule = capsule else { return }
         // the app is leaving (respring): nothing of ours stays on the screen
         if suspended {
@@ -1023,7 +1021,7 @@ final class QueueCenter {
             return
         }
         if visible {
-            capsule.configure(items: items, failure: failure, done: done)
+            capsule.configure()
             if window?.isHidden != false {
                 window?.isHidden = false
                 // showing a window can take the key: hand it back to the app
@@ -1143,11 +1141,7 @@ final class QueueCapsuleView: UIView {
 
     var onTap: (() -> Void)?
 
-    private let ringLayer = CAShapeLayer()
-    private let trackLayer = CAShapeLayer()
     private let titleLabel = UILabel()
-    private let percentLabel = UILabel()
-    private let badgeLabel = UILabel()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1162,35 +1156,15 @@ final class QueueCapsuleView: UIView {
         layer.borderWidth = 0.5
         layer.borderColor = UIColor.separator.withAlphaComponent(0.5).cgColor
 
-        trackLayer.fillColor = UIColor.clear.cgColor
-        trackLayer.strokeColor = UIColor.tertiaryLabel.withAlphaComponent(0.35).cgColor
-        trackLayer.lineWidth = 3.5
-        trackLayer.lineCap = .round
-        layer.addSublayer(trackLayer)
-
-        ringLayer.fillColor = UIColor.clear.cgColor
-        ringLayer.strokeColor = UIColor.tintColor.cgColor
-        ringLayer.lineWidth = 3.5
-        ringLayer.lineCap = .round
-        layer.addSublayer(ringLayer)
-
         titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         titleLabel.textColor = .label
+        titleLabel.textAlignment = .center
         titleLabel.numberOfLines = 1
-        titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
-
-        percentLabel.font = .systemFont(ofSize: 14)
-        percentLabel.textColor = .secondaryLabel
-        addSubview(percentLabel)
-
-        badgeLabel.font = .systemFont(ofSize: 13, weight: .heavy)
-        badgeLabel.textAlignment = .center
-        badgeLabel.isHidden = true
-        addSubview(badgeLabel)
 
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
         isHidden = true
+        configure()
     }
 
     required init?(coder: NSCoder) {
@@ -1202,104 +1176,22 @@ final class QueueCapsuleView: UIView {
         onTap?()
     }
 
-    override var intrinsicContentSize: CGSize {
-        let title = ceil(titleLabel.intrinsicContentSize.width)
-        let hasPercent = percentLabel.text?.isEmpty == false
-        let percent = hasPercent ? ceil(percentLabel.intrinsicContentSize.width) + 10 : 0
-        return CGSize(width: max(120, 46 + title + percent + 16), height: 44)
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let ringCenter = CGPoint(x: 26, y: bounds.height / 2)
-        let path = UIBezierPath(arcCenter: ringCenter, radius: 9.5, startAngle: -.pi / 2,
-                                endAngle: .pi * 3 / 2, clockwise: true)
-        trackLayer.frame = bounds
-        ringLayer.frame = bounds
-        trackLayer.path = path.cgPath
-        ringLayer.path = path.cgPath
-
-        let hasPercent = percentLabel.text?.isEmpty == false
-        let percentWidth = hasPercent ? ceil(percentLabel.intrinsicContentSize.width) : 0
-        let rightInset: CGFloat = 16
-        let titleWidth = max(0, bounds.width - 46 - rightInset - (hasPercent ? percentWidth + 10 : 0))
-        let titleHeight = ceil(titleLabel.intrinsicContentSize.height)
-        titleLabel.frame = CGRect(x: 46, y: (bounds.height - titleHeight) / 2,
-                                  width: titleWidth, height: titleHeight)
-        percentLabel.isHidden = !hasPercent
-        if hasPercent {
-            let height = ceil(percentLabel.intrinsicContentSize.height)
-            percentLabel.frame = CGRect(x: bounds.width - rightInset - percentWidth,
-                                        y: (bounds.height - height) / 2,
-                                        width: percentWidth, height: height)
-        }
-        if !badgeLabel.isHidden {
-            badgeLabel.frame = CGRect(x: ringCenter.x - 10, y: ringCenter.y - 9, width: 20, height: 18)
-        }
-    }
-
-    func configure(items: [QueueItem], failure: Bool, done: Bool) {
-        let ringColor: UIColor
-        badgeLabel.isHidden = true
-        badgeLabel.text = nil
-        if done {
-            titleLabel.text = String(localizationKey: "Queue_Done")
-            percentLabel.text = "›"
-            percentLabel.textColor = .tertiaryLabel
-            ringColor = .systemGreen
-            badgeLabel.text = "✓"
-            badgeLabel.textColor = .systemGreen
-            badgeLabel.isHidden = false
-            setRing(1, ringColor)
-        } else if failure || items.contains(where: { $0.isFailed }) {
-            let failed = max(1, items.filter { $0.isFailed }.count)
-            titleLabel.text = String(format: String(localizationKey: "Queue_Failed_N"), failed)
-            percentLabel.text = "›"
-            percentLabel.textColor = .tertiaryLabel
-            ringColor = .systemRed
-            badgeLabel.text = "!"
-            badgeLabel.textColor = .systemRed
-            badgeLabel.isHidden = false
-            setRing(1, ringColor)
-        } else {
-            let downloading = items.filter {
-                if case .downloading = $0.state { return true }
-                return false
-            }
-            let fractions = items.compactMap { $0.progress }
-            let progress = fractions.isEmpty ? 0 : fractions.reduce(0, +) / CGFloat(fractions.count)
-            let title: String
-            if items.contains(where: { if case .installing = $0.state { return true }; return false }) {
-                title = String(localizationKey: "Queue_Installing")
-            } else if items.contains(where: { if case .uninstalling = $0.state { return true }; return false }) {
-                title = String(localizationKey: "Queue_Uninstalling")
-            } else if items.contains(where: { if case .converting = $0.state { return true }; return false }) {
-                title = String(localizationKey: "Queue_Converting")
-            } else if !downloading.isEmpty {
-                title = String(localizationKey: "Queue_Downloading")
-            } else {
-                title = String(localizationKey: "Queue_Waiting")
-            }
-            titleLabel.text = title + " " + String(format: String(localizationKey: "Queue_Items"), items.count)
-            percentLabel.text = fractions.isEmpty ? nil : String(format: "%.0f%%", progress * 100)
-            percentLabel.textColor = .secondaryLabel
-            ringColor = .tintColor
-            // a waiting queue shows the bare track; a busy one the real share
-            if !fractions.isEmpty {
-                setRing(max(0.02, min(1, progress)), ringColor)
-            } else if title == String(localizationKey: "Queue_Waiting") {
-                setRing(0.12, ringColor)
-            } else {
-                setRing(1, ringColor)
-            }
-        }
+    /// The pill is only the door to the queue: no state, no progress.
+    func configure() {
+        titleLabel.text = String(localizationKey: "Queue_Entry")
         invalidateIntrinsicContentSize()
         setNeedsLayout()
     }
 
-    private func setRing(_ fraction: CGFloat, _ color: UIColor) {
-        ringLayer.strokeColor = color.cgColor
-        ringLayer.strokeEnd = fraction
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: max(88, ceil(titleLabel.intrinsicContentSize.width) + 44), height: 44)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let height = ceil(titleLabel.intrinsicContentSize.height)
+        titleLabel.frame = CGRect(x: 22, y: (bounds.height - height) / 2,
+                                  width: max(0, bounds.width - 44), height: height)
     }
 }
 
