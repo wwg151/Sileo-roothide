@@ -809,6 +809,7 @@ private final class PackageControlInfoViewController: UIViewController {
     }
 }
 
+@available(iOS 13.0, *)
 extension PackageQueueButton: UIContextMenuInteractionDelegate {
     /// A long press: the system's menu when hairlines are wanted, otherwise
     /// Sileo's own card, which the system knows nothing about.
