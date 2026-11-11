@@ -652,8 +652,9 @@ final class QueueCenter {
         guard !items.isEmpty, !manager.queueRunning, !manager.aptRunning else { return }
 
         // a list, the news, a file or a batch import has no button to draw a
-        // ring on: the queue opens and waits for 确认 before it runs anything
-        if !QueueCenter.isButtonPage(QueueCenter.currentPageController()) {
+        // ring on: the queue opens and waits for 确认 before it runs anything.
+        // A page that is already showing the ring keeps it and nothing opens.
+        if !pageDrawsRing(for: items) {
             if !holdForConfirmation {
                 holdForConfirmation = true
                 // ask apt what it thinks before anything runs, so a package
@@ -1159,7 +1160,41 @@ final class QueueCenter {
     /// The pages that carry the install button themselves: there the ring on
     /// the button is the progress, and no sheet is thrown over the page.
     static func isButtonPage(_ controller: UIViewController?) -> Bool {
-        controller is PackageViewController || controller is FeaturedViewController
+        guard let controller = controller else { return false }
+        if controller is PackageViewController || controller is FeaturedViewController {
+            return true
+        }
+        // a list of packages draws a ring on the row that was tapped, exactly
+        // like the page's own button; only the installed list is different,
+        // because an uninstall or an update from there is read before it runs
+        if let list = controller as? PackageListViewController {
+            return !list.packagesLoadIdentifier.contains("--installed")
+        }
+        return false
+    }
+
+    /// Whether the page on screen is already showing this batch as a ring, so
+    /// the sheet would only repeat what the ring says.
+    private func pageDrawsRing(for items: [QueueItem]) -> Bool {
+        // an uninstall is read before it runs, wherever it was started
+        guard !items.contains(where: { $0.isRemoval }) else { return false }
+        guard let page = QueueCenter.currentPageController() else { return false }
+        if QueueCenter.isButtonPage(page) { return true }
+        if let list = page as? PackageListViewController, list.packagesLoadIdentifier.contains("--installed") {
+            return false
+        }
+        return QueueCenter.pageHasQueueButton(for: Set(items.map { $0.identifier }), in: page.view)
+    }
+
+    private static func pageHasQueueButton(for identifiers: Set<String>, in view: UIView) -> Bool {
+        if let button = view as? PackageQueueButton, let package = button.package,
+           identifiers.contains(package.package), !button.isHidden, button.alpha > 0.01 {
+            return true
+        }
+        for subview in view.subviews where pageHasQueueButton(for: identifiers, in: subview) {
+            return true
+        }
+        return false
     }
 
     private func restartTimer() {
