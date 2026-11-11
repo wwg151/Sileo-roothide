@@ -314,7 +314,12 @@ final class QueueCenter {
                 self.aptPartial[identifier] = clamped
             }
             let done = CGFloat(self.aptCounted.count) + self.aptPartial.values.reduce(0, +)
-            let next = min(0.99, done / CGFloat(max(self.aptTotal, 1)))
+            // the last package of the batch takes the ring to 100%, before apt
+            // exits and the queue clears
+            var next = min(0.99, done / CGFloat(max(self.aptTotal, 1)))
+            if self.aptTotal > 0, self.aptCounted.count >= self.aptTotal, self.aptPartial.isEmpty {
+                next = 1
+            }
             // dpkg reports very often: only redraw when the ring moves visibly
             guard abs(next - self.aptFraction) >= 0.005 else { return }
             self.aptFraction = next
@@ -571,7 +576,11 @@ final class QueueCenter {
                                  name: item.name,
                                  version: item.version,
                                  isRemoval: item.isRemoval,
-                                 state: item.isRemoval ? .uninstalling : .installing)
+                                 state: item.isRemoval ? .uninstalling : .installing,
+                                 // the downloads are all in: the bar stays full
+                                 // until apt reports its first package
+                                 aptFraction: 1,
+                                 failureRead: item.failureRead)
             }
         }
         for item in items where origins[item.identifier] == nil {
