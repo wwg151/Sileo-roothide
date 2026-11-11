@@ -1425,6 +1425,7 @@ final class QueueCardCell: UIView {
     private let statusLabel = UILabel()
     private let barTrack = UIView()
     private let barFill = UIView()
+    private let headLabel = UILabel()
     private var barFillWidth: NSLayoutConstraint?
     private var progressFraction: CGFloat = 0
     private let actionButton = UIButton(type: .system)
@@ -1473,6 +1474,12 @@ final class QueueCardCell: UIView {
         barFillWidth = width
         width.isActive = true
 
+        // the percentage rides the head of the bar
+        headLabel.font = .systemFont(ofSize: 10, weight: .semibold)
+        headLabel.textColor = .secondaryLabel
+        headLabel.isHidden = true
+        addSubview(headLabel)
+
         actionButton.translatesAutoresizingMaskIntoConstraints = false
         actionButton.layer.cornerRadius = 15
         actionButton.layer.borderWidth = 1.4
@@ -1507,7 +1514,6 @@ final class QueueCardCell: UIView {
             barFill.leadingAnchor.constraint(equalTo: barTrack.leadingAnchor),
             barFill.topAnchor.constraint(equalTo: barTrack.topAnchor),
             barFill.bottomAnchor.constraint(equalTo: barTrack.bottomAnchor),
-            barFill.widthAnchor.constraint(equalTo: barTrack.widthAnchor, multiplier: 0),
 
             actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             actionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1522,7 +1528,16 @@ final class QueueCardCell: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        barFillWidth?.constant = barTrack.bounds.width * progressFraction
+        let width = barTrack.bounds.width * progressFraction
+        barFillWidth?.constant = width
+        guard !headLabel.isHidden else { return }
+        let head = barTrack.frame.minX + width
+        let size = headLabel.intrinsicContentSize
+        let maxX = bounds.width - 12
+        let x = min(head + 5, maxX - size.width)
+        headLabel.frame = CGRect(x: max(x, barTrack.frame.minX),
+                                 y: barTrack.midY - size.height / 2,
+                                 width: size.width, height: size.height)
     }
 
     func configure(item: QueueItem) {
@@ -1540,6 +1555,14 @@ final class QueueCardCell: UIView {
             progressFraction = 0
         } else {
             progressFraction = 1
+        }
+        // a number that rides the bar's head while the task has one
+        if let progress = item.progress, !item.isFailed {
+            headLabel.text = String(format: "%.0f%%", progress * 100)
+            headLabel.isHidden = false
+        } else {
+            headLabel.text = nil
+            headLabel.isHidden = true
         }
         barFill.backgroundColor = item.isFailed ? .systemRed
             : (progressFraction >= 1 ? .systemGreen : .tintColor)
