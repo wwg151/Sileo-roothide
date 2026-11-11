@@ -104,18 +104,19 @@ extension DownloadManager {
         }
 
         let aptFraction = QueueCenter.shared.aptFraction
-        // One bar per task: the download takes it to half, the conversion to
-        // 60%, and apt walks the rest, so a phase change never starts over.
+        // One bar per task: the download walks it to half, the conversion waits
+        // there, and apt takes the second half — the same shape whether or not
+        // the package has to be converted.
         let hasDownloads = !downloads.isEmpty
         func taskFraction(for state: QueueItemState) -> CGFloat? {
             switch state {
             case .downloading(let value):
                 return hasDownloads ? min(1, max(0, value)) * 0.5 : nil
             case .converting:
-                return hasDownloads ? 0.6 : nil
+                return hasDownloads ? 0.5 : nil
             case .installing, .uninstalling:
                 let apt = min(1, max(0, aptFraction))
-                return hasDownloads ? 0.6 + 0.4 * apt : apt
+                return hasDownloads ? 0.5 + 0.5 * apt : apt
             case .waiting, .failed:
                 return nil
             }
@@ -236,6 +237,7 @@ final class QueueCenter {
     private var autoSheetPending = false
     private(set) var holdForConfirmation = false
     private var readFailures: Set<String> = []
+    private var taskFloors: [String: CGFloat] = [:]
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -327,6 +329,7 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.taskFloors.removeAll()
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -395,6 +398,7 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.taskFloors.removeAll()
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -443,6 +447,7 @@ final class QueueCenter {
             self.holdForConfirmation = false
             self.autoSheetPending = false
             self.readFailures.removeAll()
+            self.taskFloors.removeAll()
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
@@ -460,6 +465,7 @@ final class QueueCenter {
         let manager = DownloadManager.shared
         holdForConfirmation = false
         readFailures.removeAll()
+        taskFloors.removeAll()
         manager.queueRunning = true
         manager.currentDownloads = 0
         manager.aptRunning = false
@@ -567,6 +573,7 @@ final class QueueCenter {
             self.autoSheetPending = false
             self.holdForConfirmation = false
             self.readFailures.removeAll()
+            self.taskFloors.removeAll()
             self.syncNow()
         }
     }
@@ -688,8 +695,18 @@ final class QueueCenter {
                                  // the task sits at the start of its last part
                                  aptFraction: 0,
                                  failureRead: item.failureRead,
-                                 taskFraction: hadDownloads ? 0.6 : 0)
+                                 taskFraction: hadDownloads ? 0.5 : 0)
             }
+        }
+        // a bar never walks backwards inside one batch: the phase that follows
+        // starts where the one before it stopped
+        items = items.map { item in
+            guard let fraction = item.taskFraction else { return item }
+            let floor = max(fraction, taskFloors[item.identifier] ?? 0)
+            taskFloors[item.identifier] = floor
+            var copy = item
+            copy.taskFraction = floor
+            return copy
         }
         for item in items where origins[item.identifier] == nil {
             origins[item.identifier] = QueueCenter.currentPageIdentifier()
