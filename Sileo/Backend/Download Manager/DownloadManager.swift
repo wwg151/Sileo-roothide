@@ -894,13 +894,19 @@ final class DownloadManager {
         self.vars.uninstalldeps.remove { $0.package.package == package }
     }
 
-    /// Holds a running download where it is. The connection stays open, so
-    /// resuming continues from the bytes already received.
+    /// Holds a running download. The transfer is stopped for real — a
+    /// suspended URLSession task kept going on this device — and resuming
+    /// takes it from the start.
     public func pauseDownload(package: String) {
         DownloadManager.aptQueue.async {
             guard let download = self.vars.queuedDownloads[package] else { return }
             download.paused = true
-            download.task?.task?.suspend()
+            download.task?.cancel()
+            download.task = nil
+            if self.currentDownloads > 0 {
+                self.currentDownloads -= 1
+            }
+            self.viewController.updateDownloadStatus(download: download)
         }
     }
 
@@ -911,7 +917,7 @@ final class DownloadManager {
             if let task = download.task {
                 task.task?.resume()
             } else {
-                // the connection died while it was held: take the transfer again
+                // the transfer was stopped: take it again from the beginning
                 self.vars.queuedDownloads.removeValue(forKey: package)
                 self.startMoreDownloads()
             }
