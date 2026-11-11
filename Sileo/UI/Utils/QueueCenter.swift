@@ -377,12 +377,13 @@ final class QueueCenter {
             if ok {
                 self.doneShownAt = Date()
                 self.installFailed = false
+                // a finished batch leaves nothing behind
+                manager.removeAllItems()
             } else {
                 self.installFailed = true
+                // the batch is kept: the user takes out what failed, and 重试
+                // runs the rest again
             }
-            // the queue is emptied either way: a failure stays on screen from
-            // the snapshot, and new work can be queued straight away
-            manager.removeAllItems()
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
@@ -501,6 +502,27 @@ final class QueueCenter {
     func confirmBatch() {
         DispatchQueue.main.async {
             guard self.holdForConfirmation else { return }
+            self.beginDownloadPhase()
+            self.syncNow()
+        }
+    }
+
+    /// 重试: whatever is left of the batch runs again from the start.
+    func retryBatch() {
+        DispatchQueue.main.async {
+            let manager = DownloadManager.shared
+            guard manager.operationCount() > 0 else { return }
+            self.installFailed = false
+            self.readFailures.removeAll()
+            self.doneShownAt = nil
+            self.aptFraction = 0
+            self.aptTotal = 0
+            self.aptCounted.removeAll()
+            self.aptPartial.removeAll()
+            self.handedOff = false
+            self.handoffAt = nil
+            self.displayedFraction = 0
+            manager.cancelDownloads()
             self.beginDownloadPhase()
             self.syncNow()
         }
@@ -899,8 +921,13 @@ final class QueueCenter {
         showCapsule = showCapsule && !sheetVisible
 
         // Without entries the failure note stands alone until the queue runs again.
-        if items.isEmpty && installFailed {
-            items = lastItems.map { item in
+        if installFailed {
+            // the run failed: every row of the batch shows it, whether the
+            // manager still holds the packages or they were cleared
+            if items.isEmpty {
+                items = lastItems
+            }
+            items = items.map { item in
                 let read = hasReadFailure(item.identifier)
                 if case .failed = item.state {
                     var copy = item
@@ -1424,6 +1451,9 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
         table.delegate = self
         table.separatorStyle = .none
         table.backgroundColor = .clear
+        // without this the table holds every touch for a moment, and a button
+        // inside a row needs a second tap to answer
+        table.delaysContentTouches = false
         table.register(UITableViewCell.self, forCellReuseIdentifier: "QueueCard")
         view.addSubview(table)
 
@@ -1563,8 +1593,8 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
                 actionButton.setTitle(String(localizationKey: "Done"), for: .normal)
                 actionButton.backgroundColor = .tertiarySystemFill
                 actionButton.setTitleColor(.label, for: .normal)
-            } else if snapshot.contains(where: { $0.isFailed && !$0.failureRead }) {
-                actionButton.setTitle(String(localizationKey: "Queue_View_Log"), for: .normal)
+            } else if snapshot.contains(where: { $0.isFailed }) {
+                actionButton.setTitle(String(localizationKey: "Queue_Retry"), for: .normal)
                 actionButton.backgroundColor = .tintColor
                 actionButton.setTitleColor(.white, for: .normal)
             } else {
@@ -1602,8 +1632,10 @@ final class QueueSheetController: UIViewController, UITableViewDataSource, UITab
             dismiss(animated: true)
             return
         }
-        if items.contains(where: { $0.isFailed && !$0.failureRead }) {
-            openLog()
+        if items.contains(where: { $0.isFailed }) {
+            // what is left of the batch runs again; the failed rows the user
+            // kept are taken out by hand first
+            QueueCenter.shared.retryBatch()
             return
         }
         SileoPanelViewController.confirm(title: String(localizationKey: "Queue_Cancel_All"),
@@ -1821,12 +1853,33 @@ final class QueueLogSheetController: UIViewController {
     }
 
     private func refresh() {
-        let text = DownloadManager.shared.viewController.logText
-        textView.text = text.isEmpty ? String(localizationKey: "Queue_Log_Empty") : text
-        textView.textColor = text.isEmpty ? .secondaryLabel : .label
+        let log = DownloadManager.shared.viewController.logText
+        let failed = QueueCenter.shared.lastItems.filter { $0.isFailed }
+        var text = ""
+        if !failed.isEmpty {
+            // name the rows that failed, so the log is not an anonymous dump
+            text += String(localizationKey: "Queue_Log_Failed_Header") + "\n"
+            for item in failed {
+                text += "· \(item.name) (\(item.identifier))\n"
+                if let reason = reasonLine(for: item.identifier, in: log) {
+                    text += "  \(reason)\n"
+                }
+            }
+            text += "\n"
+        }
+        text += log.isEmpty ? String(localizationKey: "Queue_Log_Empty") : log
+        textView.text = text
+        textView.textColor = log.isEmpty && failed.isEmpty ? .secondaryLabel : .label
         guard !text.isEmpty else { return }
         let end = NSRange(location: (text as NSString).length, length: 0)
         textView.scrollRangeToVisible(end)
+    }
+
+    /// The line of apt's output that names this package, if there is one.
+    private func reasonLine(for identifier: String, in log: String) -> String? {
+        log.components(separatedBy: "\n")
+            .first { $0.contains(identifier) }?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func respring() {
@@ -1907,7 +1960,7 @@ final class QueueCardCell: UIView {
         addSubview(headLabel)
 
         actionButton.translatesAutoresizingMaskIntoConstraints = false
-        actionButton.layer.cornerRadius = 15
+        actionButton.layer.cornerRadius = 19
         actionButton.layer.borderWidth = 1.4
         actionButton.layer.borderColor = UIColor.separator.cgColor
         actionButton.setTitleColor(.label, for: .normal)
@@ -1952,8 +2005,8 @@ final class QueueCardCell: UIView {
 
             actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             actionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            actionButton.widthAnchor.constraint(equalToConstant: 30),
-            actionButton.heightAnchor.constraint(equalToConstant: 30)
+            actionButton.widthAnchor.constraint(equalToConstant: 38),
+            actionButton.heightAnchor.constraint(equalToConstant: 38)
         ])
     }
 

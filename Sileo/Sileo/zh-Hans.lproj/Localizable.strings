@@ -490,3 +490,6 @@
 "Queue_Remove" = "移除";
 
 "Queue_Paused_N" = "待继续 %lu 项";
+
+"Queue_Retry" = "重试";
+"Queue_Log_Failed_Header" = "失败任务：";

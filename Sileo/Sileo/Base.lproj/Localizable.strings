@@ -485,3 +485,6 @@
 "Queue_Remove" = "Remove";
 
 "Queue_Paused_N" = "%lu held";
+
+"Queue_Retry" = "Retry";
+"Queue_Log_Failed_Header" = "Failed tasks:";
