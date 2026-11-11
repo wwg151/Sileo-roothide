@@ -180,6 +180,7 @@ final class QueueCenter {
     private var handoffScheduled = false
     private var handedOff = false
     private var handoffAt: Date?
+    private var autoSheetPending = false
     private var suspended = false
     private var aptTotal = 0
     private var aptCounted: Set<String> = []
@@ -268,6 +269,7 @@ final class QueueCenter {
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
+            self.autoSheetPending = false
             self.aptFraction = ok ? 1 : self.aptFraction
             self.aptTotal = 0
             self.aptCounted.removeAll()
@@ -320,6 +322,7 @@ final class QueueCenter {
             self.downloadPhase = false
             self.handedOff = false
             self.handoffAt = nil
+            self.autoSheetPending = false
             self.installFailed = false
             self.doneShownAt = nil
             self.origins.removeAll()
@@ -344,6 +347,15 @@ final class QueueCenter {
         downloadPhaseSince = Date()
         NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
         manager.startDownloads()
+
+        // a list, the news, a file or a batch import has no button to draw a
+        // ring on: the queue opens by itself there
+        if !QueueCenter.isButtonPage(QueueCenter.currentPageController()) {
+            autoSheetPending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.presentSheetWhenSettled(3)
+            }
+        }
     }
 
     /// Downloads are all in: hand the batch to apt. Nothing is presented for
@@ -432,6 +444,7 @@ final class QueueCenter {
             self.handedOff = false
             self.handoffAt = nil
             self.downloadPhase = false
+            self.autoSheetPending = false
             self.syncNow()
         }
     }
@@ -534,6 +547,10 @@ final class QueueCenter {
     // single task hides the capsule while its own page is on screen.
 
     static func currentPageIdentifier() -> ObjectIdentifier? {
+        currentPageController().map { ObjectIdentifier($0) }
+    }
+
+    static func currentPageController() -> UIViewController? {
         guard let tab = TabBarController.singleton else { return nil }
         var controller = tab.selectedViewController
         if let navigation = controller as? UINavigationController {
@@ -545,7 +562,13 @@ final class QueueCenter {
                 controller = navigation.topViewController
             }
         }
-        return controller.map { ObjectIdentifier($0) }
+        return controller
+    }
+
+    /// The pages that carry the install button themselves: there the ring on
+    /// the button is the progress, and no sheet is thrown over the page.
+    static func isButtonPage(_ controller: UIViewController?) -> Bool {
+        controller is PackageViewController || controller is FeaturedViewController
     }
 
     private func restartTimer() {
@@ -619,14 +642,15 @@ final class QueueCenter {
 
     // MARK: sheet
 
-    func presentSheet() {
-        guard !sheetVisible else { return }
-        guard let host = TabBarController.singleton else { return }
+    @discardableResult
+    func presentSheet() -> Bool {
+        guard !sheetVisible else { return false }
+        guard let host = TabBarController.singleton else { return false }
         // whatever is already up (the log page, for instance) must not be
         // replaced by UIKit's "already presenting" exception
         var top: UIViewController = host
         while let presented = top.presentedViewController { top = presented }
-        guard !top.isBeingPresented, !top.isBeingDismissed, top.viewIfLoaded?.window != nil else { return }
+        guard !top.isBeingPresented, !top.isBeingDismissed, top.viewIfLoaded?.window != nil else { return false }
         let sheet = QueueSheetController()
         sheet.modalPresentationStyle = .pageSheet
         if let presentation = sheet.sheetPresentationController {
@@ -634,8 +658,20 @@ final class QueueCenter {
             presentation.prefersGrabberVisible = true
         }
         sheetVisible = true
+        autoSheetPending = false
         top.present(sheet, animated: true) {
             self.restartTimer()
+        }
+        return true
+    }
+
+    /// A batch started somewhere without a button to show it on: open the
+    /// queue, and try again if the page was still animating.
+    private func presentSheetWhenSettled(_ attempts: Int) {
+        guard autoSheetPending, attempts > 0 else { return }
+        if presentSheet() { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.presentSheetWhenSettled(attempts - 1)
         }
     }
 
