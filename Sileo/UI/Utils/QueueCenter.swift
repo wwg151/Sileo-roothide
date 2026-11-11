@@ -950,7 +950,7 @@ final class QueueCenter {
             sheet.dismiss(animated: true)
         }
 
-        updateCapsule(visible: showCapsule)
+        updateCapsule(visible: showCapsule, count: items.count)
         NotificationCenter.default.post(name: QueueCenter.queueChangedNotification, object: nil)
         restartTimer()
     }
@@ -1012,7 +1012,7 @@ final class QueueCenter {
 
     // MARK: capsule
 
-    private func updateCapsule(visible: Bool) {
+    private func updateCapsule(visible: Bool, count: Int) {
         guard let capsule = capsule else { return }
         // the app is leaving (respring): nothing of ours stays on the screen
         if suspended {
@@ -1021,7 +1021,7 @@ final class QueueCenter {
             return
         }
         if visible {
-            capsule.configure()
+            capsule.configure(count: count)
             if window?.isHidden != false {
                 window?.isHidden = false
                 // showing a window can take the key: hand it back to the app
@@ -1177,8 +1177,9 @@ final class QueueCapsuleView: UIView {
     }
 
     /// The pill is only the door to the queue: no state, no progress.
-    func configure() {
-        titleLabel.text = String(localizationKey: "Queue_Entry")
+    func configure(count: Int) {
+        titleLabel.text = String(localizationKey: "Queue_Entry") + " "
+            + String(format: String(localizationKey: "Queue_Items"), count)
         invalidateIntrinsicContentSize()
         setNeedsLayout()
     }
