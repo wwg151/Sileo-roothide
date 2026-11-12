@@ -87,9 +87,38 @@ class PackageCollectionViewCell: SwipeCollectionViewCell {
         }
     }
     
+    func applySearch(_ rawQuery: String) {
+        guard let package = targetPackage else { return }
+        let query = FunctionalSearchQuery(rawQuery)
+        guard !query.text.isEmpty else {
+            descriptionLabel?.attributedText = nil
+            descriptionLabel?.text = package.description
+            return
+        }
+        let snippet = query.snippet(summary: package.description ?? "", detail: PackageSearchIndex.shared.detail(for: package))
+        let text = NSMutableAttributedString(string: snippet)
+        let nsText = snippet as NSString
+        for term in query.highlightTerms {
+            var searchRange = NSRange(location: 0, length: nsText.length)
+            while searchRange.length > 0 {
+                let range = nsText.range(of: term, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], range: searchRange)
+                if range.location == NSNotFound { break }
+                text.addAttributes([.foregroundColor: tintColor ?? UIColor.systemBlue,
+                                    .font: UIFont.boldSystemFont(ofSize: descriptionLabel?.font.pointSize ?? 12)], range: range)
+                let next = NSMaxRange(range)
+                searchRange = NSRange(location: next, length: nsText.length - next)
+            }
+        }
+        descriptionLabel?.attributedText = text
+        descriptionLabel?.accessibilityLabel = snippet
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
-        
+        descriptionLabel?.attributedText = nil
+        descriptionLabel?.accessibilityLabel = nil
+        targetPackage = nil
+        provisionalTarget = nil
         self.hasPurchased = false
     }
     

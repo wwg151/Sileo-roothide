@@ -375,23 +375,9 @@ final class PackageListManager {
         } else if let prepend = packagePrepend {
             packageList = prepend
         } else {
-            if var search = search?.lowercased(),
-               let lookupTable = lookupTable {
-                var isFound = false
-                while !search.isEmpty && !isFound {
-                    if let packages = lookupTable[search] {
-                        packageList = packages
-                        isFound = true
-                    } else {
-                        search.removeLast()
-                    }
-                }
-                if !isFound {
-                    packageList = repoContext?.packageArray ?? allPackagesArray
-                }
-            } else {
-                packageList = repoContext?.packageArray ?? allPackagesArray
-            }
+            // Expanded concepts and typo matches are not monotonic prefixes:
+            // always rank the full context, never a shorter query's candidates.
+            packageList = repoContext?.packageArray ?? allPackagesArray
         }
         
         if identifier=="--contextInstalled" {
@@ -413,26 +399,10 @@ final class PackageListManager {
             }
         }
         
-        if let searchQuery = search, !searchQuery.isEmpty {
-            let lowercased = searchQuery.lowercased()
-            packageList.removeAll { package in
-                // check if the user search term is in the package ID, description or in the author / maintainer name
-//                var fields = [package.package, package.name, package.author?.name, package.maintainer?.name]
-                var fields = [package.package, package.name, package.description]
-                for field in fields {
-                    if let field = field, field.count>0 {
-                        if field.localizedStandardContains(lowercased) {
-                            return false
-                        }
-                    }
-                }
-                return true
-            }
-            
-            if searchQuery.lengthOfBytes(using: String.Encoding.utf8) < 2 && packageList.count > 1000 {
-                //skip sort
-                return packageList
-            }
+        if let query = search, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Stable base ordering retains architecture/version preference for equal scores.
+            if sort { packageList = sortPackages(packages: packageList, search: query) }
+            return PackageSearchIndex.shared.ranked(packageList, query: query)
         }
         
 //        for p in packageList {

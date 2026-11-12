@@ -38,6 +38,10 @@ jobs:
           xcodebuild -version
           echo "iPhoneOS SDK $(xcrun --sdk iphoneos --show-sdk-version)"
 
+      - name: Test functional search
+        shell: bash
+        run: bash Scripts/test-functional-search.sh
+
       - name: Install dependencies
         shell: bash
         run: |

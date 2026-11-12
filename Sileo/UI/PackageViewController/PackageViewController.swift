@@ -380,6 +380,9 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
                 guard success,
                       let data = data,
                       let `self` = self else { return }
+                if let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                    PackageSearchIndex.shared.capture(json, for: package)
+                }
                 self.parseNativeDepiction(data, host: depiction.host ?? "", failureCallback: nil)
             }
         }

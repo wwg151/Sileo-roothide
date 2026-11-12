@@ -287,6 +287,9 @@
 		E12818A326BBFAA500D2553B /* PackageIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AB912622ED081E0054341B /* PackageIconView.swift */; };
 		E12818A626BBFAA500D2553B /* PackageListHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DB3BCB22D57BD9008FCFA1 /* PackageListHeader.swift */; };
 		E12818A726BBFAA500D2553B /* PackageListManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F102D1ED22CEA23400A4C9BA /* PackageListManager.swift */; };
+        A1C0DE00000000000000C300 /* PackageSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C301; };
+        A1C0DE00000000000000C302 /* PackageSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C301; };
+        A1C0DE00000000000000C303 /* PackageSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE00000000000000C301; };
 		E12818A826BBFAA500D2553B /* PackageListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D82F1723050FED00EECCAE /* PackageListViewController.swift */; };
 		E12818A926BBFAA500D2553B /* CSTextRenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14F7D58240A766D00062310 /* CSTextRenderView.swift */; };
 		E12818AA26BBFAA500D2553B /* DepictionColorCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A116B62384D49500B6F408 /* DepictionColorCollection.swift */; };
@@ -1526,6 +1529,7 @@
 		F102D1E222CD514C00A4C9BA /* WishListManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WishListManager.swift; sourceTree = "<group>"; };
 		F102D1E422CD7DE300A4C9BA /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		F102D1ED22CEA23400A4C9BA /* PackageListManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PackageListManager.swift; sourceTree = "<group>"; };
+        A1C0DE00000000000000C301 /* PackageSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageSearch.swift; sourceTree = "<group>"; };
 		F107EB61230D195A002B8C20 /* Dusk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dusk.swift; sourceTree = "<group>"; };
 		F11CD90D20DBF777000C62C3 /* PackageCollectionViewCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = PackageCollectionViewCell.xib; sourceTree = "<group>"; };
 		F11E22DD2500345400CC58D1 /* NewsPlaceholderCollectionViewCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsPlaceholderCollectionViewCell.swift; sourceTree = "<group>"; };
@@ -2798,6 +2802,7 @@
 			isa = PBXGroup;
 			children = (
 				F102D1ED22CEA23400A4C9BA /* PackageListManager.swift */,
+                A1C0DE00000000000000C301 /* PackageSearch.swift */,
 			);
 			path = "Package Manager";
 			sourceTree = "<group>";
@@ -4245,6 +4250,7 @@
 				E12818A326BBFAA500D2553B /* PackageIconView.swift in Sources */,
 				E12818A626BBFAA500D2553B /* PackageListHeader.swift in Sources */,
 				E12818A726BBFAA500D2553B /* PackageListManager.swift in Sources */,
+                A1C0DE00000000000000C300 /* PackageSearch.swift in Sources */,
 				E12818A826BBFAA500D2553B /* PackageListViewController.swift in Sources */,
 				E12818A926BBFAA500D2553B /* CSTextRenderView.swift in Sources */,
 				E12818AA26BBFAA500D2553B /* DepictionColorCollection.swift in Sources */,
@@ -4471,6 +4477,7 @@
 				F139D0DD22EA9209007F5C0D /* PackageListHeader.swift in Sources */,
 				E1D6DFB8268BA730005BF9EA /* APTJsonParser.swift in Sources */,
 				F139D10D22EA9209007F5C0D /* PackageListManager.swift in Sources */,
+                A1C0DE00000000000000C302 /* PackageSearch.swift in Sources */,
 				F1D82F7823094E1C00EECCAE /* PackageListViewController.swift in Sources */,
 				E1EB0363268BA45C0097CEE1 /* DownloadsTableViewCell.swift in Sources */,
 				F14F7D5A240A766D00062310 /* CSTextRenderView.swift in Sources */,
@@ -4667,6 +4674,7 @@
 				F1AB912722ED081E0054341B /* PackageIconView.swift in Sources */,
 				F1DB3BCC22D57BD9008FCFA1 /* PackageListHeader.swift in Sources */,
 				F102D1EE22CEA23400A4C9BA /* PackageListManager.swift in Sources */,
+                A1C0DE00000000000000C303 /* PackageSearch.swift in Sources */,
 				F1D82F1823050FED00EECCAE /* PackageListViewController.swift in Sources */,
 				F14F7D59240A766D00062310 /* CSTextRenderView.swift in Sources */,
 				F1A116B72384D49500B6F408 /* DepictionColorCollection.swift in Sources */,
