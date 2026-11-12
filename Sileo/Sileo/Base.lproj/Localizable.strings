@@ -9,6 +9,7 @@
 */
 
 // Common Prompts
+"Source_Copied_To_Clipboard" = "Copied to clipboard";
 "Source_Lock" = "Lock";
 "Source_Unlock" = "Unlock";
 "Package_Download_Size" = "Package size";

@@ -433,6 +433,8 @@ final class SourcesViewController: SileoViewController {
         private let repos: [Repo]
         private var filtered: [Repo]
         private let searchBar = UISearchBar()
+        private var copyToast: UILabel?
+        private var hideCopyToast: DispatchWorkItem?
         var onSelect: ((Repo) -> Void)?
 
         init(repos: [Repo]) {
@@ -459,6 +461,9 @@ final class SourcesViewController: SileoViewController {
             searchBar.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 56)
             tableView.tableHeaderView = searchBar
             tableView.keyboardDismissMode = .onDrag
+            let copyGesture = UILongPressGestureRecognizer(target: self, action: #selector(copySource(_:)))
+            copyGesture.minimumPressDuration = 0.5
+            tableView.addGestureRecognizer(copyGesture)
             navigationItem.leftBarButtonItem = UIBarButtonItem(
                 title: String(localizationKey: "Cancel"),
                 style: .plain,
@@ -481,6 +486,53 @@ final class SourcesViewController: SileoViewController {
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
             searchBar.becomeFirstResponder()
+        }
+
+        @objc private func copySource(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began,
+                  let indexPath = tableView.indexPathForRow(at: gesture.location(in: tableView)),
+                  filtered.indices.contains(indexPath.row) else { return }
+            UIPasteboard.general.string = filtered[indexPath.row].rawURL
+            tableView.deselectRow(at: indexPath, animated: false)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            showCopyToast()
+        }
+
+        private func showCopyToast() {
+            hideCopyToast?.cancel()
+            copyToast?.removeFromSuperview()
+            // The navigation view stays above the scrolling rows and keyboard.
+            let host = navigationController?.view ?? view!
+            let label = UILabel()
+            label.text = String(localizationKey: "Source_Copied_To_Clipboard")
+            label.font = .systemFont(ofSize: 14, weight: .medium)
+            label.textColor = .label
+            label.backgroundColor = .secondarySystemBackground
+            label.textAlignment = .center
+            label.layer.cornerRadius = 12
+            label.clipsToBounds = true
+            label.isUserInteractionEnabled = false
+            label.translatesAutoresizingMaskIntoConstraints = false
+            host.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.centerXAnchor.constraint(equalTo: host.safeAreaLayoutGuide.centerXAnchor),
+                label.topAnchor.constraint(equalTo: host.safeAreaLayoutGuide.topAnchor, constant: 64),
+                label.widthAnchor.constraint(equalToConstant: min(label.intrinsicContentSize.width + 32, host.bounds.width - 32)),
+                label.heightAnchor.constraint(equalToConstant: 40)
+            ])
+            copyToast = label
+            UIAccessibility.post(notification: .announcement, argument: label.text)
+            let hide = DispatchWorkItem { [weak self, weak label] in
+                guard let label = label else { return }
+                UIView.animate(withDuration: 0.2, animations: {
+                    label.alpha = 0
+                }, completion: { _ in
+                    label.removeFromSuperview()
+                    if self?.copyToast === label { self?.copyToast = nil }
+                })
+            }
+            hideCopyToast = hide
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: hide)
         }
 
         @objc private func close() {

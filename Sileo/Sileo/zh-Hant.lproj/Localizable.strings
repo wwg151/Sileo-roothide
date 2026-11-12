@@ -9,6 +9,7 @@
 */
 // Common Prompts
 
+"Source_Copied_To_Clipboard" = "已複製到剪貼簿";
 "Source_Lock" = "鎖定";
 "Source_Unlock" = "解鎖";
 "Package_Download_Size" = "套件大小";
