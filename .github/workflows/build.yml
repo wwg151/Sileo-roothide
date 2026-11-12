@@ -123,47 +123,50 @@ jobs:
           fi
           gh release upload "$tag" out/*.deb out/SHA256SUMS --clobber
 
-  # The website deploy needs a DEPLOY_PAT this repository does not have, so it
-  # failed on every run. The deb is published to the release above instead;
-  # uncomment (and add the secret) to push it to the Pages repository again.
-  #
-  # deploy:
-  #   name: Push deb packages to repo
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Download build artifacts
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: sileo-roothide
-  #         path: debs
-  #
-  #     - name: Checkout repo
-  #       uses: actions/checkout@v4
-  #       with:
-  #         repository: wwg135/wwg135.github.io
-  #         token: ${{ secrets.DEPLOY_PAT }}
-  #         path: website
-  #
-  #     - name: Copy deb
-  #       shell: bash
-  #       run: |
-  #         set -euo pipefail
-  #         mkdir -p website/debs
-  #         cp debs/*.deb website/debs/
-  #         ls -la website/debs/ | grep -i sileo
-  #
-  #     - name: Commit and push
-  #       shell: bash
-  #       run: |
-  #         set -euo pipefail
-  #         cd website
-  #         git config user.name "github-actions[bot]"
-  #         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-  #         git add -A debs/
-  #         if git diff --staged --quiet; then
-  #           echo "No changes to deploy."
-  #         else
-  #           git commit -m "chore: update Sileo-roothide debs (${{ github.sha }})"
-  #           git push
-  #         fi
+  # Every dev build is pushed into the Pages repository's debs/ folder, where
+  # the repository's own workflow indexes it. DEPLOY_PAT is the secret the
+  # repository holds, with write access to that repository.
+  deploy:
+    name: Push deb packages to repo
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sileo-roothide
+          path: debs
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          repository: wwg151/wwg135.github.io
+          token: ${{ secrets.DEPLOY_PAT }}
+          path: website
+
+      - name: Copy deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p website/debs
+          # The version in the file name stays the same between builds, so the
+          # one already there is replaced rather than left beside this one:
+          # two files with one package and version confuse apt.
+          rm -f website/debs/org.coolstar.sileo_*.deb website/debs/Sileo_2.5.1-15_*.deb
+          cp debs/*.deb website/debs/
+          ls -la website/debs/ | grep -i sileo
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd website
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A debs/
+          if git diff --staged --quiet; then
+            echo "No changes to deploy."
+          else
+            git commit -m "chore: update Sileo-roothide debs (${{ github.sha }})"
+            git push
+          fi
