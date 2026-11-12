@@ -367,7 +367,7 @@ final class SileoBackupPickerPanel: SileoPanelViewController {
 
 final class SileoRemovedSourcesPanel: SileoPanelViewController {
 
-    private let items: [RemovedSource]
+    private var items: [RemovedSource]
     private let onAdd: ([RemovedSource]) -> Void
     private var selected: Set<String> = []
     private var checks: [String: UIImageView] = [:]
@@ -381,9 +381,10 @@ final class SileoRemovedSourcesPanel: SileoPanelViewController {
                    subtitle: String(format: String(localizationKey: "Removed_Sources_Header_Count"), items.count),
                    icon: "clock.arrow.circlepath")
 
-        table.setItems(items.map { item in
-            SileoPanelTable.Item(makeRow(for: item))
-        })
+        rebuildRows()
+        table.onRemoveRow = { [weak self] row in
+            self?.removeItem(at: row)
+        }
 
         let selectAll = SileoPanelViewController.headerButton(title: String(localizationKey: "Backup_Select_All")) { [weak self] in
             self?.toggleSelectAll()
@@ -449,6 +450,34 @@ final class SileoRemovedSourcesPanel: SileoPanelViewController {
             check.heightAnchor.constraint(equalToConstant: 22)
         ])
         return row
+    }
+
+    private func rebuildRows() {
+        checks.removeAll()
+        table.setItems(items.map { item in
+            SileoPanelTable.Item(makeRow(for: item))
+        })
+    }
+
+    /// A left swipe's Remove: the record is dropped for good, and the list, its
+    /// count and the footer follow. The panel closes once nothing is left.
+    private func removeItem(at row: Int) {
+        guard items.indices.contains(row) else { return }
+        let item = items[row]
+        RemovedSourcesStore.shared.forget([item])
+        items.remove(at: row)
+        selected.remove(item.url)
+        // The rows are rebuilt once the swipe has closed, so the table is not
+        // reloaded underneath the animation.
+        let empty = items.isEmpty
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.rebuildRows()
+            if empty { self.close() }
+        }
+        subtitleLabel?.text = String(format: String(localizationKey: "Removed_Sources_Header_Count"), items.count)
+        updateFooter()
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     private func update(check: UIImageView, selected: Bool) {

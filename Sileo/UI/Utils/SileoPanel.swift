@@ -42,6 +42,10 @@ final class SileoPanelTable: UITableView, UITableViewDataSource, UITableViewDele
 
     private(set) var items: [Item] = []
 
+    /// Set to give every row a destructive action on a left swipe, with the
+    /// row's index; a panel that leaves it nil has no swipe actions.
+    var onRemoveRow: ((Int) -> Void)?
+
     init() {
         super.init(frame: .zero, style: .plain)
         backgroundColor = .clear
@@ -89,6 +93,18 @@ final class SileoPanelTable: UITableView, UITableViewDataSource, UITableViewDele
         return height
     }
 
+    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard let onRemoveRow = onRemoveRow, items.indices.contains(indexPath.row) else { return nil }
+        let row = indexPath.row
+        let remove = UIContextualAction(style: .destructive, title: String(localizationKey: "Remove")) { _, _, completionHandler in
+            onRemoveRow(row)
+            completionHandler(true)
+        }
+        let configuration = UISwipeActionsConfiguration(actions: [remove])
+        configuration.performsFirstActionWithFullSwipe = false
+        return configuration
+    }
+
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Sileo.PanelCell", for: indexPath)
         cell.backgroundColor = .clear
@@ -117,6 +133,9 @@ class SileoPanelViewController: UIViewController {
     let table = SileoPanelTable()
 
     private(set) var headerView: UIView?
+
+    /// The header's smaller line, so a panel can keep its count up to date.
+    private(set) var subtitleLabel: UILabel?
     private(set) var footerView: UIView?
     private var customBody: UIView?
 
@@ -175,7 +194,9 @@ class SileoPanelViewController: UIViewController {
         card.layer.shadowRadius = 30
         card.layer.shadowOffset = CGSize(width: 0, height: 12)
         view.addSubview(card)
-        card.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:))))
+        let pullDown = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pullDown.delegate = self
+        card.addGestureRecognizer(pullDown)
 
         cardEffect.translatesAutoresizingMaskIntoConstraints = false
         cardEffect.layer.cornerRadius = 20
@@ -348,6 +369,7 @@ class SileoPanelViewController: UIViewController {
             subtitle.textColor = .secondaryLabel
             subtitle.numberOfLines = 0
             labels.addArrangedSubview(subtitle)
+            subtitleLabel = subtitle
         }
         container.addSubview(labels)
 
@@ -476,6 +498,17 @@ class SileoPanelViewController: UIViewController {
 }
 
 // MARK: - Rows and buttons
+
+extension SileoPanelViewController: UIGestureRecognizerDelegate {
+
+    /// The card answers only a downward pull, so a sideways swipe inside it
+    /// reaches the row it started on (the removed-sources row's Remove action).
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+        let velocity = pan.velocity(in: view)
+        return abs(velocity.y) > abs(velocity.x)
+    }
+}
 
 extension SileoPanelViewController {
 
