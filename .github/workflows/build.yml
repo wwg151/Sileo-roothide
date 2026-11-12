@@ -143,6 +143,7 @@ jobs:
           repository: wwg151/repo
           token: ${{ secrets.DEPLOY_PAT }}
           path: website
+          fetch-depth: 0
 
       - name: Copy deb
         shell: bash
@@ -168,15 +169,31 @@ jobs:
             exit 0
           fi
           git commit -m "chore: update Sileo-roothide debs (${{ github.sha }})"
-          # The reason a push is refused is shown as an annotation: the run's
-          # log needs a sign-in, the annotations do not.
-          if git push origin HEAD:main > /tmp/push.log 2>&1; then
-            cat /tmp/push.log
-            exit 0
+          # The repository's own workflow pushes an index commit on every deb it
+          # sees, so the branch has usually moved on by the time this runs: the
+          # commit is put on top of the current main and the push retried.
+          # A refusal is shown as an annotation, which needs no sign-in.
+          for attempt in 1 2 3; do
+            if git fetch origin main:refs/remotes/origin/main && git rebase origin/main; then
+              if git push origin HEAD:main > /tmp/push.log 2>&1; then
+                cat /tmp/push.log
+                exit 0
+              fi
+              echo "::warning::push attempt ${attempt} was refused"
+              cat /tmp/push.log
+            else
+              git rebase --abort || true
+              echo "::warning::rebase attempt ${attempt} failed"
+            fi
+            sleep 5
+          done
+          if [ -f /tmp/push.log ]; then
+            while IFS= read -r line; do
+              echo "::error::$line"
+            done < /tmp/push.log
+          else
+            echo "::error::the deb could not be pushed to the repository"
           fi
-          while IFS= read -r line; do
-            echo "::error::$line"
-          done < /tmp/push.log
           exit 1
 
 # Re-running this workflow publishes the same build again.
