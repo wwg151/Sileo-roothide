@@ -140,7 +140,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          repository: wwg151/wwg135.github.io
+          repository: wwg151/repo
           token: ${{ secrets.DEPLOY_PAT }}
           path: website
 
