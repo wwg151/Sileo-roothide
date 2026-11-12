@@ -9,6 +9,8 @@
 */
 // Common Prompts
 
+"Package_Download_Size" = "下載大小";
+"Package_Installed_Size" = "安裝佔用";
 "About" = "關於";
 "Close" = "關閉";
 "Double tap to open." = "雙擊以開啟。";

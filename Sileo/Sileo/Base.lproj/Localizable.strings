@@ -9,6 +9,8 @@
 */
 
 // Common Prompts
+"Package_Download_Size" = "Download size";
+"Package_Installed_Size" = "Installed size";
 "About" = "About";
 "Close" = "Close";
 "Double tap to open." = "Double tap to open.";

@@ -26,6 +26,33 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     @IBOutlet private var packageName: UILabel!
     @IBOutlet private var packageAuthor: UILabel!
+    private let packageSizeLabel = UILabel()
+
+    private func updatePackageSize(_ package: Package) {
+        if packageSizeLabel.superview == nil, let stack = packageAuthor.superview as? UIStackView {
+            packageSizeLabel.font = .systemFont(ofSize: 12)
+            packageSizeLabel.textColor = .secondaryLabel
+            packageSizeLabel.adjustsFontSizeToFitWidth = true
+            packageSizeLabel.minimumScaleFactor = 0.85
+            stack.addArrangedSubview(packageSizeLabel)
+        }
+        let bytes: Int64
+        let title: String
+        if let size = package.size, let downloadBytes = Int64(size), downloadBytes > 0 {
+            bytes = downloadBytes
+            title = String(localizationKey: "Package_Download_Size")
+        } else if let installedSize = package.installedSize, installedSize > 0,
+                  Int64(installedSize) <= Int64.max / 1024 {
+            bytes = Int64(installedSize) * 1024
+            title = String(localizationKey: "Package_Installed_Size")
+        } else {
+            packageSizeLabel.isHidden = true
+            return
+        }
+        packageSizeLabel.text = title + " · "
+            + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        packageSizeLabel.isHidden = false
+    }
 
     @IBOutlet private var packageIconView: PackageIconView!
 
@@ -271,6 +298,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
         packageName.text = package.name
         packageAuthor.text = package.author?.name ?? ""
+        updatePackageSize(package)
 
         downloadButton.package = package
         navBarDownloadButton?.package = package
@@ -504,6 +532,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             return
         }
         self.package = package
+        updatePackageSize(package)
         installedPackage = PackageListManager.shared.installedPackage(identifier: package.package)
         downloadButton.package = package
         navBarDownloadButton?.package = package

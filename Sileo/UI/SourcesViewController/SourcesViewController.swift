@@ -103,6 +103,9 @@ final class SourcesViewController: SileoViewController {
         
         tableView.delegate = self
         tableView.dataSource = self
+        tableView.dragDelegate = self
+        tableView.dropDelegate = self
+        tableView.dragInteractionEnabled = true
         self.tableView.separatorInset = UIEdgeInsets(top: 72, left: 0, bottom: 0, right: 0)
         self.tableView.separatorColor = UIColor(white: 0, alpha: 0.2)
         self.setEditing(false, animated: false)
@@ -1464,6 +1467,50 @@ final class SourcesViewController: SileoViewController {
         }
         
         textField.text = text
+    }
+}
+
+extension SourcesViewController: UITableViewDragDelegate, UITableViewDropDelegate {
+    func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+        guard !inRefreshing, !tableView.isEditing,
+              indexPath.section == 1, sortedRepoList.indices.contains(indexPath.row) else { return [] }
+        let repo = sortedRepoList[indexPath.row]
+        let item = UIDragItem(itemProvider: NSItemProvider(object: repo.rawURL as NSString))
+        item.localObject = repo
+        return [item]
+    }
+
+    func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    func tableView(_ tableView: UITableView, dropSessionDidUpdate session: UIDropSession,
+                   withDestinationIndexPath destinationIndexPath: IndexPath?) -> UITableViewDropProposal {
+        guard destinationIndexPath?.section != 0,
+              session.localDragSession != nil, session.items.count == 1,
+              let repo = session.items.first?.localObject as? Repo,
+              sortedRepoList.contains(where: { $0 === repo }) else {
+            return UITableViewDropProposal(operation: .cancel)
+        }
+        return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    func tableView(_ tableView: UITableView, performDropWith coordinator: UITableViewDropCoordinator) {
+        guard let item = coordinator.items.first, let repo = item.dragItem.localObject as? Repo,
+              let source = sortedRepoList.firstIndex(where: { $0 === repo }) else { return }
+        let proposed = coordinator.destinationIndexPath ?? IndexPath(row: sortedRepoList.count - 1, section: 1)
+        let row = proposed.section == 0 ? 0 : min(max(0, proposed.row), sortedRepoList.count - 1)
+        let destination = IndexPath(row: row, section: 1)
+        if source != row {
+            sortedRepoList.remove(at: source)
+            sortedRepoList.insert(repo, at: row)
+            PinnedSources.shared.saveOrder(sortedRepoList)
+            tableView.performBatchUpdates {
+                tableView.moveRow(at: IndexPath(row: source, section: 1), to: destination)
+            }
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+        coordinator.drop(item.dragItem, toRowAt: destination)
     }
 }
 

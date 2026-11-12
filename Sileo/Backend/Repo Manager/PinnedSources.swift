@@ -41,10 +41,16 @@ final class PinnedSources {
         var list = keys
         if let index = list.firstIndex(of: identifier) {
             list.remove(at: index)
+            if let saved = UserDefaults.standard.stringArray(forKey: Self.customOrderKey) {
+                UserDefaults.standard.set(saved.filter { $0 != identifier }, forKey: Self.customOrderKey)
+            }
             store(list)
             return false
         }
         list.insert(identifier, at: 0)
+        if let saved = UserDefaults.standard.stringArray(forKey: Self.customOrderKey) {
+            UserDefaults.standard.set([identifier] + saved.filter { $0 != identifier }, forKey: Self.customOrderKey)
+        }
         store(list)
         return true
     }
@@ -52,11 +58,34 @@ final class PinnedSources {
     func remove(_ repo: Repo) {
         var list = keys
         list.removeAll { $0 == key(for: repo) }
+        let identifier = key(for: repo)
+        if let saved = UserDefaults.standard.stringArray(forKey: Self.customOrderKey) {
+            UserDefaults.standard.set(saved.filter { $0 != identifier }, forKey: Self.customOrderKey)
+        }
         store(list)
     }
 
-    /// The pinned sources first, in the order they were pinned, then the rest.
+    private static let customOrderKey = "SileoSourceOrder"
+
+    /// Remember exact positions after a drag. Newly added sources follow
+    /// the saved list in their normal order without displacing existing rows.
     func sorted(_ repos: [Repo]) -> [Repo] {
+        let baseline = pinnedSorted(repos)
+        let order = UserDefaults.standard.stringArray(forKey: Self.customOrderKey) ?? []
+        guard !order.isEmpty else { return baseline }
+        let positions = Dictionary(order.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        let remembered = baseline.filter { positions[key(for: $0)] != nil }.sorted {
+            (positions[key(for: $0)] ?? 0) < (positions[key(for: $1)] ?? 0)
+        }
+        return remembered + baseline.filter { positions[key(for: $0)] == nil }
+    }
+
+    func saveOrder(_ repos: [Repo]) {
+        UserDefaults.standard.set(repos.map { key(for: $0) }, forKey: Self.customOrderKey)
+    }
+
+    /// The pinned sources first, in the order they were pinned, then the rest.
+    private func pinnedSorted(_ repos: [Repo]) -> [Repo] {
         let order = keys
         guard !order.isEmpty else {
             return repos
