@@ -1,8 +1,8 @@
 Package: @@PACKAGE_ID@@
 Name: @@PACKAGE_NAME@@
 Version: @@MARKETING_VERSION@@
-Author: Amy While <me@anamy.gay>
-Maintainer: Amy While <me@anamy.gay>
+Author: wwg151 <wwg151@users.noreply.github.com>
+Maintainer: wwg151 <wwg151@users.noreply.github.com>
 Description: A modern APT package manager frontend
 Architecture: @@DEB_ARCH@@
 Depends: @@DEB_DEPENDS@@
