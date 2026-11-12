@@ -178,3 +178,5 @@ jobs:
             echo "::error::$line"
           done < /tmp/push.log
           exit 1
+
+# Re-running this workflow publishes the same build again.
