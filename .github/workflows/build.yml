@@ -149,24 +149,29 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p website/debs
-          # The version in the file name stays the same between builds, so the
-          # one already there is replaced rather than left beside this one:
-          # two files with one package and version confuse apt.
-          rm -f website/debs/org.coolstar.sileo_*.deb website/debs/Sileo_2.5.1-15_*.deb
           cp debs/*.deb website/debs/
           ls -la website/debs/ | grep -i sileo
 
       - name: Commit and push
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           cd website
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A debs/
           if git diff --staged --quiet; then
             echo "No changes to deploy."
-          else
-            git commit -m "chore: update Sileo-roothide debs (${{ github.sha }})"
-            git push
+            exit 0
           fi
+          git commit -m "chore: update Sileo-roothide debs (${{ github.sha }})"
+          # The reason a push is refused is shown as an annotation: the run's
+          # log needs a sign-in, the annotations do not.
+          if git push origin HEAD:main > /tmp/push.log 2>&1; then
+            cat /tmp/push.log
+            exit 0
+          fi
+          while IFS= read -r line; do
+            echo "::error::$line"
+          done < /tmp/push.log
+          exit 1
