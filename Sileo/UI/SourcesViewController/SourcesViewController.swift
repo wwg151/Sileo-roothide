@@ -12,6 +12,11 @@ import Evander
 final class SourcesViewController: SileoViewController {
     private var sortedRepoList: [Repo] = []
     var updatingRepoList: [Repo] = []
+
+    /// A drag in progress keeps its rows, so a reload during a refresh waits
+    /// for the drop instead of pulling the row out from under the finger.
+    private var isDraggingSource = false
+    private var pendingReloadWhileDragging = false
     
     var presentRepoUrl: URL?
     var defaultPagePresent = false
@@ -1206,6 +1211,10 @@ final class SourcesViewController: SileoViewController {
     }
     
     func reloadData() {
+        if isDraggingSource {
+            pendingReloadWhileDragging = true
+            return
+        }
         self.reSortList()
         self.tableView.reloadData()
     }
@@ -1472,7 +1481,7 @@ final class SourcesViewController: SileoViewController {
 
 extension SourcesViewController: UITableViewDragDelegate, UITableViewDropDelegate {
     func tableView(_ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
-        guard !inRefreshing, !tableView.isEditing,
+        guard !tableView.isEditing,
               indexPath.section == 1, sortedRepoList.indices.contains(indexPath.row) else { return [] }
         let repo = sortedRepoList[indexPath.row]
         let item = UIDragItem(itemProvider: NSItemProvider(object: repo.rawURL as NSString))
@@ -1481,7 +1490,15 @@ extension SourcesViewController: UITableViewDragDelegate, UITableViewDropDelegat
     }
 
     func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) {
+        isDraggingSource = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) {
+        isDraggingSource = false
+        guard pendingReloadWhileDragging else { return }
+        pendingReloadWhileDragging = false
+        reloadData()
     }
 
     func tableView(_ tableView: UITableView, dropSessionDidUpdate session: UIDropSession,
@@ -1497,6 +1514,7 @@ extension SourcesViewController: UITableViewDragDelegate, UITableViewDropDelegat
 
     func tableView(_ tableView: UITableView, performDropWith coordinator: UITableViewDropCoordinator) {
         guard let item = coordinator.items.first, let repo = item.dragItem.localObject as? Repo,
+              !sortedRepoList.isEmpty,
               let source = sortedRepoList.firstIndex(where: { $0 === repo }) else { return }
         let proposed = coordinator.destinationIndexPath ?? IndexPath(row: sortedRepoList.count - 1, section: 1)
         let row = proposed.section == 0 ? 0 : min(max(0, proposed.row), sortedRepoList.count - 1)
@@ -1505,8 +1523,14 @@ extension SourcesViewController: UITableViewDragDelegate, UITableViewDropDelegat
             sortedRepoList.remove(at: source)
             sortedRepoList.insert(repo, at: row)
             PinnedSources.shared.saveOrder(sortedRepoList)
-            tableView.performBatchUpdates {
-                tableView.moveRow(at: IndexPath(row: source, section: 1), to: destination)
+            if inRefreshing {
+                // A refresh may have reloaded the section while the finger was
+                // down, so the rows are taken as they are rather than moved.
+                tableView.reloadSections(IndexSet(integer: 1), with: .none)
+            } else {
+                tableView.performBatchUpdates {
+                    tableView.moveRow(at: IndexPath(row: source, section: 1), to: destination)
+                }
             }
             UISelectionFeedbackGenerator().selectionChanged()
         }
