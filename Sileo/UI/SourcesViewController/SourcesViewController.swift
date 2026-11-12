@@ -50,12 +50,10 @@ final class SourcesViewController: SileoViewController {
     }
     
     func canEditRow(indexPath: IndexPath) -> Bool {
-        if indexPath.section == 0 {
+        guard indexPath.section != 0, sortedRepoList.indices.contains(indexPath.row) else {
             return false
         }
-        // Every source can be removed now, the ones that came with the
-        // jailbreak included: the record kept in the add menu puts them back.
-        return true
+        return !PinnedSources.shared.isLocked(sortedRepoList[indexPath.row])
     }
     
     func controller(indexPath: IndexPath) -> CategoryViewController {
@@ -1158,6 +1156,7 @@ final class SourcesViewController: SileoViewController {
     }
     
     private func deleteRepo(at indexPath: IndexPath) {
+        guard canEditRow(indexPath: indexPath) else { return }
         if DownloadManager.shared.queueRunning {
             TabBarController.singleton?.presentPopupController()
             return
@@ -1693,7 +1692,19 @@ extension SourcesViewController: UITableViewDelegate { // UITableViewDelegate
     }
     
     func tableView(_ tableView: UITableView, leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-        if indexPath.section == 0 { return nil }
+        guard indexPath.section != 0, sortedRepoList.indices.contains(indexPath.row) else { return nil }
+        let repo = sortedRepoList[indexPath.row]
+        let locked = PinnedSources.shared.isLocked(repo)
+        let lock = UIContextualAction(
+            style: .normal,
+            title: String(localizationKey: locked ? "Source_Unlock" : "Source_Lock")
+        ) { _, _, completionHandler in
+            PinnedSources.shared.setLocked(!locked, for: repo)
+            UISelectionFeedbackGenerator().selectionChanged()
+            completionHandler(true)
+        }
+        lock.image = UIImage(systemName: locked ? "lock.open" : "lock")
+        lock.backgroundColor = .systemOrange
         let copy = UIContextualAction(
             style: .normal,
             title: String(localizationKey: "Copy")
@@ -1707,14 +1718,17 @@ extension SourcesViewController: UITableViewDelegate { // UITableViewDelegate
             completionHandler(true)
         }
         copy.backgroundColor = .systemBlue
-        return UISwipeActionsConfiguration(actions: [copy])
+        let configuration = UISwipeActionsConfiguration(actions: [copy, lock])
+        configuration.performsFirstActionWithFullSwipe = false
+        return configuration
     }
 
     func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         // We don't want to be able to delete the top section so we just return early here
-        if indexPath.section == 0 { return nil }
+        guard indexPath.section != 0, sortedRepoList.indices.contains(indexPath.row) else { return nil }
+        let repo = sortedRepoList[indexPath.row]
         let refresh = UIContextualAction(style: .normal, title: String(localizationKey: "Refresh")) { _, _, completionHandler in
-            self.updateSingleRepo(self.sortedRepoList[indexPath.row])
+            self.updateSingleRepo(repo)
             completionHandler(true)
         }
         refresh.backgroundColor = .systemGreen

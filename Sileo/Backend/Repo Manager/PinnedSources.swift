@@ -14,6 +14,24 @@ final class PinnedSources {
     static let shared = PinnedSources()
 
     private static let customOrderKey = "SileoSourceOrder"
+    private static let lockedSourcesKey = "SileoLockedSources"
+
+    func isLocked(_ repo: Repo) -> Bool {
+        let saved = UserDefaults.standard.stringArray(forKey: Self.lockedSourcesKey) ?? []
+        return saved.contains(key(for: repo))
+    }
+
+    func setLocked(_ locked: Bool, for repo: Repo) {
+        var saved = Set(UserDefaults.standard.stringArray(forKey: Self.lockedSourcesKey) ?? [])
+        let identifier = key(for: repo)
+        if locked {
+            saved.insert(identifier)
+        } else {
+            saved.remove(identifier)
+        }
+        UserDefaults.standard.set(saved.sorted(), forKey: Self.lockedSourcesKey)
+        UserDefaults.standard.synchronize()
+    }
 
     private func key(for repo: Repo) -> String {
         (repo.url?.absoluteString ?? repo.rawURL).lowercased()

@@ -9,7 +9,9 @@
 */
 
 // Common Prompts
-"Package_Download_Size" = "Download size";
+"Source_Lock" = "Lock";
+"Source_Unlock" = "Unlock";
+"Package_Download_Size" = "Package size";
 "Package_Installed_Size" = "Installed size";
 "About" = "About";
 "Close" = "Close";

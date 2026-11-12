@@ -9,7 +9,9 @@
 */
 // Common Prompts
 
-"Package_Download_Size" = "下载大小";
+"Source_Lock" = "锁定";
+"Source_Unlock" = "解锁";
+"Package_Download_Size" = "插件包大小";
 "Package_Installed_Size" = "安装占用";
 "About" = "关于";
 "Close" = "关闭";
