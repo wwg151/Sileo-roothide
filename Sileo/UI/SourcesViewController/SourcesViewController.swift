@@ -1606,24 +1606,7 @@ extension SourcesViewController: UITableViewDataSource { // UITableViewDataSourc
 }
 
 extension SourcesViewController: UITableViewDelegate { // UITableViewDelegate
-    func tableView(_ tableView: UITableView, shouldShowMenuForRowAt indexPath: IndexPath) -> Bool {
-        indexPath.section > 0
-    }
-    
-    #if !targetEnvironment(macCatalyst)
-    func tableView(_ tableView: UITableView, canPerformAction action: Selector, forRowAt indexPath: IndexPath, withSender sender: Any?) -> Bool {
-        action == #selector(UIResponderStandardEditActions.copy(_:)) 
-    }
-
-    func tableView(_ tableView: UITableView, performAction action: Selector, forRowAt indexPath: IndexPath, withSender sender: Any?) {
-        if action != #selector(UIResponderStandardEditActions.copy(_:)) {
-            return
-        }
-        
-        let repo = sortedRepoList[indexPath.row]
-        UIPasteboard.general.string = repo.aptSource
-    }
-    #else
+    #if targetEnvironment(macCatalyst)
     func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         UIContextMenuConfiguration(identifier: nil,
                                    previewProvider: nil) { [weak self] _ in
@@ -1687,22 +1670,20 @@ extension SourcesViewController: UITableViewDelegate { // UITableViewDelegate
     
     func tableView(_ tableView: UITableView, leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         if indexPath.section == 0 { return nil }
-        let repo = sortedRepoList[indexPath.row]
-        let pinned = PinnedSources.shared.isPinned(repo)
-        let pin = UIContextualAction(
+        let copy = UIContextualAction(
             style: .normal,
-            title: String(localizationKey: pinned ? "Source_Unpin" : "Source_Pin")
+            title: String(localizationKey: "Copy")
         ) { [weak self] _, _, completionHandler in
-            PinnedSources.shared.toggle(repo)
-            completionHandler(true)
-            DispatchQueue.main.async {
-                self?.reSortList()
-                self?.tableView.reloadSections(IndexSet(integer: 1), with: .automatic)
-                self?.updateFooterCount()
+            guard let strong = self, strong.sortedRepoList.indices.contains(indexPath.row) else {
+                completionHandler(false)
+                return
             }
+            UIPasteboard.general.string = strong.sortedRepoList[indexPath.row].aptSource
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            completionHandler(true)
         }
-        pin.backgroundColor = pinned ? .systemGray : .systemOrange
-        return UISwipeActionsConfiguration(actions: [pin])
+        copy.backgroundColor = .systemBlue
+        return UISwipeActionsConfiguration(actions: [copy])
     }
 
     func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {

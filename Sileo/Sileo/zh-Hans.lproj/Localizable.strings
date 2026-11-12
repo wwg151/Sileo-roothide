@@ -114,8 +114,6 @@
 "Ignored Updates" = "屏蔽的更新";
 
 "Repos" = "插件源";
-"Source_Pin" = "置顶";
-"Source_Unpin" = "取消置顶";
 "Repo" = "插件源";
 
 "Add_Source.Title" = "添加插件源";
