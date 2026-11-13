@@ -125,8 +125,7 @@ class DownloadsTableViewController: SileoViewController {
         taskCard.layer.borderWidth = 0.5
         [taskStage, taskHeadline, taskDetail, taskProgress, stageActivity].forEach { taskCard.contentView.addSubview($0) }
         taskTitle.font = .systemFont(ofSize: 29, weight: .bold)
-        taskTitle.adjustsFontSizeToFitWidth = true
-        taskTitle.minimumScaleFactor = 0.65
+        taskTitle.numberOfLines = 0
         taskTitle.textColor = .label
         taskTitle.text = String(localizationKey: "Task_Title")
         taskStage.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -179,24 +178,48 @@ class DownloadsTableViewController: SileoViewController {
     private func layoutTaskPresentation() {
         guard let table = tableView else { return }
         let width = table.bounds.width
-        taskGrabberButton.frame = CGRect(x: (view.bounds.width - 72) / 2, y: 0, width: 72, height: 44)
+        // Popup containers can report their safe area before their final position.
+        // Convert the window's safe area as well, without adding either inset twice.
+        var safeTop = max(view.bounds.minY, view.safeAreaLayoutGuide.layoutFrame.minY)
+        if let window = view.window {
+            let windowSafeArea = view.convert(window.safeAreaLayoutGuide.layoutFrame, from: window)
+            safeTop = max(safeTop, windowSafeArea.minY)
+        }
+        taskGrabberButton.frame = CGRect(x: (view.bounds.width - 72) / 2, y: safeTop, width: 72, height: 44)
         taskGrabber.frame = CGRect(x: 11, y: 16, width: 50, height: 5)
         taskGrabberButton.isHidden = detailsView?.superview === view
         if !taskGrabberButton.isHidden {
             view.bringSubviewToFront(taskGrabberButton)
         }
-        if taskHeader.frame.width != width || taskHeader.frame.height != 268 {
-            taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: 268)
+        // Keep the scrolling content below the fixed grabber on every device.
+        // Preserve the user's scroll position when safe areas change on rotation.
+        let topInset = max(0, taskGrabberButton.frame.maxY - table.frame.minY)
+        let insetChange = topInset - table.contentInset.top
+        if abs(insetChange) > 0.5 {
+            let offset = table.contentOffset
+            table.contentInset.top = topInset
+            table.verticalScrollIndicatorInsets.top = topInset
+            table.setContentOffset(CGPoint(x: offset.x, y: offset.y - insetChange), animated: false)
+        }
+        let titleWidth = max(0, width - 48)
+        let titleHeight = max(38, ceil(taskTitle.sizeThatFits(CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height))
+        taskTitle.frame = CGRect(x: 24, y: 8, width: titleWidth, height: titleHeight)
+        let cardWidth = max(0, width - 40)
+        let inner = max(0, cardWidth - 40)
+        let stageHeight = max(20, ceil(taskStage.sizeThatFits(CGSize(width: max(0, inner - 28), height: .greatestFiniteMagnitude)).height))
+        let headlineHeight = max(34, ceil(taskHeadline.sizeThatFits(CGSize(width: inner, height: .greatestFiniteMagnitude)).height))
+        let detailHeight = max(36, ceil(taskDetail.sizeThatFits(CGSize(width: inner, height: .greatestFiniteMagnitude)).height))
+        taskStage.frame = CGRect(x: 20, y: 17, width: max(0, inner - 28), height: stageHeight)
+        stageActivity.frame = CGRect(x: inner + 1, y: 17, width: 20, height: 20)
+        taskHeadline.frame = CGRect(x: 20, y: taskStage.frame.maxY + 7, width: inner, height: headlineHeight)
+        taskDetail.frame = CGRect(x: 20, y: taskHeadline.frame.maxY + 3, width: inner, height: detailHeight)
+        taskProgress.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 11, width: inner, height: 4)
+        taskCard.frame = CGRect(x: 20, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 14)
+        let headerHeight = taskCard.frame.maxY + 14
+        if taskHeader.frame.width != width || taskHeader.frame.height != headerHeight {
+            taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: headerHeight)
             table.tableHeaderView = taskHeader
         }
-        taskTitle.frame = CGRect(x: 24, y: 46, width: max(0, width - 48), height: 38)
-        taskCard.frame = CGRect(x: 20, y: 108, width: width - 40, height: 146)
-        let inner = taskCard.bounds.width - 40
-        taskStage.frame = CGRect(x: 20, y: 17, width: inner - 28, height: 20)
-        stageActivity.frame = CGRect(x: inner + 1, y: 17, width: 20, height: 20)
-        taskHeadline.frame = CGRect(x: 20, y: 44, width: inner, height: 34)
-        taskDetail.frame = CGRect(x: 20, y: 81, width: inner, height: 36)
-        taskProgress.frame = CGRect(x: 20, y: 128, width: inner, height: 4)
         taskCard.layer.borderColor = UIColor.separator.withAlphaComponent(0.12).cgColor
         guard let footer = footerView else { return }
         footerMaterial.frame = footer.bounds
@@ -403,6 +426,11 @@ class DownloadsTableViewController: SileoViewController {
         self.reloadData()
     }
     
+    public override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        view.setNeedsLayout()
+    }
+
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutTaskPresentation()
