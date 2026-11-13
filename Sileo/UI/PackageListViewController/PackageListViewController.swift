@@ -831,7 +831,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             return
         }
         let labels = folders.map { folder in
-            kind.map { Self.backupSummary(folder, kind: $0) } ?? folder.name
+            kind.map { Self.backupSummary(folder, kind: $0) }
+                ?? folder.name.replacingOccurrences(of: "_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}$",
+                                                     with: "", options: .regularExpression)
         }
         SileoClearBackupPickerPanel(title: title, folders: folders,
                                     labels: labels, dates: folders.map { Self.backupDateText($0) }) { [weak self] chosen in
