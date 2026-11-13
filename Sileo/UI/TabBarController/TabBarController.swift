@@ -1139,10 +1139,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
 
             let container = UIView()
             container.isUserInteractionEnabled = false
-            container.layer.shadowColor = UIColor.black.cgColor
-            container.layer.shadowOpacity = 0.2
-            container.layer.shadowRadius = 10
-            container.layer.shadowOffset = CGSize(width: 0, height: 4)
             let blur = SileoTabGlassView()
             blur.tag = 1
             blur.clipsToBounds = true
@@ -1192,7 +1188,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         updateFloatingPopupOffset()
         blur.frame = container.bounds
         blur.layer.cornerRadius = barHeight / 2
-        container.layer.shadowPath = UIBezierPath(roundedRect: container.bounds, cornerRadius: barHeight / 2).cgPath
         self.tabBar.sendSubviewToBack(container)
         ensureSelectionPill(in: container, above: blur)
         positionSelectionPill(animated: false)
