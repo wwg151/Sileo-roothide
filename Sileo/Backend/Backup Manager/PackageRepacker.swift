@@ -71,11 +71,14 @@ final class PackageRepacker {
         let payload = work.appendingPathComponent("payload", isDirectory: true)
         try fileManager.createDirectory(at: payload, withIntermediateDirectories: true)
         try copyPayload(paths: paths, to: payload, in: work)
-        spawnAsRoot(args: [
+        let (controlStatus, _, controlError) = spawnAsRoot(args: [
             CommandPath.cp, "-a",
             rootfs(controlDirectory.path),
             rootfs(payload.appendingPathComponent("DEBIAN").path)
         ])
+        guard controlStatus == 0 else {
+            throw RepackError.commandFailed(controlError.isEmpty ? "cp exited with \(controlStatus)" : controlError)
+        }
 
         progress?(0.8)
         try? fileManager.removeItem(at: destination)
@@ -153,6 +156,11 @@ final class PackageRepacker {
             encoding: .utf8
         )
 
+        // Normalize only the staging directory. Installed scripts can have
+        // mode 000; preserving that mode makes dpkg-deb reject the backup.
+        try setControlPermissions("0755", at: directory)
+        try setControlPermissions("0644", at: directory.appendingPathComponent("control"))
+
         // The maintainer scripts and other members dpkg kept beside the list.
         let info = databaseDirectory.appendingPathComponent("info", isDirectory: true)
         guard let members = try? FileManager.default.contentsOfDirectory(atPath: info.path) else {
@@ -164,11 +172,24 @@ final class PackageRepacker {
             if name == "list" || name == "md5sums" || name == "status" {
                 continue
             }
-            spawnAsRoot(args: [
+            let target = directory.appendingPathComponent(name)
+            let (copyStatus, _, copyError) = spawnAsRoot(args: [
                 CommandPath.cp, "-a",
                 rootfs(info.appendingPathComponent(member).path),
-                rootfs(directory.appendingPathComponent(name).path)
+                rootfs(target.path)
             ])
+            guard copyStatus == 0 else {
+                throw RepackError.commandFailed(copyError.isEmpty ? "cp exited with \(copyStatus)" : copyError)
+            }
+            let scripts: Set<String> = ["preinst", "postinst", "prerm", "postrm", "config"]
+            try setControlPermissions(scripts.contains(name) ? "0755" : "0644", at: target)
+        }
+    }
+
+    private static func setControlPermissions(_ mode: String, at url: URL) throws {
+        let (status, _, errorOutput) = spawnAsRoot(args: [CommandPath.chmod, mode, rootfs(url.path)])
+        guard status == 0 else {
+            throw RepackError.commandFailed(errorOutput.isEmpty ? "chmod exited with \(status)" : errorOutput)
         }
     }
 
