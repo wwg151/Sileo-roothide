@@ -152,13 +152,13 @@ final class SileoPackageInfoPanel: SileoPanelViewController {
 final class SileoClearBackupPickerPanel: SileoPanelViewController {
     private let folders: [BackupManager.BackupFolder]
     private let labels: [String]
-    private let dates: [String]
+    private let dates: [String?]
     private let onConfirm: ([BackupManager.BackupFolder]) -> Void
     private var selected = Set<Int>()
     private var clearButton: UIButton?
     private var selectAllButton: UIButton?
 
-    init(title: String, folders: [BackupManager.BackupFolder], labels: [String], dates: [String],
+    init(title: String, folders: [BackupManager.BackupFolder], labels: [String], dates: [String?],
          onConfirm: @escaping ([BackupManager.BackupFolder]) -> Void) {
         self.folders = folders
         self.labels = labels
