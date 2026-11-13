@@ -147,6 +147,61 @@ final class SileoPackageInfoPanel: SileoPanelViewController {
     }
 }
 
+// MARK: - Backup folders to clear
+
+final class SileoClearBackupPickerPanel: SileoPanelViewController {
+    private let folders: [BackupManager.BackupFolder]
+    private let labels: [String]
+    private let dates: [String]
+    private let onConfirm: ([BackupManager.BackupFolder]) -> Void
+    private var selected = Set<Int>()
+    private var clearButton: UIButton?
+    private var selectAllButton: UIButton?
+
+    init(title: String, folders: [BackupManager.BackupFolder], labels: [String], dates: [String],
+         onConfirm: @escaping ([BackupManager.BackupFolder]) -> Void) {
+        self.folders = folders
+        self.labels = labels
+        self.dates = dates
+        self.onConfirm = onConfirm
+        super.init(title: title, subtitle: String(localizationKey: "Clear_Select_Backups"), icon: "trash")
+        let selectAll = Self.headerButton(title: String(localizationKey: "Backup_Select_All")) { [weak self] in
+            guard let self = self else { return }
+            self.selected = self.selected.count == self.folders.count ? [] : Set(self.folders.indices)
+            self.rebuildRows()
+        }
+        selectAllButton = selectAll
+        headerAccessory = selectAll
+        let button = Self.capsuleButton(title: "", color: .systemRed) { [weak self] in
+            guard let self = self, !self.selected.isEmpty else { return }
+            let chosen = self.folders.indices.filter { self.selected.contains($0) }.map { self.folders[$0] }
+            self.close { self.onConfirm(chosen) }
+        }
+        clearButton = button
+        setFooter(button)
+        rebuildRows()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func rebuildRows() {
+        table.setItems(folders.indices.map { index in
+            SileoPanelTable.Item(Self.choiceRow(title: labels[index], detail: dates[index],
+                                                selected: selected.contains(index)) { [weak self] in
+                guard let self = self else { return }
+                if !self.selected.insert(index).inserted { self.selected.remove(index) }
+                UISelectionFeedbackGenerator().selectionChanged()
+                self.rebuildRows()
+            })
+        })
+        clearButton?.setTitle(String(format: String(localizationKey: "Clear_Selected_Count"), selected.count), for: .normal)
+        clearButton?.isEnabled = !selected.isEmpty
+        selectAllButton?.setTitle(String(localizationKey: selected.count == folders.count ? "Backup_Deselect_All" : "Backup_Select_All"), for: .normal)
+    }
+}
+
 // MARK: - Packages to back up
 
 final class SileoBackupPickerPanel: SileoPanelViewController {

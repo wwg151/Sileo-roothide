@@ -361,6 +361,8 @@
 "Clear_Confirm_Message" = "将永久删除 %d 个备份文件夹，无法恢复。是否继续？";
 "Clear_Done" = "已清除 %d 个备份文件夹。";
 "Clear_None" = "没有可清除的备份。";
+"Clear_Select_Backups" = "选择要清除的备份";
+"Clear_Selected_Count" = "清除 (%d)";
 "Backup_Configuration_Done" = "配置备份完成。";
 "Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
 "Backup_No_Backup" = "没有找到备份。";

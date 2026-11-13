@@ -830,16 +830,23 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             showBackupMessage(title: title, message: String(localizationKey: "Clear_None"))
             return
         }
-        SileoPanelViewController.confirm(title: title,
-                                         message: String(format: String(localizationKey: "Clear_Confirm_Message"), folders.count),
-                                         confirmTitle: String(localizationKey: "Clear_Confirm_Button")) { [weak self] in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let removed = BackupManager.shared.deleteBackups(kind: kind)
-                DispatchQueue.main.async {
-                    self?.showBackupMessage(title: title,
-                                            message: String(format: String(localizationKey: "Clear_Done"), removed))
+        let labels = folders.map { folder in
+            kind.map { Self.backupSummary(folder, kind: $0) } ?? folder.name
+        }
+        SileoClearBackupPickerPanel(title: title, folders: folders,
+                                    labels: labels, dates: folders.map { Self.backupDateText($0) }) { [weak self] chosen in
+            guard let self = self else { return }
+            SileoPanelViewController.confirm(title: title,
+                                             message: String(format: String(localizationKey: "Clear_Confirm_Message"), chosen.count),
+                                             confirmTitle: String(localizationKey: "Clear_Confirm_Button")) { [weak self] in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let removed = BackupManager.shared.deleteBackups(folders: chosen)
+                    DispatchQueue.main.async {
+                        self?.showBackupMessage(title: title,
+                                                message: String(format: String(localizationKey: "Clear_Done"), removed))
+                    }
                 }
-            }
+            }.present(from: self)
         }.present(from: self)
     }
 

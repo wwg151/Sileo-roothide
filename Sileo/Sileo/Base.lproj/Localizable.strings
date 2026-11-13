@@ -355,6 +355,8 @@
 "Clear_Confirm_Message" = "%d backup folder(s) will be deleted for good. Continue?";
 "Clear_Done" = "%d backup folder(s) cleared.";
 "Clear_None" = "There is no backup to clear.";
+"Clear_Select_Backups" = "Select the backups to clear";
+"Clear_Selected_Count" = "Clear (%d)";
 "Backup_Configuration_Done" = "Configuration backed up.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
 "Backup_No_Backup" = "No backup was found.";

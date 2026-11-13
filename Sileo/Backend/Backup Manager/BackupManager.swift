@@ -173,14 +173,16 @@ final class BackupManager {
         return all.sorted { $0.name > $1.name }
     }
 
-    /// Removes the backup folders of one kind, or every backup when nil.
-    /// A backup may hold root-owned files (an extracted archive keeps its
-    /// owners), which mobile cannot unlink, so the folders go as root.
-    func deleteBackups(kind: BackupKind?) -> Int {
-        let folders = kind.map { backupFolders(kind: $0) } ?? allBackupFolders()
+    /// Removes only explicitly selected, currently recognized backup folders.
+    /// A backup may hold root-owned files, so the folders go as root.
+    func deleteBackups(folders: [BackupFolder]) -> Int {
+        let allowed = Set(allBackupFolders().map { $0.url.standardizedFileURL.path })
+        var seen = Set<String>()
         var removed = 0
         for folder in folders {
-            let (status, _, _) = spawnAsRoot(args: [CommandPath.rm, "-rf", rootfs(folder.url.path)])
+            let path = folder.url.standardizedFileURL.path
+            guard allowed.contains(path), seen.insert(path).inserted else { continue }
+            let (status, _, _) = spawnAsRoot(args: [CommandPath.rm, "-rf", rootfs(path)])
             if status == 0 || !FileManager.default.fileExists(atPath: folder.url.path) {
                 removed += 1
             }
