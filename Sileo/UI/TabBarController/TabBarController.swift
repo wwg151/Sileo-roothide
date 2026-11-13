@@ -506,11 +506,43 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// one of its layout passes, so a bar the framework lays out again is
     /// already the capsule — nothing has to adjust afterwards.
     private static let popupCapsuleMaskKey = malloc(1)!
+    private static let popupCapsuleMaterialKey = malloc(1)!
+
+    /// Replace only the toolbar's material, underneath all queue controls.
+    /// The popup bar's geometry remains owned by LNPopupController.
+    private static func updatePopupCapsuleMaterial(for bar: LNPopupBar, enabled: Bool) {
+        var material = objc_getAssociatedObject(bar, popupCapsuleMaterialKey) as? SileoTabGlassView
+        guard enabled else {
+            material?.removeFromSuperview()
+            return
+        }
+        // UIKit keeps the toolbar's backdrop separate from its buttons.
+        // If that structure changes, leave the original background intact.
+        guard let backdrop = bar.toolbar.subviews.first(where: {
+            NSStringFromClass(type(of: $0)).contains("BarBackground")
+        }) else {
+            material?.removeFromSuperview()
+            return
+        }
+        if material == nil {
+            let fresh = SileoTabGlassView()
+            objc_setAssociatedObject(bar, popupCapsuleMaterialKey, fresh, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            material = fresh
+        }
+        guard let material = material else { return }
+        if material.superview !== backdrop {
+            backdrop.addSubview(material)
+        }
+        let rect = bar.bounds.insetBy(dx: 10, dy: 0)
+        material.frame = backdrop.convert(rect, from: bar)
+        backdrop.bringSubviewToFront(material)
+    }
 
     static func updateCapsuleMask(for bar: LNPopupBar) {
         let floating = UIDevice.current.userInterfaceIdiom == .phone
             && UserDefaults.standard.bool(forKey: "FloatingTabBar", fallback: false)
         let shouldShape = floating && bar.bounds.height > 0
+        updatePopupCapsuleMaterial(for: bar, enabled: shouldShape)
         guard shouldShape else {
             if let mask = objc_getAssociatedObject(bar, popupCapsuleMaskKey) as? CAShapeLayer,
                bar.layer.mask === mask {
