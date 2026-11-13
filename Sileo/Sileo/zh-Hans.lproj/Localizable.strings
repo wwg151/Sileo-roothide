@@ -9,13 +9,25 @@
 */
 // Common Prompts
 "Task_Title" = "下载与安装";
+"Task_Operation_Install" = "安装 %ld 项";
+"Task_Operation_Update" = "更新 %ld 项";
+"Task_Operation_Reinstall" = "重装 %ld 项";
+"Task_Operation_Downgrade" = "降级 %ld 项";
+"Task_Operation_Remove" = "卸载 %ld 项";
+"Task_Operation_Install_Running" = "正在安装 %@";
+"Task_Operation_Update_Running" = "正在更新 %@";
+"Task_Operation_Reinstall_Running" = "正在重新安装 %@";
+"Task_Operation_Downgrade_Running" = "正在降级 %@";
+"Task_Operation_Remove_Running" = "正在卸载 %@";
+"Task_Title_Removal" = "卸载";
+"Task_Title_Mixed" = "下载、安装与卸载";
 "Task_Attention" = "需要处理";
 "Task_Install_Issue" = "安装结果需要检查";
 "Task_Completed" = "所有任务已完成";
 "Task_Check_Log" = "请查看安装日志，确认问题后再继续。";
 "Task_Finish_Hint" = "请确认结果，再选择下方的操作。";
 "Task_Installing" = "正在应用更改";
-"Task_Keep_Open" = "正在安装插件包，请耐心等待。";
+"Task_Keep_Open" = "正在处理插件包，请耐心等待。";
 "Task_Issue_Count" = "有 %ld 项需要处理";
 "Task_Resolve_Dependencies" = "请先解决下方的依赖问题，再确认安装。";
 "Task_Download_Issue" = "下载未完成";

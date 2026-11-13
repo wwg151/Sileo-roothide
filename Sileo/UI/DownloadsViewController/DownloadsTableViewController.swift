@@ -95,6 +95,7 @@ class DownloadsTableViewController: SileoViewController {
     private let stageActivity = UIActivityIndicatorView(style: .medium)
     private let footerMaterial = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
     private var installExitStatus: Int32?
+    public private(set) var currentOperationTitle: String?
     private var currentTaskStatus: String?
 
     public var presentationHasFailed: Bool {
@@ -120,6 +121,8 @@ class DownloadsTableViewController: SileoViewController {
         taskCard.layer.borderWidth = 0.5
         [taskStage, taskHeadline, taskDetail, taskProgress, stageActivity].forEach { taskCard.contentView.addSubview($0) }
         taskTitle.font = .systemFont(ofSize: 29, weight: .bold)
+        taskTitle.adjustsFontSizeToFitWidth = true
+        taskTitle.minimumScaleFactor = 0.65
         taskTitle.textColor = .label
         taskTitle.text = String(localizationKey: "Task_Title")
         taskStage.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -160,7 +163,9 @@ class DownloadsTableViewController: SileoViewController {
             cancelFromLogButton.translatesAutoresizingMaskIntoConstraints = false
             details.addSubview(cancelFromLogButton)
             NSLayoutConstraint.activate([
-                cancelFromLogButton.trailingAnchor.constraint(equalTo: textView.trailingAnchor, constant: -12),
+                cancelFromLogButton.centerXAnchor.constraint(equalTo: textView.centerXAnchor),
+                cancelFromLogButton.leadingAnchor.constraint(greaterThanOrEqualTo: textView.leadingAnchor, constant: 12),
+                cancelFromLogButton.trailingAnchor.constraint(lessThanOrEqualTo: textView.trailingAnchor, constant: -12),
                 cancelFromLogButton.bottomAnchor.constraint(equalTo: textView.bottomAnchor, constant: -8),
                 cancelFromLogButton.heightAnchor.constraint(equalToConstant: 44)
             ])
@@ -202,6 +207,10 @@ class DownloadsTableViewController: SileoViewController {
     private func refreshTaskPresentation() {
         guard isViewLoaded else { return }
         let manager = DownloadManager.shared
+        let hasInstalls = !(installations + upgrades + installdeps).isEmpty
+        let hasRemovals = !(uninstallations + uninstalldeps).isEmpty
+        let titleKey = hasRemovals ? (hasInstalls ? "Task_Title_Mixed" : "Task_Title_Removal") : "Task_Title"
+        taskTitle.text = String(localizationKey: titleKey)
         let downloads = Array(manager.vars.queuedDownloads.raw.values).filter { $0.session == manager.currentDownloadSession }
         let failed = downloads.filter { !($0.failureReason ?? "").isEmpty }
         let finished = downloads.filter { $0.success && $0.progress == 1 && ($0.failureReason ?? "").isEmpty }.count
@@ -218,7 +227,7 @@ class DownloadsTableViewController: SileoViewController {
             taskHeadline.text = String(localizationKey: blocked ? "Task_Install_Issue" : "Task_Completed")
             taskDetail.text = String(localizationKey: blocked ? "Task_Check_Log" : "Task_Finish_Hint")
         } else if isInstalling {
-            taskStage.text = String(localizationKey: "Installing_Package_Status")
+            taskStage.text = currentOperationTitle ?? String(localizationKey: "Task_Installing")
             taskHeadline.text = String(localizationKey: "Task_Installing")
             taskDetail.text = currentTaskStatus ?? String(localizationKey: "Task_Keep_Open")
         } else if !errors.isEmpty {
@@ -293,6 +302,20 @@ class DownloadsTableViewController: SileoViewController {
             case removal
         }
         
+        static func operationKey(for package: Package, removal: Bool = false) -> String {
+            if removal { return "Task_Operation_Remove" }
+            guard let installed = PackageListManager.shared.installedPackage(identifier: package.package) else {
+                return "Task_Operation_Install"
+            }
+            if DpkgWrapper.isVersion(package.version, greaterThan: installed.version) { return "Task_Operation_Update" }
+            if DpkgWrapper.isVersion(installed.version, greaterThan: package.version) { return "Task_Operation_Downgrade" }
+            return "Task_Operation_Reinstall"
+        }
+
+        let operationKey: String
+        var runningStatus: String {
+            String(format: String(localizationKey: operationKey + "_Running"), package.name ?? package.package)
+        }
         var package: Package
         var type: ActionType
         var progressCounter: CGFloat = 0.0
@@ -311,6 +334,7 @@ class DownloadsTableViewController: SileoViewController {
         init(package: Package, type: ActionType) {
             self.package = package
             self.type = type
+            self.operationKey = Self.operationKey(for: package, removal: type == .removal)
             self.progressCounter = 0.0
         }
         
@@ -384,8 +408,11 @@ class DownloadsTableViewController: SileoViewController {
         
         statusBarView.frame = CGRect(origin: .zero, size: CGSize(width: self.view.bounds.width, height: tableView.safeAreaInsets.top))
         
-        clearButton.tintColor = confirmButton.tintColor
+        (clearButton as? DownloadConfirmButton)?.pleaseJustLetMeBeClearThankYouLoveYouBye = false
+        clearButton.tintColor = .tertiarySystemFill
         clearButton.isHighlighted = confirmButton.isHighlighted
+        clearButton.backgroundColor = clearButton.isHighlighted ? .secondarySystemFill : .tertiarySystemFill
+        clearButton.setTitleColor(.label, for: .normal)
         confirmButton.tintColor = UINavigationBar.appearance().tintColor
         confirmButton.isHighlighted = confirmButton.isHighlighted
         completeButton?.tintColor = UINavigationBar.appearance().tintColor
@@ -527,6 +554,7 @@ class DownloadsTableViewController: SileoViewController {
         hasErrored = false
         installExitStatus = nil
         currentTaskStatus = nil
+        currentOperationTitle = nil
         self.actions.removeAll()
         self.tableView?.setEditing(true, animated: true)
         
@@ -548,6 +576,7 @@ class DownloadsTableViewController: SileoViewController {
         hasErrored = false
         installExitStatus = nil
         currentTaskStatus = nil
+        currentOperationTitle = nil
         self.actions.removeAll()
         
         DownloadManager.shared.queueRunning = false
@@ -590,6 +619,7 @@ class DownloadsTableViewController: SileoViewController {
         isDownloading = true
         installExitStatus = nil
         currentTaskStatus = nil
+        currentOperationTitle = nil
         
         DownloadManager.shared.aptRunning = false
         DownloadManager.shared.aptFinished = false
@@ -666,21 +696,14 @@ class DownloadsTableViewController: SileoViewController {
         }
         guard let action = actions.first(where: { $0.package.package == package }) else { return }
         action.progressCounter += 1
-        let shown = APTLogTranslator.localize(status)
-        let ending = "(\(DPKGArchitecture.Architecture.roothide.rawValue))"
-        if action.package.tags.contains(.roothide) && shown.hasSuffix(ending) {
-            if var origArch = action.package.origArchitecture {
-                action.status = shown.replacingOccurrences(of: ending, with: "(\(origArch))")
-            } else {
-                action.status = shown.replacingOccurrences(of: ending, with: "")
-            }
-        } else {
-            action.status = shown
-        }
+        action.status = action.runningStatus
         NSLog("SileoLog: action=\(action) cell=\(action.cell)")
         action.cell?.updateStatus()
         currentTaskStatus = action.status
+        currentOperationTitle = String(format: String(localizationKey: action.operationKey + "_Running"), "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         refreshTaskPresentation()
+        TabBarController.singleton?.updatePopup()
     }
     
     private func queueCompleted() {
@@ -691,6 +714,7 @@ class DownloadsTableViewController: SileoViewController {
         hasErrored = false
         installExitStatus = nil
         currentTaskStatus = nil
+        currentOperationTitle = nil
         actions.removeAll()
 
         TabBarController.singleton?.popupContent?.popupInteractionStyle = .default

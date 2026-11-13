@@ -10,13 +10,25 @@
 
 // Common Prompts
 "Task_Title" = "Downloads & Installation";
+"Task_Operation_Install" = "Install %ld";
+"Task_Operation_Update" = "Update %ld";
+"Task_Operation_Reinstall" = "Reinstall %ld";
+"Task_Operation_Downgrade" = "Downgrade %ld";
+"Task_Operation_Remove" = "Remove %ld";
+"Task_Operation_Install_Running" = "Installing %@";
+"Task_Operation_Update_Running" = "Updating %@";
+"Task_Operation_Reinstall_Running" = "Reinstalling %@";
+"Task_Operation_Downgrade_Running" = "Downgrading %@";
+"Task_Operation_Remove_Running" = "Removing %@";
+"Task_Title_Removal" = "Uninstall";
+"Task_Title_Mixed" = "Downloads, Installation & Removal";
 "Task_Attention" = "Needs attention";
 "Task_Install_Issue" = "Installation needs review";
 "Task_Completed" = "All tasks completed";
 "Task_Check_Log" = "Check the installation log before continuing.";
 "Task_Finish_Hint" = "Review the results, then choose the next step below.";
 "Task_Installing" = "Applying your changes";
-"Task_Keep_Open" = "Please wait while the plugin packages are installed.";
+"Task_Keep_Open" = "Please wait while the plugin packages are processed.";
 "Task_Issue_Count" = "%ld items need attention";
 "Task_Resolve_Dependencies" = "Resolve the dependency issues below before confirming.";
 "Task_Download_Issue" = "Download incomplete";

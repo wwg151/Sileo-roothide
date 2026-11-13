@@ -299,10 +299,25 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             let manager = DownloadManager.shared
             let count = manager.operationCount()
             let countText = String(format: String(localizationKey: "Package_Queue_Count"), count)
+            let packages = manager.vars.upgrades.raw.union(manager.vars.installations.raw)
+                .union(manager.vars.installdeps.raw)
+            let removals = manager.vars.uninstallations.raw.union(manager.vars.uninstalldeps.raw)
+            var operationCounts: [String: Int] = [:]
+            for entry in packages {
+                let key = DownloadsTableViewController.Action.operationKey(for: entry.package)
+                operationCounts[key, default: 0] += 1
+            }
+            operationCounts["Task_Operation_Remove"] = removals.count
+            let operationSummary = ["Task_Operation_Install", "Task_Operation_Update", "Task_Operation_Reinstall",
+                                    "Task_Operation_Downgrade", "Task_Operation_Remove"].compactMap { key -> String? in
+                guard let count = operationCounts[key], count > 0 else { return nil }
+                return String(format: String(localizationKey: key), count)
+            }.joined(separator: " · ")
             var summary = QueueSummary(title: String(localizationKey: "Queued_Package_Status"),
-                                       subtitle: countText, symbol: "clock", fraction: nil)
+                                       subtitle: operationSummary, symbol: "clock", fraction: nil)
             var quantity = countText
             let finished = manager.aptFinished
+            let applying = manager.aptRunning
             if manager.queueRunning {
                 if manager.aptFinished {
                     summary.title = String(localizationKey: "Done")
@@ -362,7 +377,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                     }
                 }
             }
-            summary.title += " · " + quantity
+            if manager.queueRunning && !applying {
+                summary.title += " · " + quantity
+            }
             let result = summary
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.queueSummaryGeneration == generation,
@@ -374,17 +391,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                     displayed.symbol = "exclamationmark"
                     displayed.failed = true
                 }
+                if applying && !finished {
+                    displayed.title = DownloadManager.shared.viewController.currentOperationTitle
+                        ?? String(localizationKey: "Task_Installing")
+                }
                 item.title = displayed.title
                 item.subtitle = displayed.subtitle
                 item.image = self.queueRingImage(fraction: displayed.fraction, symbol: displayed.symbol, failed: displayed.failed)
                 // Keep the framework's bottom progress line empty; the ring is download-only.
                 item.progress = 0
-                if (item.barButtonItems ?? []).isEmpty && (item.trailingBarButtonItems ?? []).isEmpty {
-                    let expand = UIBarButtonItem(image: UIImage(systemName: "chevron.up"), style: .plain,
-                                                 target: self, action: #selector(self.expandQueueSummary))
-                    expand.accessibilityLabel = String(localizationKey: "Show_Install_Details")
-                    item.trailingBarButtonItems = [expand]
-                }
             }
         }
     }
@@ -411,10 +426,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             UIImage(systemName: symbol, withConfiguration: config)?.withTintColor(accent, renderingMode: .alwaysOriginal)
                 .draw(in: CGRect(x: 12, y: 12, width: 16, height: 16))
         }.withRenderingMode(.alwaysOriginal)
-    }
-
-    @objc private func expandQueueSummary() {
-        presentPopupController()
     }
 
     func updatePopup(animated:Bool = true, completion: (() -> Void)? = nil, bypass: Bool = false) {
