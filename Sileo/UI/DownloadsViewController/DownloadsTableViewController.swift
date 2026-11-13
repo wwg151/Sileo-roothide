@@ -36,6 +36,39 @@ class DownloadsTableViewController: SileoViewController {
     private var installdeps: [DownloadPackage] = []
     private var uninstalldeps: [DownloadPackage] = []
     private var errors: ContiguousArray<APTBrokenPackage> = []
+    private var taskGroups = Array(repeating: [DownloadPackage](), count: 5)
+    private var groupsShowFailures = false
+
+    @discardableResult private func rebuildTaskGroups() -> Bool {
+        let manager = DownloadManager.shared
+        let installs = installations + upgrades + installdeps
+        func download(_ entry: DownloadPackage) -> Download? {
+            guard let value = manager.queuedDownload(package: entry.package.package),
+                  value.session == manager.currentDownloadSession else { return nil }
+            return value
+        }
+        let failed = installs.filter { !(download($0)?.failureReason ?? "").isEmpty }
+        let separateFailures = isDownloading && !isInstalling && !failed.isEmpty
+        var groups = Array(repeating: [DownloadPackage](), count: 5)
+        groups[1] = uninstallations + uninstalldeps
+        if separateFailures {
+            groups[0] = failed
+            groups[2] = installs.filter {
+                guard let value = download($0) else { return false }
+                return value.success && value.progress == 1 && (value.failureReason ?? "").isEmpty
+            }
+            let assigned = Set((groups[0] + groups[2]).map { $0.package.package })
+            groups[4] = installs.filter { !assigned.contains($0.package.package) }
+        } else {
+            groups[0] = installs
+        }
+        let changed = groupsShowFailures != separateFailures || zip(taskGroups, groups).contains { pair in
+            pair.0.map { $0.package.package } != pair.1.map { $0.package.package }
+        }
+        taskGroups = groups
+        groupsShowFailures = separateFailures
+        return changed
+    }
     
     private var actions = [Action]()
     
@@ -48,7 +81,208 @@ class DownloadsTableViewController: SileoViewController {
     private var refreshSileo = false
     private var hasErrored = false
     private var detailsAttributedString: NSMutableAttributedString?
+
+    private let taskHeader = UIView()
+    private let taskCard = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+    private let taskTitle = UILabel()
+    private let collapseTaskButton = UIButton(type: .system)
+    private let taskPrimaryButton = UIButton(type: .system)
+    private let cancelFromLogButton = UIButton(type: .system)
+    private let taskStage = UILabel()
+    private let taskHeadline = UILabel()
+    private let taskDetail = UILabel()
+    private let taskProgress = UIProgressView(progressViewStyle: .bar)
+    private let stageActivity = UIActivityIndicatorView(style: .medium)
+    private let footerMaterial = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+    private var installExitStatus: Int32?
+    private var currentTaskStatus: String?
+
+    public var presentationHasFailed: Bool {
+        !errors.isEmpty || (isFinishedInstalling && installExitStatus != 0)
+    }
+
+    private func configureTaskPresentation() {
+        view.backgroundColor = .systemGroupedBackground
+        tableView?.backgroundColor = .clear
+        tableView?.contentInset = .zero
+        tableView?.sectionHeaderTopPadding = 0
+        taskHeader.addSubview(taskTitle)
+        taskHeader.addSubview(collapseTaskButton)
+        collapseTaskButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        collapseTaskButton.accessibilityLabel = String(localizationKey: "Hide_Install_Details")
+        collapseTaskButton.addTarget(self, action: #selector(collapseTask), for: .touchUpInside)
+        taskPrimaryButton.layer.cornerRadius = 25
+        taskPrimaryButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        taskPrimaryButton.addTarget(self, action: #selector(retryFailedTasks), for: .touchUpInside)
+        taskHeader.addSubview(taskCard)
+        taskCard.layer.cornerRadius = 25
+        taskCard.clipsToBounds = true
+        taskCard.layer.borderWidth = 0.5
+        [taskStage, taskHeadline, taskDetail, taskProgress, stageActivity].forEach { taskCard.contentView.addSubview($0) }
+        taskTitle.font = .systemFont(ofSize: 29, weight: .bold)
+        taskTitle.textColor = .label
+        taskTitle.text = String(localizationKey: "Task_Title")
+        taskStage.font = .systemFont(ofSize: 13, weight: .semibold)
+        taskHeadline.font = .systemFont(ofSize: 25, weight: .bold)
+        taskHeadline.adjustsFontSizeToFitWidth = true
+        taskHeadline.minimumScaleFactor = 0.7
+        taskHeadline.textColor = .label
+        taskDetail.font = .systemFont(ofSize: 13)
+        taskDetail.textColor = .secondaryLabel
+        taskDetail.numberOfLines = 2
+        taskProgress.layer.cornerRadius = 2
+        taskProgress.clipsToBounds = true
+        taskProgress.trackTintColor = .tertiarySystemFill
+        stageActivity.hidesWhenStopped = true
+        if let footer = footerView {
+            NSLayoutConstraint.deactivate(footer.constraints.filter { $0 !== footerViewHeight })
+            for button in [clearButton, confirmButton, completeButton, completeLaterButton, showDetailsButton, cancelDownload].compactMap({ $0 }) {
+                button.translatesAutoresizingMaskIntoConstraints = true
+                NSLayoutConstraint.deactivate(button.constraints)
+                button.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+                button.titleLabel?.adjustsFontSizeToFitWidth = true
+                button.titleLabel?.minimumScaleFactor = 0.7
+                button.layer.cornerRadius = 25
+                button.layer.cornerCurve = .continuous
+            }
+            footer.insertSubview(footerMaterial, at: 0)
+            footer.addSubview(taskPrimaryButton)
+        }
+        footerMaterial.isUserInteractionEnabled = false
+        detailsView?.backgroundColor = UIColor(red: 30.0/255.0, green: 32.0/255.0, blue: 40.0/255.0, alpha: 1)
+        detailsTextView?.backgroundColor = .clear
+        detailsTextView?.layer.cornerRadius = 20
+        detailsTextView?.textContainerInset = UIEdgeInsets(top: 18, left: 12, bottom: 18, right: 12)
+        cancelFromLogButton.setTitle(cancelDownload?.title(for: .normal), for: .normal)
+        cancelFromLogButton.addTarget(self, action: #selector(cancelFromDownloadLog), for: .touchUpInside)
+        cancelFromLogButton.isHidden = true
+        if let details = detailsView, let textView = detailsTextView {
+            cancelFromLogButton.translatesAutoresizingMaskIntoConstraints = false
+            details.addSubview(cancelFromLogButton)
+            NSLayoutConstraint.activate([
+                cancelFromLogButton.trailingAnchor.constraint(equalTo: textView.trailingAnchor, constant: -12),
+                cancelFromLogButton.bottomAnchor.constraint(equalTo: textView.bottomAnchor, constant: -8),
+                cancelFromLogButton.heightAnchor.constraint(equalToConstant: 44)
+            ])
+        }
+    }
+
+    private func layoutTaskPresentation() {
+        guard let table = tableView else { return }
+        let width = table.bounds.width
+        if taskHeader.frame.width != width || taskHeader.frame.height != 268 {
+            taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: 268)
+            table.tableHeaderView = taskHeader
+        }
+        taskTitle.frame = CGRect(x: 24, y: 46, width: max(0, width - 94), height: 38)
+        collapseTaskButton.frame = CGRect(x: width - 64, y: 43, width: 44, height: 44)
+        taskCard.frame = CGRect(x: 20, y: 108, width: width - 40, height: 146)
+        let inner = taskCard.bounds.width - 40
+        taskStage.frame = CGRect(x: 20, y: 17, width: inner - 28, height: 20)
+        stageActivity.frame = CGRect(x: inner + 1, y: 17, width: 20, height: 20)
+        taskHeadline.frame = CGRect(x: 20, y: 44, width: inner, height: 34)
+        taskDetail.frame = CGRect(x: 20, y: 81, width: inner, height: 36)
+        taskProgress.frame = CGRect(x: 20, y: 128, width: inner, height: 4)
+        taskCard.layer.borderColor = UIColor.separator.withAlphaComponent(0.12).cgColor
+        guard let footer = footerView else { return }
+        footerMaterial.frame = footer.bounds
+        let w = footer.bounds.width
+        let side = min(122, w * 0.34)
+        let main = CGRect(x: side + 24, y: 14, width: max(0, w - side - 44), height: 50)
+        let secondary = CGRect(x: 16, y: 14, width: side, height: 50)
+        confirmButton?.frame = main
+        clearButton?.frame = secondary
+        completeButton?.frame = main
+        showDetailsButton?.frame = secondary
+        taskPrimaryButton.frame = main
+        cancelDownload?.frame = secondary
+        completeLaterButton?.frame = CGRect(x: 24, y: 72, width: w - 48, height: 40)
+    }
+
+    private func refreshTaskPresentation() {
+        guard isViewLoaded else { return }
+        let manager = DownloadManager.shared
+        let downloads = Array(manager.vars.queuedDownloads.raw.values).filter { $0.session == manager.currentDownloadSession }
+        let failed = downloads.filter { !($0.failureReason ?? "").isEmpty }
+        let finished = downloads.filter { $0.success && $0.progress == 1 && ($0.failureReason ?? "").isEmpty }.count
+        let blocked = !errors.isEmpty || !failed.isEmpty || (isFinishedInstalling && installExitStatus != 0)
+        let color: UIColor = blocked ? .systemOrange : (UINavigationBar.appearance().tintColor ?? .systemTeal)
+        taskStage.textColor = color
+        taskProgress.progressTintColor = color
+        stageActivity.color = color
+        let active = (isInstalling && !isFinishedInstalling) || (isDownloading && failed.isEmpty)
+        if active { stageActivity.startAnimating() } else { stageActivity.stopAnimating() }
+        taskProgress.isHidden = !isDownloading || !failed.isEmpty || isFinishedInstalling || isInstalling
+        if isFinishedInstalling {
+            taskStage.text = String(localizationKey: blocked ? "Task_Attention" : "Done")
+            taskHeadline.text = String(localizationKey: blocked ? "Task_Install_Issue" : "Task_Completed")
+            taskDetail.text = String(localizationKey: blocked ? "Task_Check_Log" : "Task_Finish_Hint")
+        } else if isInstalling {
+            taskStage.text = String(localizationKey: "Installing_Package_Status")
+            taskHeadline.text = String(localizationKey: "Task_Installing")
+            taskDetail.text = currentTaskStatus ?? String(localizationKey: "Task_Keep_Open")
+        } else if !errors.isEmpty {
+            taskStage.text = String(localizationKey: "Task_Attention")
+            taskHeadline.text = String(format: String(localizationKey: "Task_Issue_Count"), errors.count)
+            taskDetail.text = String(localizationKey: "Task_Resolve_Dependencies")
+        } else if !failed.isEmpty {
+            taskStage.text = String(localizationKey: "Task_Download_Issue")
+            taskHeadline.text = String(format: String(localizationKey: "Task_Issue_Count"), failed.count)
+            taskDetail.text = String(format: String(localizationKey: "Task_Download_Failure_Summary"), finished)
+        } else if isDownloading {
+            taskStage.text = String(localizationKey: "Downloading_Package_Status")
+            taskHeadline.text = String(format: String(localizationKey: "Task_Download_Count"), finished, manager.installingPackages())
+            let written = downloads.reduce(Int64(0)) { $0 + max(0, $1.totalBytesWritten) }
+            let expected = downloads.reduce(Int64(0)) { $0 + max(0, $1.totalBytesExpectedToWrite) }
+            let knownSize = downloads.count == manager.installingPackages() && downloads.allSatisfy { $0.totalBytesExpectedToWrite > 0 }
+            if knownSize && expected > 0 {
+                taskDetail.text = String(format: String(localizationKey: "Download_Progress"), ByteCountFormatter.string(fromByteCount: written, countStyle: .file), ByteCountFormatter.string(fromByteCount: expected, countStyle: .file))
+                taskProgress.setProgress(Float(min(1, Double(written) / Double(expected))), animated: false)
+            } else {
+                taskDetail.text = written > 0 ? ByteCountFormatter.string(fromByteCount: written, countStyle: .file) + " …" : String(localizationKey: "Download_Starting")
+                taskProgress.isHidden = true
+            }
+        } else {
+            taskStage.text = String(localizationKey: "Queued_Package_Status")
+            taskHeadline.text = String(localizationKey: "Task_Ready")
+            taskDetail.text = String(format: String(localizationKey: "Task_Summary"), manager.installingPackages(), manager.uninstallingPackages())
+        }
+        let downloadStage = isDownloading && !isInstalling && !isFinishedInstalling
+        taskPrimaryButton.isHidden = !downloadStage
+        taskPrimaryButton.isEnabled = downloadStage && !failed.isEmpty
+        taskPrimaryButton.setTitle(String(localizationKey: failed.isEmpty ? "Downloading_Package_Status" : "Task_Retry_Failed"), for: .normal)
+        taskPrimaryButton.backgroundColor = failed.isEmpty ? .tertiarySystemFill : color
+        taskPrimaryButton.setTitleColor(failed.isEmpty ? .secondaryLabel : .white, for: .normal)
+        collapseTaskButton.tintColor = .secondaryLabel
+        showDetailsButton?.setTitle(String(localizationKey: "Task_View_Log"), for: .normal)
+        refreshDownloadLog()
+        view.setNeedsLayout()
+    }
     
+    @objc private func collapseTask() {
+        TabBarController.singleton?.dismissPopupController()
+    }
+
+    @objc private func retryFailedTasks() {
+        guard isDownloading && !isInstalling && !isFinishedInstalling else { return }
+        taskPrimaryButton.isEnabled = false
+        DownloadManager.aptQueue.async {
+            let manager = DownloadManager.shared
+            let failed = manager.vars.queuedDownloads.raw.values.filter {
+                $0.session == manager.currentDownloadSession && !($0.failureReason ?? "").isEmpty
+            }.map { $0.package.package }
+            for package in failed {
+                manager.retryDownload(package: package)
+            }
+            DispatchQueue.main.async {
+                self.rebuildTaskGroups()
+                self.tableView?.reloadData()
+                self.refreshTaskPresentation()
+                TabBarController.singleton?.updatePopup()
+            }
+        }
+    }
+
     public var backgroundCallback: (() -> Void)?
     
     public class Action {
@@ -133,11 +367,13 @@ class DownloadsTableViewController: SileoViewController {
         
         tableView?.register(DownloadsTableViewCell.self, forCellReuseIdentifier: "DownloadsTableViewCell")
         
+        configureTaskPresentation()
         self.reloadData()
     }
     
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        layoutTaskPresentation()
         
         guard let tableView = self.tableView,
             let clearButton = self.clearButton,
@@ -181,6 +417,7 @@ class DownloadsTableViewController: SileoViewController {
             self.uninstalldeps = uninstalldeps
             self.errors = ContiguousArray<APTBrokenPackage>(errors)
         }
+        rebuildTaskGroups()
         self.tableView?.reloadData()
         self.reloadControlsOnly()
     }
@@ -197,65 +434,20 @@ class DownloadsTableViewController: SileoViewController {
             return
         }
         
-        cancelDownload?.isHidden = !isDownloading
-        if isFinishedInstalling {
-            clearButton?.isHidden = true
-            confirmButton?.isHidden = true
-            showDetailsButton?.isHidden = false
-            completeButton?.isHidden = false
-            completeLaterButton?.isHidden = false
-            if completeLaterButton?.alpha == 0 {
-                doneToTop?.constant = 0
-                laterHeight?.constant = 0
-                FRUIView.animate(withDuration: 0.25) {
-                    self.footerViewHeight?.constant = 125
-                    self.footerView?.alpha = 1
-                }
-            } else {
-                doneToTop?.constant = 15
-                laterHeight?.constant = 50
-                FRUIView.animate(withDuration: 0.25) {
-                    self.footerViewHeight?.constant = 190
-                    self.footerView?.alpha = 1
-                }
-            }
-            return
-        } else {
-            clearButton?.isHidden = false
-            confirmButton?.isHidden = false
-            showDetailsButton?.isHidden = true
-            completeButton?.isHidden = true
-            completeLaterButton?.isHidden = true
-        }
         let manager = DownloadManager.shared
-        if manager.operationCount() > 0 && !manager.queueRunning && manager.vars.errors.isEmpty {
-            FRUIView.animate(withDuration: 0.25) {
-                self.footerViewHeight?.constant = 128
-                self.footerView?.alpha = 1
-            }
-        } else if isDownloading {
-            clearButton?.isHidden = true
-            confirmButton?.isHidden = true
-            showDetailsButton?.isHidden = true
-            completeButton?.isHidden = true
-            completeLaterButton?.isHidden = true
-            FRUIView.animate(withDuration: 0.25) {
-                self.footerViewHeight?.constant = 90
-                self.footerView?.alpha = 1
-            }
-        } else {
-            FRUIView.animate(withDuration: 0.25) {
-                self.footerViewHeight?.constant = 0
-                self.footerView?.alpha = 0
-            }
-        }
-        if manager.vars.errors.isEmpty {
-            self.confirmButton?.isEnabled = true
-            self.confirmButton?.alpha = 1
-        } else {
-            self.confirmButton?.isEnabled = false
-            self.confirmButton?.alpha = 0.5
-        }
+        let waiting = !isDownloading && !isInstalling && !isFinishedInstalling
+        clearButton?.isHidden = !waiting
+        confirmButton?.isHidden = !waiting
+        cancelDownload?.isHidden = true
+        completeButton?.isHidden = !isFinishedInstalling
+        completeLaterButton?.isHidden = !isFinishedInstalling || completeLaterButton?.alpha == 0
+        showDetailsButton?.isHidden = !isDownloading && !isInstalling && !isFinishedInstalling
+        confirmButton?.isEnabled = manager.vars.errors.isEmpty
+        confirmButton?.alpha = manager.vars.errors.isEmpty ? 1 : 0.5
+        let visible = manager.operationCount() > 0 || !errors.isEmpty || isDownloading || isInstalling || isFinishedInstalling
+        footerViewHeight?.constant = visible ? (isFinishedInstalling && completeLaterButton?.isHidden == false ? 126 : 80) : 0
+        footerView?.alpha = visible ? 1 : 0
+        refreshTaskPresentation()
     }
     
     private func checkReady() {
@@ -286,19 +478,34 @@ class DownloadsTableViewController: SileoViewController {
             return
         }
         
+        let groupsChanged = rebuildTaskGroups()
+        if groupsChanged {
+            tableView?.reloadData()
+        }
+        var heightChanged = false
         for cell in tableView?.loadedCells ?? [] {
             if let cell = cell as? DownloadsTableViewCell {
                 if cell.package?.package == download.package.package {
-                    if cell.download == nil {
+                    let previousStatus = cell.subtitle
+                    if cell.download !== download {
                         cell.download = download
                     }
                     cell.updateStatus()
-                    TabBarController.singleton?.updatePopup()
+                    heightChanged = previousStatus != cell.subtitle
                     break
                 }
             }
         }
         
+        TabBarController.singleton?.updatePopup()
+        // Error text can grow while the row remains visible.
+        if heightChanged {
+            UIView.performWithoutAnimation {
+                tableView?.beginUpdates()
+                tableView?.endUpdates()
+            }
+        }
+        refreshTaskPresentation()
         self.checkReady()
     }
     
@@ -318,6 +525,8 @@ class DownloadsTableViewController: SileoViewController {
         returnButtonAction = .back
         refreshSileo = false
         hasErrored = false
+        installExitStatus = nil
+        currentTaskStatus = nil
         self.actions.removeAll()
         self.tableView?.setEditing(true, animated: true)
         
@@ -337,6 +546,8 @@ class DownloadsTableViewController: SileoViewController {
         returnButtonAction = .back
         refreshSileo = false
         hasErrored = false
+        installExitStatus = nil
+        currentTaskStatus = nil
         self.actions.removeAll()
         
         DownloadManager.shared.queueRunning = false
@@ -377,6 +588,8 @@ class DownloadsTableViewController: SileoViewController {
         }
         
         isDownloading = true
+        installExitStatus = nil
+        currentTaskStatus = nil
         
         DownloadManager.shared.aptRunning = false
         DownloadManager.shared.aptFinished = false
@@ -432,6 +645,10 @@ class DownloadsTableViewController: SileoViewController {
             }
         }
         
+        if rebuildTaskGroups() {
+            tableView?.reloadData()
+        }
+        reloadControlsOnly()
         if !earlyBreak {
             //always startInstall after UI update is complete
 //            DispatchQueue.main.async {
@@ -462,6 +679,8 @@ class DownloadsTableViewController: SileoViewController {
         }
         NSLog("SileoLog: action=\(action) cell=\(action.cell)")
         action.cell?.updateStatus()
+        currentTaskStatus = action.status
+        refreshTaskPresentation()
     }
     
     private func queueCompleted() {
@@ -470,6 +689,8 @@ class DownloadsTableViewController: SileoViewController {
         returnButtonAction = .back
         refreshSileo = false
         hasErrored = false
+        installExitStatus = nil
+        currentTaskStatus = nil
         actions.removeAll()
 
         TabBarController.singleton?.popupContent?.popupInteractionStyle = .default
@@ -632,6 +853,7 @@ class DownloadsTableViewController: SileoViewController {
                 self.showDetailsButton?.isHidden = false
                 self.completeLaterButton?.alpha = shouldShow(finish) ? 1 : 0
                 
+                self.installExitStatus = Int32(status)
                 self.isFinishedInstalling = true
                 self.reloadControlsOnly()
                 
@@ -678,6 +900,40 @@ class DownloadsTableViewController: SileoViewController {
         }
     }
     
+    @objc private func cancelFromDownloadLog() {
+        guard isDownloading && !isInstalling && !isFinishedInstalling else { return }
+        hideDetails(nil)
+        cancelDownload(nil)
+    }
+
+    private func refreshDownloadLog() {
+        let downloading = isDownloading && !isInstalling && !isFinishedInstalling
+        cancelFromLogButton.isHidden = !downloading
+        detailsTextView?.textContainerInset.bottom = downloading ? 60 : 18
+        guard downloading, detailsView?.superview != nil else { return }
+        let manager = DownloadManager.shared
+        let lines = (installations + upgrades + installdeps).map { entry -> String in
+            let package = entry.package
+            guard let download = manager.queuedDownload(package: package.package),
+                  download.session == manager.currentDownloadSession else {
+                return "\(package.name) (\(package.package))\n\(String(localizationKey: "Download_Starting"))"
+            }
+            let status: String
+            if let failure = download.failureReason, !failure.isEmpty {
+                status = failure
+            } else if download.success && download.progress == 1 {
+                status = String(localizationKey: "Task_Downloaded")
+            } else {
+                status = String(localizationKey: "Downloading_Package_Status")
+            }
+            let bytes = ByteCountFormatter.string(fromByteCount: max(0, download.totalBytesWritten), countStyle: .file)
+            return "\(package.name) (\(package.package))\n\(status) · \(bytes)"
+        }
+        detailsTextView?.attributedText = transform(attributedString: NSMutableAttributedString(
+            string: lines.joined(separator: "\n\n"),
+            attributes: [.foregroundColor: UIColor.white]))
+    }
+
     @IBAction private func showDetails(_ sender: Any?) {
         guard let detailsView = self.detailsView else {
             return
@@ -687,6 +943,7 @@ class DownloadsTableViewController: SileoViewController {
         detailsView.frame = self.view.bounds
         
         self.view.addSubview(detailsView)
+        refreshDownloadLog()
         
         self.view.bringSubviewToFront(detailsView)
         FRUIView.animate(withDuration: 0.25) {
@@ -714,22 +971,11 @@ class DownloadsTableViewController: SileoViewController {
 
 extension DownloadsTableViewController: UITableViewDataSource {
     func numberOfSections(in tableView: UITableView) -> Int {
-        6
+        5
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch section {
-        case 0:
-            return installations.count + installdeps.count
-        case 1:
-            return uninstallations.count + uninstalldeps.count
-        case 2:
-            return upgrades.count
-        case 3:
-            return errors.count
-        default:
-            return 0
-        }
+        section == 3 ? errors.count : taskGroups[section].count
     }
     
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -738,49 +984,32 @@ extension DownloadsTableViewController: UITableViewDataSource {
         }
         switch section {
         case 0:
-            return String(localizationKey: "Queued_Install_Heading")
+            return String(localizationKey: groupsShowFailures ? "Task_Attention" : "Task_Install_Update")
         case 1:
             return String(localizationKey: "Queued_Uninstall_Heading")
         case 2:
-            return String(localizationKey: "Queued_Update_Heading")
+            return String(localizationKey: "Task_Downloaded")
         case 3:
             return String(localizationKey: "Download_Errors_Heading")
+        case 4:
+            return String(localizationKey: "Downloading_Package_Status")
         default:
             return nil
         }
     }
     
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        if (self.tableView?.numberOfRows(inSection: section) ?? 0) > 0 {
-            let headerView = UIView(frame: CGRect(origin: .zero, size: CGSize(width: 320, height: 36)))
-            
-            let backgroundView = SileoRootView(frame: CGRect(x: 0, y: -24, width: 320, height: 60))
-            backgroundView.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
-            headerView.addSubview(backgroundView)
-            
-            if let text = self.tableView(tableView, titleForHeaderInSection: section) {
-                let titleView = SileoLabelView(frame: CGRect(x: 0, y: 0, width: 320, height: 28))
-                titleView.font = UIFont.systemFont(ofSize: 22, weight: .bold)
-                titleView.text = text
-                titleView.autoresizingMask = .flexibleWidth
-                headerView.addSubview(titleView)
-                
-                titleView.translatesAutoresizingMaskIntoConstraints = false
-                NSLayoutConstraint.activate([
-                    titleView.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 16),
-                    titleView.heightAnchor.constraint(equalToConstant: titleView.frame.size.height)
-                    ])
-
-                // The hairline under a section title is part of the same switch.
-                if !UIColor.hidesSeparators {
-                    let separatorView = SileoSeparatorView(frame: CGRect(x: 16, y: 35, width: 304, height: 1))
-                    separatorView.autoresizingMask = .flexibleWidth
-                    headerView.addSubview(separatorView)
-                }
-            }
-            return headerView
-        }
-        return nil
+        let count = self.tableView(tableView, numberOfRowsInSection: section)
+        guard count > 0, let text = self.tableView(tableView, titleForHeaderInSection: section) else { return nil }
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 38))
+        header.backgroundColor = .systemGroupedBackground
+        let label = UILabel(frame: CGRect(x: 28, y: 7, width: tableView.bounds.width - 56, height: 24))
+        label.autoresizingMask = .flexibleWidth
+        label.font = .systemFont(ofSize: 14, weight: .semibold)
+        label.textColor = section == 3 ? .systemOrange : .secondaryLabel
+        label.text = "\(text) · \(count)"
+        header.addSubview(label)
+        return header
     }
     
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
@@ -798,8 +1027,25 @@ extension DownloadsTableViewController: UITableViewDataSource {
         8
     }
     
+    private func dependencyDescription(_ error: APTBrokenPackage) -> String {
+        error.conflictingPackages.map { conflict in
+            let version = conflict.versionSummary.map { "(\($0))" } ?? ""
+            return "\(conflict.conflict.localizedName) \(conflict.package)\(version)"
+        }.joined(separator: ", ")
+    }
+
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        58
+        if indexPath.section == 3 {
+            return DownloadsTableViewCell.recommendedHeight(forError: dependencyDescription(errors[indexPath.row]), contentWidth: tableView.bounds.width, hasButton: true)
+        }
+        let packages = taskGroups[indexPath.section]
+        if packages.indices.contains(indexPath.row),
+           let failure = DownloadManager.shared.queuedDownload(package: packages[indexPath.row].package.package)?.failureReason,
+           !failure.isEmpty {
+            let message = String(format: String(localizationKey: "Error_Indicator", type: .error), failure)
+            return DownloadsTableViewCell.recommendedHeight(forError: message, contentWidth: tableView.bounds.width, hasButton: true)
+        }
+        return DownloadsTableViewCell.preferredRowHeight
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -815,39 +1061,18 @@ extension DownloadsTableViewController: UITableViewDataSource {
             } else {
                 cell.package = Package(package: error.packageID, version: "-1")
             }
-            var description = ""
-            for (index, conflict) in error.conflictingPackages.enumerated() {
-                var packagesDesc = "\(conflict.package)"
-                if let versionSummy = conflict.versionSummary {
-                    packagesDesc += "(\(versionSummy))"
-                }
-                if index != error.conflictingPackages.count - 1 {
-                    packagesDesc += ", "
-                }
-                description += "\(conflict.conflict.localizedName) \(packagesDesc)"
-            }
-            cell.errorDescription = description
+            cell.errorDescription = dependencyDescription(error)
             cell.searchPackageKeyword = error.conflictingPackages.first?.package
         } else {
             // Normal operation listing
-            var array: [DownloadPackage] = []
-            switch indexPath.section {
-            case 0:
-                array = installations + installdeps
-            case 1:
-                array = uninstallations + uninstalldeps
-            case 2:
-                array = upgrades
-            default:
-                break
-            }
-            
-            let package = array[indexPath.row].package
+            let package = taskGroups[indexPath.section][indexPath.row].package
             
             cell.package = package
             cell.download = DownloadManager.shared.queuedDownload(package: package.package)
             cell.action = actions.first(where: { $0.package.package == package.package })
         }
+        cell.configureGroupPosition(isFirst: indexPath.row == 0,
+                                    isLast: indexPath.row == self.tableView(tableView, numberOfRowsInSection: indexPath.section) - 1)
         cell.updateStatus()
         return cell
     }
@@ -855,54 +1080,31 @@ extension DownloadsTableViewController: UITableViewDataSource {
 
 extension DownloadsTableViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        if indexPath.section == 3 || isInstalling || isDownloading {
-            return false
-        }
-        var array: [DownloadPackage] = []
-        switch indexPath.section {
-        case 0:
-            array = installations
-        case 1:
-            array = uninstallations
-        case 2:
-            array = upgrades
-        default:
-            break
-        }
-        if indexPath.row >= array.count {
-            return false
-        }
-        return true
+        guard indexPath.section != 3, !isInstalling, !isDownloading else { return false }
+        let identifier = taskGroups[indexPath.section][indexPath.row].package.package
+        return (installations + upgrades + uninstallations).contains { $0.package.package == identifier }
     }
     
     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
         if editingStyle == .delete {
-            var queue: DownloadManagerQueue = .none
-            var array: [DownloadPackage] = []
-            switch indexPath.section {
-            case 0:
-                array = installations
+            guard self.tableView(tableView, canEditRowAt: indexPath) else { return }
+            let entry = taskGroups[indexPath.section][indexPath.row]
+            let identifier = entry.package.package
+            let queue: DownloadManagerQueue
+            if installations.contains(where: { $0.package.package == identifier }) {
                 queue = .installations
-                installations.remove(at: indexPath.row)
-            case 1:
-                array = uninstallations
-                queue = .uninstallations
-                uninstallations.remove(at: indexPath.row)
-            case 2:
-                array = upgrades
+                installations.removeAll { $0.package.package == identifier }
+            } else if upgrades.contains(where: { $0.package.package == identifier }) {
                 queue = .upgrades
-                upgrades.remove(at: indexPath.row)
-            default:
-                break
+                upgrades.removeAll { $0.package.package == identifier }
+            } else {
+                queue = .uninstallations
+                uninstallations.removeAll { $0.package.package == identifier }
             }
-            if indexPath.section == 3 || indexPath.row >= array.count {
-                fatalError("Invalid section/row (not editable)")
-            }
-            
-            tableView.deleteRows(at: [indexPath], with: .fade)
-            
+            rebuildTaskGroups()
+            tableView.reloadData()
             let downloadManager = DownloadManager.shared
-            downloadManager.remove(downloadPackage: array[indexPath.row], queue: queue)
+            downloadManager.remove(downloadPackage: entry, queue: queue)
             downloadManager.reloadData(recheckPackages: true)
         }
     }

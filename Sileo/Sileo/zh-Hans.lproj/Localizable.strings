@@ -8,6 +8,25 @@
  LOCALISATIONS
 */
 // Common Prompts
+"Task_Title" = "下载与安装";
+"Task_Attention" = "需要处理";
+"Task_Install_Issue" = "安装结果需要检查";
+"Task_Completed" = "所有任务已完成";
+"Task_Check_Log" = "请查看安装日志，确认问题后再继续。";
+"Task_Finish_Hint" = "请确认结果，再选择下方的操作。";
+"Task_Installing" = "正在应用更改";
+"Task_Keep_Open" = "正在安装插件包，请耐心等待。";
+"Task_Issue_Count" = "有 %ld 项需要处理";
+"Task_Resolve_Dependencies" = "请先解决下方的依赖问题，再确认安装。";
+"Task_Download_Issue" = "下载未完成";
+"Task_Download_Failure_Summary" = "其余 %ld 项已下载，尚未开始安装";
+"Task_Download_Count" = "已下载 %ld / %ld 项";
+"Task_Ready" = "准备好下一步";
+"Task_Summary" = "安装或更新 %ld 项 · 移除 %ld 项";
+"Task_View_Log" = "查看日志";
+"Task_Retry_Failed" = "重试失败项";
+"Task_Install_Update" = "安装 / 更新";
+"Task_Downloaded" = "已下载";
 
 "Source_Copied_To_Clipboard" = "已复制到剪切板";
 "Source_Lock" = "锁定";

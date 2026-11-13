@@ -9,6 +9,25 @@
 */
 
 // Common Prompts
+"Task_Title" = "Downloads & Installation";
+"Task_Attention" = "Needs attention";
+"Task_Install_Issue" = "Installation needs review";
+"Task_Completed" = "All tasks completed";
+"Task_Check_Log" = "Check the installation log before continuing.";
+"Task_Finish_Hint" = "Review the results, then choose the next step below.";
+"Task_Installing" = "Applying your changes";
+"Task_Keep_Open" = "Please wait while the plugin packages are installed.";
+"Task_Issue_Count" = "%ld items need attention";
+"Task_Resolve_Dependencies" = "Resolve the dependency issues below before confirming.";
+"Task_Download_Issue" = "Download incomplete";
+"Task_Download_Failure_Summary" = "%ld other items downloaded; installation has not started.";
+"Task_Download_Count" = "Downloaded %ld of %ld";
+"Task_Ready" = "Ready when you are";
+"Task_Summary" = "%ld to install or update · %ld to remove";
+"Task_View_Log" = "View log";
+"Task_Retry_Failed" = "Retry failed downloads";
+"Task_Install_Update" = "Install / Update";
+"Task_Downloaded" = "Downloaded";
 "Source_Copied_To_Clipboard" = "Copied to clipboard";
 "Source_Lock" = "Lock";
 "Source_Unlock" = "Unlock";

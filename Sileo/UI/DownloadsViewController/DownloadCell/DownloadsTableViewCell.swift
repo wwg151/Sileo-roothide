@@ -6,206 +6,351 @@
 //  Copyright © 2022 Sileo Team. All rights reserved.
 //
 
-import Foundation
+import UIKit
 import Evander
 
 class DownloadsTableViewCell: BaseSubtitleTableViewCell {
+    /// The controller uses 88pt for normal rows and recommendedHeight for errors.
+    static let preferredRowHeight: CGFloat = 88
+
+    private let cardView = UIView()
+    private let nameLabel = UILabel()
+    private let versionLabel = UILabel()
+    private let statusLabel = UILabel()
+    private let activityTrack = UIView()
+    private let activityFill = UIView()
+    private var activityProgress: CGFloat = 0
+    private var hasError = false
+    private var isFirstInGroup = true
+    private var isLastInGroup = true
+
+    /// Call for each configured row, including after a group's rows change.
+    public func configureGroupPosition(isFirst: Bool, isLast: Bool) {
+        isFirstInGroup = isFirst
+        isLastInGroup = isLast
+        setNeedsLayout()
+    }
+
     public var package: Package? {
         didSet {
-            self.title = package?.name
+            title = package?.name ?? package?.package
+            nameLabel.text = title
+            updateVersion()
             if let url = package?.icon {
-                self.icon = EvanderNetworking.image(url: url, size: iconView.frame.size) { [weak self] image in
-                    if let strong = self,
-                       url == strong.package?.icon {
-                        DispatchQueue.main.async {
-                            strong.icon = image
-                        }
+                icon = EvanderNetworking.image(url: url, size: CGSize(width: 44, height: 44)) { [weak self] image in
+                    DispatchQueue.main.async {
+                        guard let self = self, url == self.package?.icon else { return }
+                        self.icon = image
                     }
                 } ?? package?.defaultIcon
             } else {
-                self.icon = package?.defaultIcon
+                icon = package?.defaultIcon
             }
+            setNeedsLayout()
         }
     }
-    
+
     public var action: DownloadsTableViewController.Action? {
         didSet {
-            NSLog("SileoLog: didSet action \(action?.package) \(action?.progress) \(action?.status)")
+            // An old Action must not keep updating a recycled cell.
+            if oldValue !== action, oldValue?.cell === self {
+                oldValue?.cell = nil
+            }
             action?.cell = self
+            updateStatus()
         }
     }
-    
-    public var download: Download? = nil {
-        didSet {
-            retryButton.isHidden = true
-        }
+
+    public var download: Download? {
+        didSet { updateStatus() }
     }
-    
-    public var errorDescription: String? = nil {
-        didSet {
-            let errored = errorDescription != nil
-            self.textLabel?.textColor = errored ? UIColor(hue: 0.0, saturation: 0.8, brightness: 0.9, alpha: 0.8) : .sileoLabel
-            self.detailTextLabel?.textColor = errored ? UIColor(hue: 0.0, saturation: 1.0, brightness: 1.0, alpha: 1.0) : UIColor(red: 172.0/255.0, green: 184.0/255.0, blue: 193.0/255.0, alpha: 1)
-        }
+
+    public var errorDescription: String? {
+        didSet { updateStatus() }
     }
-    
-    var searchPackageKeyword: String? = nil
-    
+
+    var searchPackageKeyword: String? {
+        didSet { updateStatus() }
+    }
+
+    public let retryButton = UIButton(type: .system)
+    public let findDepButton = UIButton(type: .system)
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
+        selectionStyle = .none
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
+
+        // Never drive BaseSubtitleTableViewCell.progress: its indicator owns
+        // separate constraints and a percentage label outside the bar's bounds.
+        progressView.isHidden = true
+        progressView.showsPercentage = false
+        textLabel?.isHidden = true
+        detailTextLabel?.isHidden = true
+
+        cardView.isUserInteractionEnabled = false
+        cardView.layer.cornerRadius = 16
+        cardView.layer.cornerCurve = .continuous
+        contentView.insertSubview(cardView, at: 0)
+        iconView.layer.cornerCurve = .continuous
+        iconView.clipsToBounds = true
+
+        nameLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        nameLabel.lineBreakMode = .byTruncatingTail
+        versionLabel.font = .systemFont(ofSize: 12)
+        versionLabel.lineBreakMode = .byTruncatingMiddle
+        statusLabel.font = .systemFont(ofSize: 12)
+        statusLabel.lineBreakMode = .byTruncatingTail
+        activityTrack.layer.cornerRadius = 1.5
+        activityTrack.clipsToBounds = true
+        activityFill.layer.cornerRadius = 1.5
+        activityTrack.addSubview(activityFill)
+        [nameLabel, versionLabel, statusLabel, activityTrack, retryButton, findDepButton].forEach {
+            contentView.addSubview($0)
+        }
+
+        retryButton.setImage(UIImage(named: "Refresh")?.withRenderingMode(.alwaysTemplate)
+                             ?? UIImage(systemName: "arrow.clockwise"), for: .normal)
+        retryButton.accessibilityLabel = String(localizationKey: "Retry")
+        retryButton.addTarget(self, action: #selector(retryDownload), for: .touchUpInside)
+        findDepButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
+        findDepButton.accessibilityLabel = String(localizationKey: "Search_Page")
+        findDepButton.addTarget(self, action: #selector(findDepPackage), for: .touchUpInside)
+        nameLabel.isAccessibilityElement = false
+        versionLabel.isAccessibilityElement = false
+        statusLabel.isAccessibilityElement = false
+        // Keep buttons (and UIKit's editing controls) separately reachable.
+        cardView.isAccessibilityElement = true
+        iconView.isAccessibilityElement = false
+        updateStatus()
+    }
+
+    required public init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
-        icon = nil
-        title = nil
-        subtitle = nil
-        progress = 0
-        package = nil
-        download = nil
+        configureGroupPosition(isFirst: true, isLast: true)
         action = nil
-        action?.cell = nil
+        download = nil
         errorDescription = nil
         searchPackageKeyword = nil
+        package = nil
+        title = nil
+        subtitle = nil
+        icon = nil
+        nameLabel.text = nil
+        versionLabel.text = nil
+        statusLabel.text = nil
+        cardView.accessibilityLabel = nil
+        activityProgress = 0
+        activityTrack.isHidden = true
         retryButton.isHidden = true
         findDepButton.isHidden = true
     }
-    
-    public func updateStatus() {
-        NSLog("SileoLog: updateStatus \(package?.package) \(package?.sourceRepo?.repoName) download=\(download),\(download?.progress) action=\(action) err=\(errorDescription) oldsubtitle=\(self.subtitle)")
 
-        if let err = errorDescription {
-            self.progress = 0
-            self.subtitle = String(localizationKey: err)
-            
-            if searchPackageKeyword != nil {
-                findDepButton.isHidden = false
-            }
-        } else if let action = self.action {
-            var progress = action.progress
-            progress = (progress / 1.0) * 0.3
-            self.progress = progress + 0.7
-            if let status = action.status {
-                self.subtitle = status
-            } else {
-                self.subtitle = String(localizationKey: "Ready_Status")
-            }
-        } else if let download = download {
-            self.progress = (download.progress / 1.0) * 0.7
-            if download.progress == 1.0 && download.failureReason == nil {
-                self.subtitle = String(localizationKey: "Ready_Status")
-            } else if let message = download.message {
-                self.subtitle = message
-            } else if let failureReason = download.failureReason,
-                !failureReason.isEmpty {
-                retryButton.isHidden = false
-                self.subtitle = String(format: String(localizationKey: "Error_Indicator", type: .error), failureReason)
-            } else if download.started {
-                if download.totalBytesWritten > 0 {
-                    if download.totalBytesExpectedToWrite==NSURLSessionTransferSizeUnknown {
-                        self.subtitle = ByteCountFormatter.string(fromByteCount: Int64(download.totalBytesWritten), countStyle: .file) + " ..."
-                    } else {
-                        self.subtitle = String(format: String(localizationKey: "Download_Progress"),
-                                               ByteCountFormatter.string(fromByteCount: Int64(download.totalBytesWritten), countStyle: .file),
-                                               ByteCountFormatter.string(fromByteCount: Int64(download.totalBytesExpectedToWrite), countStyle: .file))
-                    }
-                } else {
-                    self.subtitle = String(localizationKey: "Download_Starting")
-                }
-            } else {
-                if let repoName = package?.sourceRepo?.repoName {
-                    self.subtitle = "\(String(localizationKey: "Queued_Package_Status")) • \(repoName)"
-                } else {
-                    self.subtitle = String(localizationKey: "Queued_Package_Status")
-                }
-            }
-        } else {
-            self.progress = 0
-            if let repoName = package?.sourceRepo?.repoName {
-                self.subtitle = "\(String(localizationKey: "Queued_Package_Status")) • \(repoName)"
-            } else {
-                self.subtitle = String(localizationKey: "Queued_Package_Status")
-            }
-        }
-    }
-    
-    public let retryButton = UIButton()
-    public let findDepButton = UIButton()
-    
-    @objc public func retryDownload() {
-        
-        self.download = nil
-        self.updateStatus()
-        
-        DownloadManager.shared.retryDownload(package: self.package!.package)
-    }
-    
-    @objc public func findDepPackage() {
-        guard let tabBarController = TabBarController.singleton,
-              let controllers = tabBarController.viewControllers,
-              let searchPackageNVC = controllers[4] as? SileoNavigationController,
-              let searchPackageVC = searchPackageNVC.viewControllers[0] as? PackageListViewController
-        else {
+    private func updateVersion() {
+        guard let package = package, package.version != "-1" else {
+            versionLabel.text = nil
             return
         }
-        
-        searchPackageVC.searchController.searchBar.text = self.searchPackageKeyword
+        if let installed = PackageListManager.shared.installedPackage(identifier: package.package),
+           installed.version != package.version {
+            versionLabel.text = "\(installed.version) → \(package.version)"
+        } else {
+            versionLabel.text = package.version
+        }
+    }
+
+    private var queuedStatus: String {
+        let queued = String(localizationKey: "Queued_Package_Status")
+        guard let repoName = package?.sourceRepo?.repoName, !repoName.isEmpty else { return queued }
+        return "\(queued) · \(repoName)"
+    }
+
+    public func updateStatus() {
+        retryButton.isHidden = true
+        findDepButton.isHidden = true
+        hasError = false
+        activityTrack.isHidden = true
+        activityProgress = 0
+        var status = queuedStatus
+
+        if let error = errorDescription, !error.isEmpty {
+            hasError = true
+            status = String(localizationKey: error)
+            findDepButton.isHidden = searchPackageKeyword?.isEmpty != false
+        } else if let action = action {
+            status = action.status ?? String(localizationKey: "Ready_Status")
+            activityProgress = clampedProgress(action.progress)
+            // Actions are allocated for every item before apt starts. Only an
+            // item with actual status callbacks is active; completed ones hide.
+            activityTrack.isHidden = action.progressCounter <= 0 || activityProgress >= 1
+        } else if let download = download {
+            // A failure must win over a stale conversion/download message.
+            if let failure = download.failureReason, !failure.isEmpty {
+                hasError = true
+                status = String(format: String(localizationKey: "Error_Indicator", type: .error), failure)
+                retryButton.isHidden = false
+            } else if download.success {
+                status = String(localizationKey: "Ready_Status")
+            } else if download.started || download.message != nil {
+                activityProgress = clampedProgress(download.progress)
+                activityTrack.isHidden = download.completed
+                if let message = download.message, !message.isEmpty {
+                    status = message
+                } else if download.totalBytesWritten > 0 {
+                    let written = ByteCountFormatter.string(fromByteCount: download.totalBytesWritten, countStyle: .file)
+                    if download.totalBytesExpectedToWrite <= 0 {
+                        status = written + " …"
+                    } else {
+                        status = String(format: String(localizationKey: "Download_Progress"), written,
+                                        ByteCountFormatter.string(fromByteCount: download.totalBytesExpectedToWrite, countStyle: .file))
+                    }
+                } else {
+                    status = String(localizationKey: "Download_Starting")
+                }
+            }
+        }
+
+        subtitle = status // Preserve the original public subtitle contract.
+        statusLabel.text = status
+        statusLabel.numberOfLines = hasError ? 0 : 1
+        statusLabel.lineBreakMode = hasError ? .byWordWrapping : .byTruncatingTail
+        cardView.accessibilityLabel = [nameLabel.text, versionLabel.text, status]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        updateColors()
+        setNeedsLayout()
+    }
+
+    private func clampedProgress(_ value: CGFloat) -> CGFloat {
+        value.isFinite ? max(0, min(1, value)) : 0
+    }
+
+    override func updateSileoColors() {
+        super.updateSileoColors()
+        updateColors()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateColors()
+    }
+
+    private func updateColors() {
+        cardView.backgroundColor = .secondarySystemGroupedBackground
+        nameLabel.textColor = .sileoLabel
+        versionLabel.textColor = .secondaryLabel
+        statusLabel.textColor = hasError ? .systemRed : (activityTrack.isHidden ? .secondaryLabel : SileoThemeManager.shared.tintColor)
+        activityTrack.backgroundColor = .tertiarySystemFill
+        activityFill.backgroundColor = SileoThemeManager.shared.tintColor
+        retryButton.tintColor = SileoThemeManager.shared.tintColor
+        findDepButton.tintColor = SileoThemeManager.shared.tintColor
+    }
+
+    /// Width is the cell's contentView width, after UIKit's editing indentation.
+    static func recommendedHeight(forError error: String, contentWidth: CGFloat, hasButton: Bool) -> CGFloat {
+        guard !error.isEmpty else { return preferredRowHeight }
+        // Match the expanded error frame: 24pt leading, 20pt trailing,
+        // and the optional 44pt action button reserved by layoutSubviews.
+        let textWidth = max(1, contentWidth - 24 - 20 - (hasButton ? 44 : 0))
+        let textHeight = error.boundingRect(
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: UIFont.systemFont(ofSize: 12)], context: nil).height
+        return max(preferredRowHeight, ceil(72 + textHeight))
+    }
+
+    func recommendedHeight(for contentWidth: CGFloat) -> CGFloat {
+        Self.recommendedHeight(forError: hasError ? (statusLabel.text ?? "") : "",
+                               contentWidth: contentWidth,
+                               hasButton: !retryButton.isHidden || !findDepButton.isHidden)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Base layout is deliberately allowed to run for UITableView's editing
+        // layout, then all our frames use the resulting contentView bounds.
+        progressView.isHidden = true
+        textLabel?.isHidden = true
+        detailTextLabel?.isHidden = true
+        let width = contentView.bounds.width
+        let height = contentView.bounds.height
+        let compact = height < Self.preferredRowHeight - 1
+        let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
+        statusLabel.numberOfLines = hasError && !compact ? 0 : 1
+        statusLabel.lineBreakMode = hasError && !compact ? .byWordWrapping : .byTruncatingTail
+        func frame(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
+            CGRect(x: rtl ? width - x - w : x, y: y, width: max(0, w), height: max(0, h))
+        }
+        // Adjacent backgrounds meet exactly; only the group's outer corners
+        // are rounded. Keep horizontal insets inside UIKit's editing bounds.
+        cardView.frame = CGRect(x: 8, y: 0, width: max(0, width - 16), height: max(0, height))
+        var corners: CACornerMask = []
+        if isFirstInGroup {
+            corners.formUnion([.layerMinXMinYCorner, .layerMaxXMinYCorner])
+        }
+        if isLastInGroup {
+            corners.formUnion([.layerMinXMaxYCorner, .layerMaxXMaxYCorner])
+        }
+        cardView.layer.maskedCorners = corners
+        cardView.layer.cornerRadius = corners.isEmpty ? 0 : 16
+        iconView.frame = frame(20, compact ? (height - 44) / 2 : 14, 44, 44)
+        iconView.backgroundColor = .tertiarySystemFill
+        let buttonVisible = !retryButton.isHidden || !findDepButton.isHidden
+        let end: CGFloat = width - 20 - (buttonVisible ? 44 : 0)
+        let textX: CGFloat = 78
+        let textWidth = max(0, end - textX)
+        let alignment: NSTextAlignment = rtl ? .right : .left
+        nameLabel.textAlignment = alignment
+        versionLabel.textAlignment = alignment
+        statusLabel.textAlignment = alignment
+        retryButton.frame = frame(width - 60, (height - 44) / 2, 44, 44)
+        findDepButton.frame = retryButton.frame
+        nameLabel.frame = frame(textX, compact ? 6 : 13, textWidth, 20)
+        versionLabel.isHidden = compact && hasError
+        if compact {
+            if hasError {
+                statusLabel.frame = frame(textX, 27, textWidth, max(0, height - 31))
+            } else {
+                let versionWidth = min(textWidth * 0.42, versionLabel.sizeThatFits(CGSize(width: textWidth, height: 18)).width)
+                versionLabel.frame = frame(textX, 29, versionWidth, 17)
+                let gap: CGFloat = versionWidth > 0 ? 8 : 0
+                statusLabel.frame = frame(textX + versionWidth + gap, 29, textWidth - versionWidth - gap, 17)
+            }
+        } else {
+            versionLabel.frame = frame(textX, 35, textWidth, 17)
+            let statusX: CGFloat = hasError ? 24 : textX
+            statusLabel.frame = frame(statusX, hasError ? 62 : 54, max(0, end - statusX),
+                                      hasError ? max(0, height - 72) : 17)
+        }
+        activityTrack.frame = frame(textX, height - (compact ? 6 : 12), textWidth, 3)
+        // Logical leading edge also applies to the progress fill in RTL.
+        let fillWidth = activityTrack.bounds.width * activityProgress
+        activityFill.frame = CGRect(x: rtl ? activityTrack.bounds.width - fillWidth : 0,
+                                    y: 0, width: fillWidth, height: 3)
+    }
+
+    @objc public func retryDownload() {
+        guard !retryButton.isHidden, let package = package else { return }
+        download = nil
+        DownloadManager.shared.retryDownload(package: package.package)
+    }
+
+    @objc public func findDepPackage() {
+        guard !findDepButton.isHidden,
+              let keyword = searchPackageKeyword, !keyword.isEmpty,
+              let tabBarController = TabBarController.singleton,
+              let controllers = tabBarController.viewControllers, controllers.indices.contains(4),
+              let searchPackageNVC = controllers[4] as? SileoNavigationController,
+              let searchPackageVC = searchPackageNVC.viewControllers.first as? PackageListViewController else {
+            return
+        }
+        searchPackageVC.searchController.searchBar.text = keyword
         tabBarController.selectedViewController = searchPackageNVC
         searchPackageNVC.popToRootViewController(animated: true)
         tabBarController.closePopup(animated: true)
-    }
-    
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        
-        guard var detailTextLabelFrame = self.detailTextLabel?.frame else {
-            return
-        }
-        
-        let padding:CGFloat = 30
-        
-        if UIView.userInterfaceLayoutDirection(for: self.semanticContentAttribute) == .leftToRight {
-            detailTextLabelFrame.size.width = contentView.frame.size.width - detailTextLabelFrame.origin.x  - padding
-        } else {
-            let fix = contentView.frame.size.width - (detailTextLabelFrame.origin.x+detailTextLabelFrame.size.width)
-            let detailTextLableWidthMax = contentView.frame.size.width - fix - padding
-            if detailTextLabelFrame.size.width > detailTextLableWidthMax {
-                detailTextLabelFrame.size.width = detailTextLableWidthMax
-                detailTextLabelFrame.origin.x = padding
-            }
-        }
-        
-        self.detailTextLabel?.frame = detailTextLabelFrame
-    }
-    
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
-        
-        self.selectionStyle = .none
-        self.progressView.showsPercentage = true
-        self.detailTextLabel?.adjustsFontSizeToFitWidth = true
-        
-        self.contentView.addSubview(retryButton)
-        retryButton.translatesAutoresizingMaskIntoConstraints = false
-        retryButton.heightAnchor.constraint(equalToConstant: 27.5).isActive = true
-        retryButton.widthAnchor.constraint(equalToConstant: 27.5).isActive = true
-        retryButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor).isActive = true
-        contentView.trailingAnchor.constraint(equalTo: retryButton.trailingAnchor, constant: 5).isActive = true
-
-        retryButton.setImage(UIImage(named: "Refresh")?.withRenderingMode(.alwaysTemplate), for: .normal)
-        retryButton.tintColor = .tintColor
-        retryButton.addTarget(self, action: #selector(retryDownload), for: .touchUpInside)
-        retryButton.isHidden = true
-        
-        self.contentView.addSubview(findDepButton)
-        findDepButton.translatesAutoresizingMaskIntoConstraints = false
-        findDepButton.heightAnchor.constraint(equalToConstant: 27.5).isActive = true
-        findDepButton.widthAnchor.constraint(equalToConstant: 27.5).isActive = true
-        findDepButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor).isActive = true
-        contentView.trailingAnchor.constraint(equalTo: findDepButton.trailingAnchor, constant: 5).isActive = true
-        findDepButton.setImage(UIImage(systemName: "magnifyingglass")?.withRenderingMode(.alwaysTemplate), for: .normal)
-        findDepButton.tintColor = .tintColor
-        findDepButton.addTarget(self, action: #selector(findDepPackage), for: .touchUpInside)
-        findDepButton.isHidden = true
-    }
-    
-    required public init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
     }
 }

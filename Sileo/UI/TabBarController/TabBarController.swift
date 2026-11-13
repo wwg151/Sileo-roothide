@@ -280,7 +280,151 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         updatePopup(completion: nil)
     }
     
+    private var queueSummaryGeneration = 0
+
+    private struct QueueSummary {
+        var title: String
+        var subtitle: String
+        var symbol: String
+        var fraction: CGFloat?
+        var failed = false
+    }
+
+    /// Read the mutable Download objects on the same queue as their callbacks.
+    /// Only the immutable presentation values cross back to UIKit.
+    private func updateQueueSummary() {
+        queueSummaryGeneration += 1
+        let generation = queueSummaryGeneration
+        DownloadManager.aptQueue.async { [weak self] in
+            let manager = DownloadManager.shared
+            let count = manager.operationCount()
+            let countText = String(format: String(localizationKey: "Package_Queue_Count"), count)
+            var summary = QueueSummary(title: String(localizationKey: "Queued_Package_Status"),
+                                       subtitle: countText, symbol: "clock", fraction: nil)
+            var quantity = countText
+            let finished = manager.aptFinished
+            if manager.queueRunning {
+                if manager.aptFinished {
+                    summary.title = String(localizationKey: "Done")
+                    summary.symbol = "checkmark"
+                } else if manager.aptRunning {
+                    summary.title = String(localizationKey: manager.installingPackages() > 0
+                        ? "Installing_Package_Status" : "Removal_Queued_Package_Status")
+                    summary.symbol = "shippingbox"
+                } else {
+                    let packages = manager.vars.upgrades.raw.union(manager.vars.installations.raw)
+                        .union(manager.vars.installdeps.raw)
+                    let downloads = packages.compactMap { manager.queuedDownload(package: $0.package.package) }
+                        .filter { $0.session == manager.currentDownloadSession }
+                    let completed = downloads.filter { $0.success && $0.progress == 1 }.count
+                    if !packages.isEmpty {
+                        quantity = String.localizedStringWithFormat("%d / %d", completed, packages.count)
+                    }
+                    let failed = downloads.contains { !($0.failureReason ?? "").isEmpty }
+                    let ready = manager.verifyComplete()
+                    let preparing = downloads.contains { $0.message == String(localizationKey: "Compat_Converting") }
+                    summary.title = String(localizationKey: failed ? "Download_Errors_Heading"
+                        : ready ? "Ready_Status" : preparing ? "Compat_Converting" : "Downloading_Package_Status")
+                    summary.symbol = failed ? "exclamationmark" : ready ? "checkmark" : preparing ? "shippingbox" : ""
+                    summary.failed = failed
+                    if !ready && !preparing {
+                        // The denominator includes pending network tasks, but not local .debs.
+                        // Never average Download.progress: conversion changes it to 0.99.
+                        var written: Double = 0
+                        var expected: Double = 0
+                        var known = true
+                        var networkCount = 0
+                        for entry in packages {
+                            let download = manager.queuedDownload(package: entry.package.package)
+                            let current = download?.session == manager.currentDownloadSession ? download : nil
+                            guard entry.package.local_deb == nil || (current?.totalBytesWritten ?? 0) > 0 else { continue }
+                            networkCount += 1
+                            let bytes = max(0, current?.totalBytesWritten ?? 0)
+                            let reported = current?.totalBytesExpectedToWrite ?? 0
+                            let size = reported > 0 ? reported : (Int64(entry.package.size ?? "") ?? 0)
+                            written += Double(bytes)
+                            if size > 0 {
+                                expected += Double(size)
+                            } else {
+                                known = false
+                            }
+                        }
+                        if networkCount > 0 {
+                            let writtenText = ByteCountFormatter.string(fromByteCount: Int64(min(written, Double(Int64.max / 2))), countStyle: .file)
+                            if known && expected > 0 {
+                                summary.subtitle = String(format: String(localizationKey: "Download_Progress"),
+                                    writtenText, ByteCountFormatter.string(fromByteCount: Int64(min(expected, Double(Int64.max / 2))), countStyle: .file))
+                                summary.fraction = CGFloat(max(0, min(1, written / expected)))
+                            } else if written > 0 {
+                                summary.subtitle = writtenText
+                            }
+                        }
+                    }
+                }
+            }
+            summary.title += " · " + quantity
+            let result = summary
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.queueSummaryGeneration == generation,
+                      let item = self.downloadsController?.popupItem else { return }
+                var displayed = result
+                // aptFinished means the process exited, including a failed exit.
+                if finished && self.downloadsController?.presentationHasFailed == true {
+                    displayed.title = String(localizationKey: "Download_Errors_Heading") + " · " + countText
+                    displayed.symbol = "exclamationmark"
+                    displayed.failed = true
+                }
+                item.title = displayed.title
+                item.subtitle = displayed.subtitle
+                item.image = self.queueRingImage(fraction: displayed.fraction, symbol: displayed.symbol, failed: displayed.failed)
+                // Keep the framework's bottom progress line empty; the ring is download-only.
+                item.progress = 0
+                if (item.barButtonItems ?? []).isEmpty && (item.trailingBarButtonItems ?? []).isEmpty {
+                    let expand = UIBarButtonItem(image: UIImage(systemName: "chevron.up"), style: .plain,
+                                                 target: self, action: #selector(self.expandQueueSummary))
+                    expand.accessibilityLabel = String(localizationKey: "Show_Install_Details")
+                    item.trailingBarButtonItems = [expand]
+                }
+            }
+        }
+    }
+
+    private func queueRingImage(fraction: CGFloat?, symbol: String, failed: Bool) -> UIImage {
+        let accent = failed ? UIColor.systemRed : view.tintColor ?? UIColor.systemTeal
+        let track = UIColor.isDarkModeEnabled ? UIColor(white: 1, alpha: 0.18) : UIColor(white: 0, alpha: 0.12)
+        return UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { _ in
+            let center = CGPoint(x: 20, y: 20)
+            let circle = UIBezierPath(arcCenter: center, radius: 16, startAngle: -.pi / 2,
+                                      endAngle: .pi * 1.5, clockwise: true)
+            track.setStroke()
+            circle.lineWidth = 2
+            circle.stroke()
+            if let fraction = fraction, fraction > 0 {
+                let arc = UIBezierPath(arcCenter: center, radius: 16, startAngle: -.pi / 2,
+                                       endAngle: -.pi / 2 + .pi * 2 * fraction, clockwise: true)
+                accent.setStroke()
+                arc.lineWidth = 2
+                arc.lineCapStyle = .round
+                arc.stroke()
+            }
+            let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+            UIImage(systemName: symbol, withConfiguration: config)?.withTintColor(accent, renderingMode: .alwaysOriginal)
+                .draw(in: CGRect(x: 12, y: 12, width: 16, height: 16))
+        }.withRenderingMode(.alwaysOriginal)
+    }
+
+    @objc private func expandQueueSummary() {
+        presentPopupController()
+    }
+
     func updatePopup(animated:Bool = true, completion: (() -> Void)? = nil, bypass: Bool = false) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePopup(animated: animated, completion: completion, bypass: bypass)
+            }
+            return
+        }
+        updateQueueSummary()
         func hideRegardless() {
             if UIDevice.current.userInterfaceIdiom == .pad && self.view.frame.width >= ipadModeMinWidth {
                 downloadsController?.popupItem.title = String(localizationKey: "Queued_Package_Status")
@@ -309,43 +453,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 hideRegardless()
             }
         }
-        else if !manager.queueRunning {
-            downloadsController?.popupItem.title = String(localizationKey: "Queued_Package_Status")
-            downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.operationCount())
-            downloadsController?.popupItem.progress = 0
-            self.presentPopup(completion: completion)
-        }
-        else if manager.aptFinished {
-            downloadsController?.popupItem.title = String(localizationKey: "Done")
-            downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.operationCount())
-            downloadsController?.popupItem.progress = 0
-            self.presentPopup(completion: completion)
-        }
-        else if manager.aptRunning {
-            if manager.installingPackages() > 0 {
-                downloadsController?.popupItem.title = String(localizationKey: "Installing_Package_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.installingPackages())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            } else if manager.uninstallingPackages() > 0 {
-                downloadsController?.popupItem.title = String(localizationKey: "Removal_Queued_Package_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.uninstallingPackages())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            }
-        }
         else {
-            if manager.downloadingPackages() > 0 {
-                downloadsController?.popupItem.title = String(localizationKey: "Downloading_Package_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.downloadingPackages())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            } else if manager.verifyComplete() {
-                downloadsController?.popupItem.title = String(localizationKey: "Ready_Status")
-                downloadsController?.popupItem.subtitle = String(format: String(localizationKey: "Package_Queue_Count"), manager.operationCount())
-                downloadsController?.popupItem.progress = 0
-                self.presentPopup(completion: completion)
-            }
+            // The summary is updated independently of loaded download cells.
+            // Keep a nonempty queue available even while waiting or failed.
+            self.presentPopup(completion: completion)
         }
     }
     
@@ -1149,6 +1260,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         } else {
             self.popupBar.systemBarStyle = .default
             self.popupBar.toolbar.barStyle = .default
+        }
+        if popupIsPresented {
+            updateQueueSummary()
         }
     }
     
