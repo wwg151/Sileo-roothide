@@ -98,6 +98,18 @@ class DownloadsTableViewController: SileoViewController {
     private var installExitStatus: Int32?
     public private(set) var currentOperationTitle: String?
     private var currentTaskStatus: String?
+    private var overallProgress: Double = 0
+    private var aptProgress: Double = 0
+    private let taskPercentage = UILabel()
+
+    private var downloadWeight: Double {
+        (installations + upgrades + installdeps).isEmpty ? 0 : 0.4
+    }
+
+    private func updateOverallProgress(_ candidate: Double) {
+        guard candidate.isFinite else { return }
+        overallProgress = max(overallProgress, min(0.99, max(0, candidate)))
+    }
 
     public var presentationHasFailed: Bool {
         !errors.isEmpty || (isFinishedInstalling && installExitStatus != 0)
@@ -123,7 +135,7 @@ class DownloadsTableViewController: SileoViewController {
         taskCard.layer.cornerRadius = 25
         taskCard.clipsToBounds = true
         taskCard.layer.borderWidth = 0.5
-        [taskStage, taskHeadline, taskDetail, taskProgress, stageActivity].forEach { taskCard.contentView.addSubview($0) }
+        [taskStage, taskHeadline, taskDetail, taskProgress, taskPercentage, stageActivity].forEach { taskCard.contentView.addSubview($0) }
         taskTitle.font = .systemFont(ofSize: 29, weight: .bold)
         taskTitle.numberOfLines = 0
         taskTitle.textColor = .label
@@ -136,6 +148,9 @@ class DownloadsTableViewController: SileoViewController {
         taskDetail.font = .systemFont(ofSize: 13)
         taskDetail.textColor = .secondaryLabel
         taskDetail.numberOfLines = 2
+        taskPercentage.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        taskPercentage.textAlignment = .right
+        taskPercentage.textColor = .secondaryLabel
         taskProgress.layer.cornerRadius = 2
         taskProgress.clipsToBounds = true
         taskProgress.trackTintColor = .tertiarySystemFill
@@ -213,7 +228,8 @@ class DownloadsTableViewController: SileoViewController {
         stageActivity.frame = CGRect(x: inner + 1, y: 17, width: 20, height: 20)
         taskHeadline.frame = CGRect(x: 20, y: taskStage.frame.maxY + 7, width: inner, height: headlineHeight)
         taskDetail.frame = CGRect(x: 20, y: taskHeadline.frame.maxY + 3, width: inner, height: detailHeight)
-        taskProgress.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 11, width: inner, height: 4)
+        taskPercentage.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 6, width: inner, height: 18)
+        taskProgress.frame = CGRect(x: 20, y: taskPercentage.frame.maxY + 6, width: inner, height: 4)
         taskCard.frame = CGRect(x: 20, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 14)
         let headerHeight = taskCard.frame.maxY + 14
         if taskHeader.frame.width != width || taskHeader.frame.height != headerHeight {
@@ -233,7 +249,15 @@ class DownloadsTableViewController: SileoViewController {
         showDetailsButton?.frame = secondary
         taskPrimaryButton.frame = main
         cancelDownload?.frame = secondary
-        completeLaterButton?.frame = CGRect(x: 24, y: 72, width: w - 48, height: 40)
+        completeLaterButton?.frame = CGRect(x: 20, y: 74, width: max(0, (w - 48) / 2), height: 44)
+        if isFinishedInstalling {
+            completeButton?.frame = CGRect(x: 20, y: 14, width: max(0, w - 40), height: 50)
+            if completeLaterButton?.isHidden == false {
+                showDetailsButton?.frame = CGRect(x: w / 2 + 4, y: 74, width: max(0, (w - 48) / 2), height: 44)
+            } else {
+                showDetailsButton?.frame = CGRect(x: 20, y: 74, width: max(0, w - 40), height: 44)
+            }
+        }
     }
 
     private func refreshTaskPresentation() {
@@ -251,9 +275,15 @@ class DownloadsTableViewController: SileoViewController {
         taskStage.textColor = color
         taskProgress.progressTintColor = color
         stageActivity.color = color
-        let active = (isInstalling && !isFinishedInstalling) || (isDownloading && failed.isEmpty)
+        let active = !isFinishedInstalling && (isInstalling || (isDownloading && failed.isEmpty))
         if active { stageActivity.startAnimating() } else { stageActivity.stopAnimating() }
-        taskProgress.isHidden = !isDownloading || !failed.isEmpty || isFinishedInstalling || isInstalling
+        taskProgress.isHidden = !(isDownloading || isInstalling || isFinishedInstalling)
+        taskPercentage.isHidden = taskProgress.isHidden
+        if isFinishedInstalling && !blocked {
+            overallProgress = 1
+        } else if isInstalling {
+            updateOverallProgress(downloadWeight + (1 - downloadWeight) * aptProgress)
+        }
         if isFinishedInstalling {
             taskStage.text = String(localizationKey: blocked ? "Task_Attention" : "Done")
             taskHeadline.text = String(localizationKey: blocked ? "Task_Install_Issue" : "Task_Completed")
@@ -278,16 +308,19 @@ class DownloadsTableViewController: SileoViewController {
             let knownSize = downloads.count == manager.installingPackages() && downloads.allSatisfy { $0.totalBytesExpectedToWrite > 0 }
             if knownSize && expected > 0 {
                 taskDetail.text = String(format: String(localizationKey: "Download_Progress"), ByteCountFormatter.string(fromByteCount: written, countStyle: .file), ByteCountFormatter.string(fromByteCount: expected, countStyle: .file))
-                taskProgress.setProgress(Float(min(1, Double(written) / Double(expected))), animated: false)
+                updateOverallProgress(downloadWeight * min(1, Double(written) / Double(expected)))
             } else {
                 taskDetail.text = written > 0 ? ByteCountFormatter.string(fromByteCount: written, countStyle: .file) + " …" : String(localizationKey: "Download_Starting")
-                taskProgress.isHidden = true
+                // Keep the track visible at the last measured value when size is unknown.
             }
         } else {
+            overallProgress = 0
             taskStage.text = String(localizationKey: "Queued_Package_Status")
             taskHeadline.text = String(localizationKey: "Task_Ready")
             taskDetail.text = String(format: String(localizationKey: "Task_Summary"), manager.installingPackages(), manager.uninstallingPackages())
         }
+        taskProgress.setProgress(Float(overallProgress), animated: false)
+        taskPercentage.text = "\(Int(overallProgress * 100))%"
         let downloadStage = isDownloading && !isInstalling && !isFinishedInstalling
         taskPrimaryButton.isHidden = !downloadStage
         taskPrimaryButton.isEnabled = downloadStage && !failed.isEmpty
@@ -354,13 +387,9 @@ class DownloadsTableViewController: SileoViewController {
         weak var cell: DownloadsTableViewCell?
         
         public var progress: CGFloat {
-            let progress = progressCounter / (type == .install ? 6.0 : 3.0)
-            if progress > 1.0 {
-                return 1.0
-            } else {
-                return progress
-            }
+            transactionProgress
         }
+        var transactionProgress: CGFloat = 0
         
         init(package: Package, type: ActionType) {
             self.package = package
@@ -457,7 +486,13 @@ class DownloadsTableViewController: SileoViewController {
         cancelDownload?.isHighlighted = completeButton?.isHighlighted ?? false
         completeLaterButton?.tintColor = .clear
         completeLaterButton?.isHighlighted = completeLaterButton?.isHighlighted ?? false
-        completeLaterButton?.setTitleColor(UINavigationBar.appearance().tintColor, for: .normal)
+        completeLaterButton?.setTitleColor(.secondaryLabel, for: .normal)
+        completeLaterButton?.layer.cornerRadius = 22
+        completeButton?.setTitleColor(.white, for: .normal)
+        if isFinishedInstalling {
+            showDetailsButton?.setTitleColor(.secondaryLabel, for: .normal)
+            showDetailsButton?.layer.cornerRadius = 22
+        }
  
         hideDetailsButton?.tintColor = UINavigationBar.appearance().tintColor
         hideDetailsButton?.isHighlighted = hideDetailsButton?.isHighlighted ?? false
@@ -508,7 +543,7 @@ class DownloadsTableViewController: SileoViewController {
         confirmButton?.isEnabled = manager.vars.errors.isEmpty
         confirmButton?.alpha = manager.vars.errors.isEmpty ? 1 : 0.5
         let visible = manager.operationCount() > 0 || !errors.isEmpty || isDownloading || isInstalling || isFinishedInstalling
-        footerViewHeight?.constant = visible ? (isFinishedInstalling && completeLaterButton?.isHidden == false ? 126 : 80) : 0
+        footerViewHeight?.constant = visible ? (isFinishedInstalling ? 132 : 80) : 0
         footerView?.alpha = visible ? 1 : 0
         refreshTaskPresentation()
     }
@@ -653,6 +688,8 @@ class DownloadsTableViewController: SileoViewController {
         }
         
         isDownloading = true
+        overallProgress = 0
+        aptProgress = 0
         installExitStatus = nil
         currentTaskStatus = nil
         currentOperationTitle = nil
@@ -700,7 +737,11 @@ class DownloadsTableViewController: SileoViewController {
             CanisterResolver.shared.ingest(packages: installs.map { $0.package })
         }
         let removals = uninstallations + uninstalldeps
-        self.actions += installs.map { Action(package: $0.package, type: .install) }
+        self.actions += installs.map {
+            let action = Action(package: $0.package, type: .install)
+            action.transactionProgress = 0.4
+            return action
+        }
         self.actions += removals.map { Action(package: $0.package, type: .removal) }
         
         for cell in tableView?.loadedCells ?? [] {
@@ -870,10 +911,21 @@ class DownloadsTableViewController: SileoViewController {
 
         let installedToRecord = (installations + upgrades + installdeps).map { $0.package }
         let removedToForget = (uninstallations + uninstalldeps).map { $0.package.package }
-        APTWrapper.performOperations(installs: installations + upgrades, removals: uninstallations + uninstalldeps, installDeps: installdeps, progressCallback: { _, statusValid, statusReadable, package in
+        APTWrapper.performOperations(installs: installations + upgrades, removals: uninstallations + uninstalldeps, installDeps: installdeps, progressCallback: { progress, statusValid, statusReadable, package in
             NSLog("SileoLog: progressCallback \(statusValid) \(package) \(statusReadable)")
             if statusValid {
-                self.statusWork(package: package, status: statusReadable)
+                DispatchQueue.main.async {
+                    if progress.isFinite {
+                        self.aptProgress = max(self.aptProgress, min(1, max(0, progress / 100)))
+                    }
+                    for action in self.actions {
+                        let base: CGFloat = action.type == .install ? 0.4 : 0
+                        action.transactionProgress = max(action.transactionProgress, min(0.99, base + (1 - base) * CGFloat(self.aptProgress)))
+                        action.cell?.updateStatus()
+                    }
+                    self.statusWork(package: package, status: statusReadable)
+                    self.refreshTaskPresentation()
+                }
             }
         }, outputCallback: { output, pipe in
             NSLog("SileoLog: apt outputCallback \(pipe):\(output)")
@@ -920,7 +972,10 @@ class DownloadsTableViewController: SileoViewController {
                 let updatesNotIgnored = rawUpdates.filter({ $0.1?.wantInfo != .hold })
                 UIApplication.shared.applicationIconBadgeNumber = updatesNotIgnored.count
                 
-                _ = self.actions.map { $0.progressCounter = 7 }
+                self.actions.forEach {
+                    if status == 0 { $0.transactionProgress = 1 }
+                    $0.progressCounter = 7
+                }
                 self.tableView?.reloadData()
                 
                 self.returnButtonAction = finish

@@ -19,6 +19,7 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
     private let statusLabel = UILabel()
     private let activityTrack = UIView()
     private let activityFill = UIView()
+    private let percentageLabel = UILabel()
     private var activityProgress: CGFloat = 0
     private var hasError = false
     private var isFirstInGroup = true
@@ -66,8 +67,12 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
     }
 
     public var download: Download? {
-        didSet { updateStatus() }
+        didSet {
+            if oldValue !== download { measuredDownloadProgress = 0 }
+            updateStatus()
+        }
     }
+    private var measuredDownloadProgress: CGFloat = 0
 
     public var errorDescription: String? {
         didSet { updateStatus() }
@@ -110,7 +115,9 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         activityTrack.clipsToBounds = true
         activityFill.layer.cornerRadius = 1.5
         activityTrack.addSubview(activityFill)
-        [nameLabel, versionLabel, statusLabel, activityTrack, retryButton, findDepButton].forEach {
+        percentageLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        percentageLabel.textAlignment = .right
+        [nameLabel, versionLabel, statusLabel, activityTrack, percentageLabel, retryButton, findDepButton].forEach {
             contentView.addSubview($0)
         }
 
@@ -194,9 +201,7 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         } else if let action = action {
             status = action.status ?? String(localizationKey: "Ready_Status")
             activityProgress = clampedProgress(action.progress)
-            // Actions are allocated for every item before apt starts. Only an
-            // item with actual status callbacks is active; completed ones hide.
-            activityTrack.isHidden = action.progressCounter <= 0 || activityProgress >= 1
+            activityTrack.isHidden = false
         } else if let download = download {
             // A failure must win over a stale conversion/download message.
             if let failure = download.failureReason, !failure.isEmpty {
@@ -204,13 +209,16 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 status = String(format: String(localizationKey: "Error_Indicator", type: .error), failure)
                 retryButton.isHidden = false
             } else if download.success && download.progress == 1 {
+                activityProgress = 0.4
+                activityTrack.isHidden = false
                 status = String(localizationKey: "Task_Downloaded")
             } else if download.started || download.message != nil {
                 let expected = download.totalBytesExpectedToWrite
                 if expected > 0 {
-                    activityProgress = clampedProgress(CGFloat(download.totalBytesWritten) / CGFloat(expected))
+                    measuredDownloadProgress = max(measuredDownloadProgress, 0.4 * clampedProgress(CGFloat(download.totalBytesWritten) / CGFloat(expected)))
                 }
-                activityTrack.isHidden = download.completed || expected <= 0 || download.message != nil
+                activityProgress = measuredDownloadProgress
+                activityTrack.isHidden = false
                 if let message = download.message, !message.isEmpty {
                     status = message
                 } else if download.totalBytesWritten > 0 {
@@ -227,6 +235,8 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
             }
         }
 
+        percentageLabel.isHidden = activityTrack.isHidden
+        percentageLabel.text = "\(Int(activityProgress * 100))%"
         subtitle = status // Preserve the original public subtitle contract.
         statusLabel.text = status
         statusLabel.numberOfLines = hasError ? 0 : 1
@@ -256,6 +266,7 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         nameLabel.textColor = .sileoLabel
         versionLabel.textColor = .secondaryLabel
         statusLabel.textColor = hasError ? .systemRed : (activityTrack.isHidden ? .secondaryLabel : SileoThemeManager.shared.tintColor)
+        percentageLabel.textColor = .secondaryLabel
         activityTrack.backgroundColor = .tertiarySystemFill
         activityFill.backgroundColor = SileoThemeManager.shared.tintColor
         retryButton.tintColor = SileoThemeManager.shared.tintColor
@@ -346,7 +357,8 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 statusLabel.textAlignment = rtl ? .left : .right
             }
         }
-        activityTrack.frame = frame(textX, height - (compact ? 6 : 12), textWidth, 3)
+        percentageLabel.frame = frame(end - 38, height - (compact ? 18 : 24), 38, 16)
+        activityTrack.frame = frame(textX, height - (compact ? 6 : 12), max(0, textWidth - 46), 3)
         // Logical leading edge also applies to the progress fill in RTL.
         let fillWidth = activityTrack.bounds.width * activityProgress
         activityFill.frame = CGRect(x: rtl ? activityTrack.bounds.width - fillWidth : 0,
