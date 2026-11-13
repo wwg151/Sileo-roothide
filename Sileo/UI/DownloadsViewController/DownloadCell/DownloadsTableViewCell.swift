@@ -50,6 +50,10 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         }
     }
 
+    public var isDependency = false {
+        didSet { updateVersion() }
+    }
+
     public var action: DownloadsTableViewController.Action? {
         didSet {
             // An old Action must not keep updating a recycled cell.
@@ -134,6 +138,7 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         super.prepareForReuse()
         configureGroupPosition(isFirst: true, isLast: true)
         action = nil
+        isDependency = false
         download = nil
         errorDescription = nil
         searchPackageKeyword = nil
@@ -162,6 +167,10 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         } else {
             versionLabel.text = package.version
         }
+        if isDependency {
+            versionLabel.text = (versionLabel.text ?? "") + " · " + String(localizationKey: "Task_Dependency")
+        }
+        setNeedsLayout()
     }
 
     private var queuedStatus: String {
@@ -194,11 +203,14 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 hasError = true
                 status = String(format: String(localizationKey: "Error_Indicator", type: .error), failure)
                 retryButton.isHidden = false
-            } else if download.success {
-                status = String(localizationKey: "Ready_Status")
+            } else if download.success && download.progress == 1 {
+                status = String(localizationKey: "Task_Downloaded")
             } else if download.started || download.message != nil {
-                activityProgress = clampedProgress(download.progress)
-                activityTrack.isHidden = download.completed
+                let expected = download.totalBytesExpectedToWrite
+                if expected > 0 {
+                    activityProgress = clampedProgress(CGFloat(download.totalBytesWritten) / CGFloat(expected))
+                }
+                activityTrack.isHidden = download.completed || expected <= 0 || download.message != nil
                 if let message = download.message, !message.isEmpty {
                     status = message
                 } else if download.totalBytesWritten > 0 {
@@ -321,10 +333,18 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 statusLabel.frame = frame(textX + versionWidth + gap, 29, textWidth - versionWidth - gap, 17)
             }
         } else {
-            versionLabel.frame = frame(textX, 35, textWidth, 17)
-            let statusX: CGFloat = hasError ? 24 : textX
-            statusLabel.frame = frame(statusX, hasError ? 62 : 54, max(0, end - statusX),
-                                      hasError ? max(0, height - 72) : 17)
+            versionLabel.frame = frame(textX, 39, textWidth, 17)
+            if hasError {
+                statusLabel.frame = frame(24, 62, max(0, end - 24), max(0, height - 72))
+            } else {
+                // Reserve a bounded trailing column so long names and status
+                // strings truncate independently instead of overlapping.
+                let statusWidth = min(textWidth * 0.44, statusLabel.sizeThatFits(CGSize(width: textWidth, height: 20)).width)
+                let gap: CGFloat = statusWidth > 0 ? 10 : 0
+                nameLabel.frame = frame(textX, 13, textWidth - statusWidth - gap, 20)
+                statusLabel.frame = frame(end - statusWidth, 15, statusWidth, 18)
+                statusLabel.textAlignment = rtl ? .left : .right
+            }
         }
         activityTrack.frame = frame(textX, height - (compact ? 6 : 12), textWidth, 3)
         // Logical leading edge also applies to the progress fill in RTL.

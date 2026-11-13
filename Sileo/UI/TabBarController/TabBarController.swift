@@ -229,6 +229,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// back with the height and the style it had when install first showed it.
     private func configurePopupBarForPresentation() {
         self.popupContentView.popupCloseButtonAutomaticallyUnobstructsTopBars = false
+        self.popupContentView.popupCloseButtonStyle = .none
         self.popupBar.toolbar.tag = WHITE_BLUR_TAG
         self.popupBar.barStyle = .prominent
         self.updateSileoColors()

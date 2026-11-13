@@ -39,6 +39,12 @@
 "Task_Retry_Failed" = "重试失败项";
 "Task_Install_Update" = "安装 / 更新";
 "Task_Downloaded" = "已下载";
+"Task_Dependency" = "依赖项";
+"Task_Step_Preparing" = "正在准备 %@";
+"Task_Step_Unpacking" = "正在解包 %@";
+"Task_Step_Configuring" = "正在配置 %@";
+"Task_Step_Removing" = "正在卸载 %@";
+"Task_Step_Triggers" = "正在处理 %@ 的触发器";
 
 "Source_Copied_To_Clipboard" = "已复制到剪切板";
 "Source_Lock" = "锁定";

@@ -85,7 +85,8 @@ class DownloadsTableViewController: SileoViewController {
     private let taskHeader = UIView()
     private let taskCard = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
     private let taskTitle = UILabel()
-    private let collapseTaskButton = UIButton(type: .system)
+    private let taskGrabberButton = UIButton(type: .custom)
+    private let taskGrabber = UIView()
     private let taskPrimaryButton = UIButton(type: .system)
     private let cancelFromLogButton = UIButton(type: .system)
     private let taskStage = UILabel()
@@ -108,10 +109,13 @@ class DownloadsTableViewController: SileoViewController {
         tableView?.contentInset = .zero
         tableView?.sectionHeaderTopPadding = 0
         taskHeader.addSubview(taskTitle)
-        taskHeader.addSubview(collapseTaskButton)
-        collapseTaskButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-        collapseTaskButton.accessibilityLabel = String(localizationKey: "Hide_Install_Details")
-        collapseTaskButton.addTarget(self, action: #selector(collapseTask), for: .touchUpInside)
+        taskGrabberButton.accessibilityLabel = String(localizationKey: "Hide_Install_Details")
+        taskGrabberButton.addTarget(self, action: #selector(collapseTask), for: .touchUpInside)
+        taskGrabber.isUserInteractionEnabled = false
+        taskGrabber.backgroundColor = .tertiaryLabel
+        taskGrabber.layer.cornerRadius = 2.5
+        taskGrabberButton.addSubview(taskGrabber)
+        view.addSubview(taskGrabberButton)
         taskPrimaryButton.layer.cornerRadius = 25
         taskPrimaryButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
         taskPrimaryButton.addTarget(self, action: #selector(retryFailedTasks), for: .touchUpInside)
@@ -175,12 +179,17 @@ class DownloadsTableViewController: SileoViewController {
     private func layoutTaskPresentation() {
         guard let table = tableView else { return }
         let width = table.bounds.width
+        taskGrabberButton.frame = CGRect(x: (view.bounds.width - 72) / 2, y: 0, width: 72, height: 44)
+        taskGrabber.frame = CGRect(x: 11, y: 16, width: 50, height: 5)
+        taskGrabberButton.isHidden = detailsView?.superview === view
+        if !taskGrabberButton.isHidden {
+            view.bringSubviewToFront(taskGrabberButton)
+        }
         if taskHeader.frame.width != width || taskHeader.frame.height != 268 {
             taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: 268)
             table.tableHeaderView = taskHeader
         }
-        taskTitle.frame = CGRect(x: 24, y: 46, width: max(0, width - 94), height: 38)
-        collapseTaskButton.frame = CGRect(x: width - 64, y: 43, width: 44, height: 44)
+        taskTitle.frame = CGRect(x: 24, y: 46, width: max(0, width - 48), height: 38)
         taskCard.frame = CGRect(x: 20, y: 108, width: width - 40, height: 146)
         let inner = taskCard.bounds.width - 40
         taskStage.frame = CGRect(x: 20, y: 17, width: inner - 28, height: 20)
@@ -262,7 +271,6 @@ class DownloadsTableViewController: SileoViewController {
         taskPrimaryButton.setTitle(String(localizationKey: failed.isEmpty ? "Downloading_Package_Status" : "Task_Retry_Failed"), for: .normal)
         taskPrimaryButton.backgroundColor = failed.isEmpty ? .tertiarySystemFill : color
         taskPrimaryButton.setTitleColor(failed.isEmpty ? .secondaryLabel : .white, for: .normal)
-        collapseTaskButton.tintColor = .secondaryLabel
         showDetailsButton?.setTitle(String(localizationKey: "Task_View_Log"), for: .normal)
         refreshDownloadLog()
         view.setNeedsLayout()
@@ -696,7 +704,24 @@ class DownloadsTableViewController: SileoViewController {
         }
         guard let action = actions.first(where: { $0.package.package == package }) else { return }
         action.progressCounter += 1
-        action.status = action.runningStatus
+        let step = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stepKey: String?
+        if step.hasPrefix("Preparing") {
+            stepKey = "Task_Step_Preparing"
+        } else if step.hasPrefix("Unpacking") {
+            stepKey = "Task_Step_Unpacking"
+        } else if step.hasPrefix("Configuring") || step.hasPrefix("Setting up") {
+            stepKey = "Task_Step_Configuring"
+        } else if step.hasPrefix("Removing") {
+            stepKey = "Task_Step_Removing"
+        } else if step.hasPrefix("Running") || step.hasPrefix("Processing triggers") {
+            stepKey = "Task_Step_Triggers"
+        } else {
+            stepKey = nil
+        }
+        action.status = stepKey.map {
+            String(format: String(localizationKey: $0), action.package.name ?? action.package.package)
+        } ?? action.runningStatus
         NSLog("SileoLog: action=\(action) cell=\(action.cell)")
         action.cell?.updateStatus()
         currentTaskStatus = action.status
@@ -970,12 +995,10 @@ class DownloadsTableViewController: SileoViewController {
         refreshDownloadLog()
         
         self.view.bringSubviewToFront(detailsView)
+        taskGrabberButton.isHidden = true
         FRUIView.animate(withDuration: 0.25) {
             self.detailsView?.alpha = 1
-        
             self.statusBarStyle = .lightContent
-            
-            TabBarController.singleton?.popupContentView.popupCloseButton.isHidden = true
         }
     }
     
@@ -984,10 +1007,10 @@ class DownloadsTableViewController: SileoViewController {
             self.detailsView?.alpha = 0
             
             self.statusBarStyle = UIDevice.current.userInterfaceIdiom == .pad ? .default : .lightContent
-            
-            TabBarController.singleton?.popupContentView.popupCloseButton.isHidden = false
         }, completion: { _ in
             self.detailsView?.removeFromSuperview()
+            self.taskGrabberButton.isHidden = false
+            self.view.setNeedsLayout()
         })
     }
 
@@ -1092,6 +1115,7 @@ extension DownloadsTableViewController: UITableViewDataSource {
             let package = taskGroups[indexPath.section][indexPath.row].package
             
             cell.package = package
+            cell.isDependency = (installdeps + uninstalldeps).contains { $0.package.package == package.package }
             cell.download = DownloadManager.shared.queuedDownload(package: package.package)
             cell.action = actions.first(where: { $0.package.package == package.package })
         }

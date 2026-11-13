@@ -40,6 +40,12 @@
 "Task_Retry_Failed" = "Retry failed downloads";
 "Task_Install_Update" = "Install / Update";
 "Task_Downloaded" = "Downloaded";
+"Task_Dependency" = "Dependency";
+"Task_Step_Preparing" = "Preparing %@";
+"Task_Step_Unpacking" = "Unpacking %@";
+"Task_Step_Configuring" = "Configuring %@";
+"Task_Step_Removing" = "Removing %@";
+"Task_Step_Triggers" = "Processing triggers for %@";
 "Source_Copied_To_Clipboard" = "Copied to clipboard";
 "Source_Lock" = "Lock";
 "Source_Unlock" = "Unlock";
