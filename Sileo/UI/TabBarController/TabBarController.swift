@@ -689,6 +689,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// The tab the pill was last put on, so a change made without the delegate
     /// call — the search tab is the app's own control — still slides.
     private var lastPillIndex: Int?
+    private var pillAnimationGeneration = 0
     private var floatingAppearance: UITabBarAppearance?
     private var floatingItemWidth: CGFloat = 0
     private var floatingRefreshPending = false
@@ -775,20 +776,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// capsule, so it can slide from one tab to the next.
     private func ensureSelectionPill(in container: UIView, above blur: UIView) {
         guard selectionPill == nil else { return }
-        let pill = UIView()
+        let pill = SileoTabGlassView()
+        pill.captureExclusionView = tabBar
         pill.isUserInteractionEnabled = false
-        pill.backgroundColor = selectionPillColor()
         container.insertSubview(pill, aboveSubview: blur)
         selectionPill = pill
-    }
-
-    private func selectionPillColor() -> UIColor {
-        if traitCollection.userInterfaceStyle == .dark {
-            return UIColor.white.withAlphaComponent(0.12)
-        }
-        // Already translucent on its own (16% gray in light mode), so the pill
-        // stays flat and light instead of turning solid.
-        return UIColor.secondarySystemFill
     }
 
     /// Puts the pill on the selected tab, springing over from the old one when
@@ -841,30 +833,42 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         if index == 0 { x = gap }
         if index == itemCount - 1 { x = container.bounds.width - gap - width }
         let target = CGRect(x: x, y: gap, width: width, height: height)
-        pill.backgroundColor = selectionPillColor()
         // A tab can change without the delegate telling us — the search tab is
         // the app's own control — so the pill slides whenever the tab it was
         // last put on is not the one selected now.
         let changed = lastPillIndex != nil && lastPillIndex != index
         lastPillIndex = index
-        if animated || changed {
-            selectionPillTarget = target
-            UIView.animate(withDuration: 0.45,
-                           delay: 0,
-                           usingSpringWithDamping: 0.8,
-                           initialSpringVelocity: 0,
-                           options: [.beginFromCurrentState, .allowUserInteraction]) {
-                pill.frame = target
-                pill.layer.cornerRadius = target.height / 2
-            }
+        if selectionPillTarget == target, !changed, !animated { return }
+        pillAnimationGeneration += 1
+        let generation = pillAnimationGeneration
+        selectionPillTarget = target
+        if let presentation = pill.layer.presentation() {
+            pill.frame = presentation.frame
+        }
+        pill.layer.removeAllAnimations()
+        if (animated || changed), !UIAccessibility.isReduceMotionEnabled {
+            // Travel as a taller droplet, then settle into the horizontal pill.
+            let dropletHeight = container.bounds.height + 6
+            let dropletWidth = min(width, dropletHeight * 1.15)
+            let droplet = CGRect(x: target.midX - dropletWidth / 2,
+                                 y: target.midY - dropletHeight / 2,
+                                 width: dropletWidth, height: dropletHeight)
+            UIView.animate(withDuration: 0.22, delay: 0,
+                           usingSpringWithDamping: 0.82, initialSpringVelocity: 0,
+                           options: [.beginFromCurrentState, .allowUserInteraction], animations: {
+                pill.frame = droplet
+                pill.layer.cornerRadius = dropletHeight / 2
+            }, completion: { [weak self, weak pill] _ in
+                guard let self = self, let pill = pill,
+                      self.pillAnimationGeneration == generation else { return }
+                UIView.animate(withDuration: 0.38, delay: 0,
+                               usingSpringWithDamping: 0.68, initialSpringVelocity: 0,
+                               options: [.beginFromCurrentState, .allowUserInteraction]) {
+                    pill.frame = target
+                    pill.layer.cornerRadius = target.height / 2
+                }
+            })
         } else {
-            // A layout pass lands while the pill is still on its way: leave it
-            // alone, or the slide is cut short and the pill jumps to the end.
-            let inFlight = !(pill.layer.animationKeys()?.isEmpty ?? true)
-            if inFlight, selectionPillTarget == target {
-                return
-            }
-            selectionPillTarget = target
             pill.frame = target
             pill.layer.cornerRadius = target.height / 2
         }
@@ -964,7 +968,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             container.layer.shadowOpacity = 0.2
             container.layer.shadowRadius = 10
             container.layer.shadowOffset = CGSize(width: 0, height: 4)
-            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+            let blur = SileoTabGlassView()
+            blur.captureExclusionView = tabBar
             blur.tag = 1
             blur.clipsToBounds = true
             blur.layer.cornerCurve = .continuous

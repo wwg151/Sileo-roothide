@@ -10,6 +10,7 @@
 #import "ZKSwizzle.h"
 #import "WhiteBlur.h"
 #import "Sileo-Swift.h"
+#import "SileoTabGlass.inc"
 
 @interface _UIVisualEffectFilterEntry : NSObject
 - (NSString *)filterName;
