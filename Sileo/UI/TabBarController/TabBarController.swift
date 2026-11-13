@@ -508,21 +508,33 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private static let popupCapsuleMaskKey = malloc(1)!
     private static let popupCapsuleMaterialKey = malloc(1)!
 
-    /// Replace only the toolbar's material, underneath all queue controls.
+    private static let popupToolbarBackdropKey = malloc(1)!
+    private static let popupToolbarBackdropHiddenKey = malloc(1)!
+
+    /// Keep the full capsule outside the toolbar's smaller backdrop bounds.
     /// The popup bar's geometry remains owned by LNPopupController.
     private static func updatePopupCapsuleMaterial(for bar: LNPopupBar, enabled: Bool) {
         var material = objc_getAssociatedObject(bar, popupCapsuleMaterialKey) as? SileoTabGlassView
-        guard enabled else {
+        // Restore the original toolbar material when the capsule is disabled
+        // or UIKit replaces its backdrop during a style change.
+        let backdrop = bar.toolbar.subviews.first(where: {
+            NSStringFromClass(type(of: $0)).contains("BarBackground")
+        })
+        let previous = objc_getAssociatedObject(bar, popupToolbarBackdropKey) as? UIView
+        if let previous = previous, !enabled || previous !== backdrop {
+            previous.isHidden = (objc_getAssociatedObject(bar, popupToolbarBackdropHiddenKey) as? NSNumber)?.boolValue ?? false
+            objc_setAssociatedObject(bar, popupToolbarBackdropKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        guard enabled, let host = bar.toolbar.superview else {
             material?.removeFromSuperview()
             return
         }
-        // UIKit keeps the toolbar's backdrop separate from its buttons.
-        // If that structure changes, leave the original background intact.
-        guard let backdrop = bar.toolbar.subviews.first(where: {
-            NSStringFromClass(type(of: $0)).contains("BarBackground")
-        }) else {
-            material?.removeFromSuperview()
-            return
+        if let backdrop = backdrop {
+            if previous !== backdrop {
+                objc_setAssociatedObject(bar, popupToolbarBackdropKey, backdrop, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                objc_setAssociatedObject(bar, popupToolbarBackdropHiddenKey, NSNumber(value: backdrop.isHidden), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            backdrop.isHidden = true
         }
         if material == nil {
             let fresh = SileoTabGlassView()
@@ -530,12 +542,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             material = fresh
         }
         guard let material = material else { return }
-        if material.superview !== backdrop {
-            backdrop.addSubview(material)
+        if material.superview !== host {
+            host.insertSubview(material, at: 0)
+        } else {
+            host.sendSubviewToBack(material)
         }
         let rect = bar.bounds.insetBy(dx: 10, dy: 0)
-        material.frame = backdrop.convert(rect, from: bar)
-        backdrop.bringSubviewToFront(material)
+        // Only the decorative view is resized; never change the bar or toolbar.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        material.frame = host.convert(rect, from: bar)
+        material.layoutIfNeeded()
+        CATransaction.commit()
     }
 
     static func updateCapsuleMask(for bar: LNPopupBar) {
