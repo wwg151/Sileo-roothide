@@ -777,7 +777,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private func ensureSelectionPill(in container: UIView, above blur: UIView) {
         guard selectionPill == nil else { return }
         let pill = SileoTabGlassView()
-        pill.captureExclusionView = tabBar
         // A little thicker than the bar, so the capsule still reads on top of
         // the frosted material instead of melting into it.
         pill.frostEmphasis = 1
@@ -972,7 +971,6 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             container.layer.shadowRadius = 10
             container.layer.shadowOffset = CGSize(width: 0, height: 4)
             let blur = SileoTabGlassView()
-            blur.captureExclusionView = tabBar
             blur.tag = 1
             blur.clipsToBounds = true
             blur.layer.cornerCurve = .continuous
