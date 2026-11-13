@@ -778,6 +778,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         guard selectionPill == nil else { return }
         let pill = SileoTabGlassView()
         pill.captureExclusionView = tabBar
+        // A little thicker than the bar, so the capsule still reads on top of
+        // the frosted material instead of melting into it.
+        pill.frostEmphasis = 1
         pill.isUserInteractionEnabled = false
         container.insertSubview(pill, aboveSubview: blur)
         selectionPill = pill

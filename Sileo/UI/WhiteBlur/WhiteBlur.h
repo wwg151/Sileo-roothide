@@ -11,9 +11,11 @@
 // wash: the menus' glass cards use it.
 #define GLASS_BLUR_TAG ((long)0x676c6173)
 
-/// App-local glass: samples only Sileo's content underneath the tab bar.
+/// App-local frosted glass: samples only Sileo's content underneath the bar.
+/// `frostEmphasis` (0…1) thickens the material, for the selection capsule.
 @interface SileoTabGlassView : UIView
 @property (nonatomic, weak) UIView *captureExclusionView;
+@property (nonatomic, assign) CGFloat frostEmphasis;
 @end
 
 @interface UIView (Hairline)
