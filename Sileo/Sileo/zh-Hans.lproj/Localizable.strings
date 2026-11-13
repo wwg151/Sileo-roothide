@@ -325,6 +325,10 @@
 
 /* 备份恢复 */
 "Backup_Restore" = "备份恢复";
+"Backup_Risk_Title" = "备份恢复风险提示";
+"Backup_Risk_Message" = "备份内容可能不完整。恢复插件包、配置或插件源可能覆盖现有数据、引发冲突或导致越狱环境不稳定，跨设备、跨越狱环境恢复不保证兼容。请另行保存重要数据，并在恢复前确认兼容性。点击“同意”表示你已了解上述风险并自愿继续使用。";
+"Backup_Risk_Disagree" = "不同意";
+"Backup_Risk_Agree" = "同意";
 "Backup_All_Packages" = "全部插件备份";
 "Backup_Select_Packages" = "选择插件备份";
 "Backup_Configuration" = "配置备份";

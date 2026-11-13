@@ -461,18 +461,51 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         ]
     }
 
+    private static let backupRiskConsentKey = "BackupRestoreRiskAccepted"
+
+    /// Only explicit agreement unlocks the backup/restore entry points.
+    private func requestBackupConsent(then proceed: @escaping () -> Void) {
+        guard !UserDefaults.standard.bool(forKey: Self.backupRiskConsentKey) else {
+            proceed()
+            return
+        }
+        guard presentedViewController == nil else { return }
+        let panel = SileoPanelViewController.confirm(
+            title: String(localizationKey: "Backup_Risk_Title"),
+            message: String(localizationKey: "Backup_Risk_Message"),
+            confirmTitle: String(localizationKey: "Backup_Risk_Agree"),
+            cancelTitle: String(localizationKey: "Backup_Risk_Disagree")
+        ) { [weak self] in
+            UserDefaults.standard.set(true, forKey: Self.backupRiskConsentKey)
+            self?.refreshBackupMenu()
+            proceed()
+        }
+        panel.present(from: self)
+    }
+
     /// The button's card, opened where the button is.
     @objc private func presentBackupCard(_ sender: UIButton) {
-        present(SileoActionMenu(header: nil,
-                                items: backupMenuItems(),
-                                sourceFrame: sender.convert(sender.bounds, to: nil)),
-                animated: true)
+        requestBackupConsent { [weak self, weak sender] in
+            guard let self = self, let sender = sender else { return }
+            self.present(SileoActionMenu(header: nil,
+                                        items: self.backupMenuItems(),
+                                        sourceFrame: sender.convert(sender.bounds, to: nil)),
+                         animated: true)
+        }
     }
 
     /// The system's own menu when hairlines are wanted, Sileo's card otherwise.
     @objc private func refreshBackupMenu() {
         guard let button = navigationItem.rightBarButtonItem?.customView as? UIButton else { return }
         button.removeTarget(self, action: #selector(presentBackupCard(_:)), for: .touchUpInside)
+        // A primary-action UIMenu bypasses touchUpInside, so do not attach
+        // it until the warning has been explicitly accepted.
+        guard UserDefaults.standard.bool(forKey: Self.backupRiskConsentKey) else {
+            button.menu = nil
+            button.showsMenuAsPrimaryAction = false
+            button.addTarget(self, action: #selector(presentBackupCard(_:)), for: .touchUpInside)
+            return
+        }
         let attached = SileoActionMenu.attachMenu(to: button, header: nil) { [weak self] in
             self?.backupMenuItems() ?? []
         }
@@ -482,6 +515,12 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {
+        requestBackupConsent { [weak self] in
+            self?.presentAcceptedBackupMenu(sender)
+        }
+    }
+
+    private func presentAcceptedBackupMenu(_ sender: Any?) {
         let alert = UIAlertController(title: String(localizationKey: "Backup_Restore"),
                                       message: nil,
                                       preferredStyle: .actionSheet)

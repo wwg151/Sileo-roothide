@@ -319,6 +319,10 @@
 
 /* Backup and restore */
 "Backup_Restore" = "Backup & Restore";
+"Backup_Risk_Title" = "Backup & Restore Risks";
+"Backup_Risk_Message" = "Backups may be incomplete. Restoring packages, configuration or sources may overwrite existing data, cause conflicts or make your jailbreak environment unstable. Compatibility across devices and jailbreak environments is not guaranteed. Keep a separate copy of important data and check compatibility before restoring. By agreeing, you acknowledge these risks and choose to continue.";
+"Backup_Risk_Disagree" = "Disagree";
+"Backup_Risk_Agree" = "Agree";
 "Backup_All_Packages" = "Back Up All Packages";
 "Backup_Select_Packages" = "Back Up Selected Packages";
 "Backup_Configuration" = "Backup Configuration";

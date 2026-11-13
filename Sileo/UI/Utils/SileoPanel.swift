@@ -736,6 +736,7 @@ extension SileoPanelViewController {
                         message: String,
                         confirmTitle: String,
                         destructive: Bool = true,
+                        cancelTitle: String = String(localizationKey: "Cancel"),
                         onConfirm: @escaping () -> Void) -> SileoPanelViewController {
         let panel = SileoPanelViewController()
 
@@ -780,7 +781,7 @@ extension SileoPanelViewController {
         panel.table.setItems([SileoPanelTable.Item(block)])
 
         // 取消 on the left, the answer on the right, both the same width.
-        let cancel = capsuleButton(title: String(localizationKey: "Cancel"), filled: false) { [weak panel] in
+        let cancel = capsuleButton(title: cancelTitle, filled: false) { [weak panel] in
             panel?.close()
         }
         let accept = capsuleButton(title: confirmTitle,
