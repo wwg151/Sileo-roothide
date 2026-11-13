@@ -369,7 +369,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                       let item = self.downloadsController?.popupItem else { return }
                 var displayed = result
                 // aptFinished means the process exited, including a failed exit.
-                if finished && self.downloadsController?.presentationHasFailed == true {
+                if finished && DownloadManager.shared.viewController.presentationHasFailed {
                     displayed.title = String(localizationKey: "Download_Errors_Heading") + " · " + countText
                     displayed.symbol = "exclamationmark"
                     displayed.failed = true
