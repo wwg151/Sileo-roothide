@@ -11,7 +11,7 @@
 // wash: the menus' glass cards use it.
 #define GLASS_BLUR_TAG ((long)0x676c6173)
 
-/// Opaque frosted material, adapting to the effective light/dark appearance.
+/// Glass-like highlights over an opaque base, following light/dark appearance.
 /// `frostEmphasis` (0…1) distinguishes the selection capsule from the bar.
 @interface SileoTabGlassView : UIView
 @property (nonatomic, assign) CGFloat frostEmphasis;
