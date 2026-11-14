@@ -1,4 +1,4 @@
-name: Build Sileo (roothide)
+name: Build Sileo (roothide and rootless)
 
 on:
   push:
@@ -63,12 +63,15 @@ jobs:
           dpkg-deb --version | head -1
           ldid 2>&1 | head -1 || true
 
-      - name: Build iphoneos-arm64e (roothide)
+      - name: Build ${{ matrix.arch }} (${{ matrix.bootstrap }})
         shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
         run: |
+          set -euo pipefail
+          make clean DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM="$TARGET_ARCH"
           set +e
-          set -o pipefail
-          make clean package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=${{ matrix.arch }} V=1 2>&1 | tee build.log
+          make package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM="$TARGET_ARCH" V=1 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             # Surface the compiler errors as annotations: the run page shows
@@ -78,8 +81,12 @@ jobs:
             done
             exit "$status"
           fi
+          set -e
           mkdir -p out
-          cp packages/*.deb out/
+          packages=(packages/*_"$TARGET_ARCH".deb)
+          test "${#packages[@]}" -eq 1
+          test -f "${packages[0]}"
+          cp "${packages[0]}" out/
 
       - name: Report failure
         if: failure()
@@ -97,6 +104,15 @@ jobs:
           else
             echo "::error::no build.log was written"
           fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.bootstrap }}
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Verify packages
         shell: bash
