@@ -29,6 +29,18 @@ final class Download {
         self.session = session
     }
     
+    /// Shared by the transaction summary and individual rows. Cached downloads
+    /// have no byte callbacks; servers may omit Content-Length entirely.
+    var presentationProgress: CGFloat {
+        if success && progress == 1 { return 1 }
+        let expected = totalBytesExpectedToWrite > 0
+            ? totalBytesExpectedToWrite : (Int64(package.size ?? "") ?? 0)
+        if expected > 0 {
+            return min(1, max(0, CGFloat(totalBytesWritten) / CGFloat(expected)))
+        }
+        return progress.isFinite ? min(1, max(0, progress)) : 0
+    }
+
     func beginBackgroundTask() {
         self.backgroundTask = UIApplication.shared.beginBackgroundTask(expirationHandler: {
 //just let the task pending in background            self.task?.cancel()

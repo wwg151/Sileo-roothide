@@ -149,7 +149,8 @@ class DownloadsTableViewController: SileoViewController {
         taskDetail.textColor = .secondaryLabel
         taskDetail.numberOfLines = 2
         taskPercentage.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-        taskPercentage.textAlignment = .right
+        taskPercentage.textAlignment = .center
+        taskProgress.semanticContentAttribute = .forceLeftToRight
         taskPercentage.textColor = .secondaryLabel
         taskProgress.layer.cornerRadius = 2
         taskProgress.clipsToBounds = true
@@ -228,7 +229,9 @@ class DownloadsTableViewController: SileoViewController {
         stageActivity.frame = CGRect(x: inner + 1, y: 17, width: 20, height: 20)
         taskHeadline.frame = CGRect(x: 20, y: taskStage.frame.maxY + 7, width: inner, height: headlineHeight)
         taskDetail.frame = CGRect(x: 20, y: taskHeadline.frame.maxY + 3, width: inner, height: detailHeight)
-        taskPercentage.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 6, width: inner, height: 18)
+        let percentageWidth = min(inner, max(36, ceil(taskPercentage.intrinsicContentSize.width)))
+        let percentageX = max(0, min(inner - percentageWidth, inner * CGFloat(overallProgress) - percentageWidth / 2))
+        taskPercentage.frame = CGRect(x: 20 + percentageX, y: taskDetail.frame.maxY + 6, width: percentageWidth, height: 18)
         taskProgress.frame = CGRect(x: 20, y: taskPercentage.frame.maxY + 6, width: inner, height: 4)
         taskCard.frame = CGRect(x: 20, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 14)
         let headerHeight = taskCard.frame.maxY + 14
@@ -286,6 +289,14 @@ class DownloadsTableViewController: SileoViewController {
             overallProgress = 1
         } else if isInstalling {
             updateOverallProgress(downloadWeight + (1 - downloadWeight) * aptProgress)
+        } else if isDownloading {
+            // Include queued packages as zero and cached packages as complete.
+            // One missing Content-Length must not freeze the entire transaction.
+            let count = max(manager.installingPackages(), downloads.count)
+            if count > 0 {
+                let completed = downloads.reduce(0.0) { $0 + Double($1.presentationProgress) }
+                updateOverallProgress(downloadWeight * completed / Double(count))
+            }
         }
         if isFinishedInstalling {
             taskStage.text = String(localizationKey: blocked ? "Task_Attention" : "Done")
@@ -311,10 +322,9 @@ class DownloadsTableViewController: SileoViewController {
             let knownSize = downloads.count == manager.installingPackages() && downloads.allSatisfy { $0.totalBytesExpectedToWrite > 0 }
             if knownSize && expected > 0 {
                 taskDetail.text = String(format: String(localizationKey: "Download_Progress"), ByteCountFormatter.string(fromByteCount: written, countStyle: .file), ByteCountFormatter.string(fromByteCount: expected, countStyle: .file))
-                updateOverallProgress(downloadWeight * min(1, Double(written) / Double(expected)))
             } else {
                 taskDetail.text = written > 0 ? ByteCountFormatter.string(fromByteCount: written, countStyle: .file) + " …" : String(localizationKey: "Download_Starting")
-                // Keep the track visible at the last measured value when size is unknown.
+                // Byte totals are informational; progress is aggregated per package above.
             }
         } else {
             overallProgress = 0

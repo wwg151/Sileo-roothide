@@ -213,10 +213,7 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 activityTrack.isHidden = false
                 status = String(localizationKey: "Task_Downloaded")
             } else if download.started || download.message != nil {
-                let expected = download.totalBytesExpectedToWrite
-                if expected > 0 {
-                    measuredDownloadProgress = max(measuredDownloadProgress, 0.4 * clampedProgress(CGFloat(download.totalBytesWritten) / CGFloat(expected)))
-                }
+                measuredDownloadProgress = max(measuredDownloadProgress, 0.4 * download.presentationProgress)
                 activityProgress = measuredDownloadProgress
                 activityTrack.isHidden = false
                 if let message = download.message, !message.isEmpty {
@@ -339,9 +336,12 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 statusLabel.frame = frame(textX, 27, textWidth, max(0, height - 31))
             } else {
                 let versionWidth = min(textWidth * 0.42, versionLabel.sizeThatFits(CGSize(width: textWidth, height: 18)).width)
-                versionLabel.frame = frame(textX, 29, versionWidth, 17)
+                // Leave a dedicated line above the bar for its moving label.
+                let metadataY: CGFloat = activityTrack.isHidden ? 29 : 25
+                let metadataHeight: CGFloat = activityTrack.isHidden ? 17 : 14
+                versionLabel.frame = frame(textX, metadataY, versionWidth, metadataHeight)
                 let gap: CGFloat = versionWidth > 0 ? 8 : 0
-                statusLabel.frame = frame(textX + versionWidth + gap, 29, textWidth - versionWidth - gap, 17)
+                statusLabel.frame = frame(textX + versionWidth + gap, metadataY, textWidth - versionWidth - gap, metadataHeight)
             }
         } else {
             versionLabel.frame = frame(textX, 39, textWidth, 17)
@@ -357,12 +357,14 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 statusLabel.textAlignment = rtl ? .left : .right
             }
         }
-        percentageLabel.frame = frame(end - 38, height - (compact ? 18 : 24), 38, 16)
-        activityTrack.frame = frame(textX, height - (compact ? 6 : 12), max(0, textWidth - 46), 3)
-        // Logical leading edge also applies to the progress fill in RTL.
+        activityTrack.frame = frame(textX, height - (compact ? 6 : 12), textWidth, 3)
         let fillWidth = activityTrack.bounds.width * activityProgress
-        activityFill.frame = CGRect(x: rtl ? activityTrack.bounds.width - fillWidth : 0,
-                                    y: 0, width: fillWidth, height: 3)
+        activityFill.frame = CGRect(x: 0, y: 0, width: fillWidth, height: 3)
+        let labelWidth = min(textWidth, 38)
+        let labelX = max(0, min(textWidth - labelWidth, fillWidth - labelWidth / 2))
+        percentageLabel.textAlignment = .center
+        percentageLabel.frame = CGRect(x: activityTrack.frame.minX + labelX,
+                                       y: activityTrack.frame.minY - 18, width: labelWidth, height: 16)
     }
 
     @objc public func retryDownload() {
