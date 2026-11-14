@@ -1,6 +1,5 @@
 #!/bin/sh
-# Writes Sileo's distribution package for roothide, the one target this
-# project ships.
+# Writes Sileo's distribution package for the selected bootstrap.
 #
 # The Swift app is compiled by GitHub Actions (.github/workflows/build.yml),
 # because this device has no Xcode and cannot build it. This script takes the
@@ -10,7 +9,9 @@
 #
 # Input, first that exists:
 #   $SILEO_INPUT_DEB                    an explicit .deb path
-#   dl/<anything>_iphoneos-arm64e.deb   the newest CI package
+#   dl/<anything>_<architecture>.deb   newest matching CI package by mtime
+# Rootless requires a real iphoneos-arm64 build with /var/jb payload;
+# this script does not convert roothide binaries into rootless binaries.
 # Keep the payload in step with the version: layout/version and the app
 # target's MARKETING_VERSION in Sileo.xcodeproj are bumped together.
 set -eu
@@ -35,13 +36,23 @@ if [ -z "${PACKAGE_VERSION}" ]; then
     exit 1
 fi
 
-# This project ships a roothide package only.
-if [ "${APELIN_BOOTSTRAP}" != "roothide" ]; then
-    echo "error: this project builds roothide only, not '${APELIN_BOOTSTRAP}'" >&2
-    exit 1
-fi
-if [ "${APELIN_ARCHITECTURE}" != "iphoneos-arm64e" ]; then
-    echo "error: the roothide package is iphoneos-arm64e, not ${APELIN_ARCHITECTURE}" >&2
+case "${APELIN_BOOTSTRAP}" in
+    roothide)
+        expected_arch=iphoneos-arm64e
+        expected_prefix=
+        ;;
+    rootless)
+        expected_arch=iphoneos-arm64
+        expected_prefix=/var/jb
+        ;;
+    *)
+        echo "error: unsupported bootstrap '${APELIN_BOOTSTRAP}'" >&2
+        exit 1
+        ;;
+esac
+if [ "${APELIN_ARCHITECTURE}" != "${expected_arch}" ] ||
+   [ "${APELIN_PREFIX}" != "${expected_prefix}" ]; then
+    echo "error: ${APELIN_BOOTSTRAP} requires architecture ${expected_arch} and prefix '${expected_prefix}'" >&2
     exit 1
 fi
 
@@ -49,7 +60,9 @@ input="${SILEO_INPUT_DEB:-}"
 if [ -z "${input}" ]; then
     for candidate in "${APELIN_PROJECT_ROOT:?}"/dl/*_"${APELIN_ARCHITECTURE}".deb; do
         if [ -f "${candidate}" ]; then
-            input="${candidate}"
+            if [ -z "${input}" ] || [ "${candidate}" -nt "${input}" ]; then
+                input="${candidate}"
+            fi
         fi
     done
 fi
