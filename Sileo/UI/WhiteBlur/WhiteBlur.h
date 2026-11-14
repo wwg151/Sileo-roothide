@@ -15,6 +15,7 @@
 /// `frostEmphasis` (0…1) distinguishes the selection capsule from the bar.
 @interface SileoTabGlassView : UIView
 @property (nonatomic, assign) CGFloat frostEmphasis;
+@property (nonatomic, assign) BOOL flatSurface;
 @end
 
 @interface UIView (Hairline)

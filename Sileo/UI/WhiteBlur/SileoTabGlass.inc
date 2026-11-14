@@ -88,6 +88,17 @@
                     (id)[UIColor colorWithWhite:1 alpha:dark ? 0.08 : 0.24].CGColor,
                     (id)[UIColor colorWithWhite:0 alpha:dark ? 0.28 : 0.12].CGColor,
                     (id)[UIColor colorWithWhite:1 alpha:dark ? 0.20 : 0.65].CGColor];
+    if (self.flatSurface) {
+        CGFloat base = dark ? 0.16 + emphasis * 0.09 : 0.97 - emphasis * 0.07;
+        self.backgroundColor = [UIColor colorWithWhite:base alpha:1];
+        _surface.colors = @[(id)self.backgroundColor.CGColor, (id)self.backgroundColor.CGColor];
+        _surface.locations = @[@0, @1];
+        _sheen.hidden = YES;
+        _lowerGlow.hidden = YES;
+        UIColor *edge = [UIColor colorWithWhite:1 alpha:dark ? 0.10 : 0.65];
+        _rim.colors = @[(id)edge.CGColor, (id)edge.CGColor];
+        _rim.locations = @[@0, @1];
+    }
     [CATransaction commit];
 }
 @end

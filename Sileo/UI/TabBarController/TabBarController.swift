@@ -950,6 +950,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private func ensureSelectionPill(in container: UIView, above blur: UIView) {
         guard selectionPill == nil else { return }
         let pill = SileoTabGlassView()
+        pill.flatSurface = true
         // A little thicker than the bar, so the capsule still reads on top of
         // the frosted material instead of melting into it.
         pill.frostEmphasis = 1
@@ -1014,35 +1015,17 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let changed = lastPillIndex != nil && lastPillIndex != index
         lastPillIndex = index
         if selectionPillTarget == target, !changed, !animated { return }
-        pillAnimationGeneration += 1
-        let generation = pillAnimationGeneration
         selectionPillTarget = target
-        if let presentation = pill.layer.presentation() {
-            pill.frame = presentation.frame
-        }
+        let currentCenter = pill.layer.presentation()?.position ?? pill.center
         pill.layer.removeAllAnimations()
+        pill.bounds = CGRect(origin: .zero, size: target.size)
+        pill.layer.cornerRadius = target.height / 2
+        pill.center = CGPoint(x: currentCenter.x, y: target.midY)
         if (animated || changed), !UIAccessibility.isReduceMotionEnabled {
-            // Travel as a taller droplet, then settle into the horizontal pill.
-            let dropletHeight = container.bounds.height + 6
-            let dropletWidth = min(width, dropletHeight * 1.15)
-            let droplet = CGRect(x: target.midX - dropletWidth / 2,
-                                 y: target.midY - dropletHeight / 2,
-                                 width: dropletWidth, height: dropletHeight)
-            UIView.animate(withDuration: 0.22, delay: 0,
-                           usingSpringWithDamping: 0.82, initialSpringVelocity: 0,
-                           options: [.beginFromCurrentState, .allowUserInteraction], animations: {
-                pill.frame = droplet
-                pill.layer.cornerRadius = dropletHeight / 2
-            }, completion: { [weak self, weak pill] _ in
-                guard let self = self, let pill = pill,
-                      self.pillAnimationGeneration == generation else { return }
-                UIView.animate(withDuration: 0.38, delay: 0,
-                               usingSpringWithDamping: 0.68, initialSpringVelocity: 0,
-                               options: [.beginFromCurrentState, .allowUserInteraction]) {
-                    pill.frame = target
-                    pill.layer.cornerRadius = target.height / 2
-                }
-            })
+            UIView.animate(withDuration: 0.32, delay: 0,
+                           options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
+                pill.center = CGPoint(x: target.midX, y: target.midY)
+            }
         } else {
             pill.frame = target
             pill.layer.cornerRadius = target.height / 2
@@ -1140,6 +1123,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             let container = UIView()
             container.isUserInteractionEnabled = false
             let blur = SileoTabGlassView()
+            blur.flatSurface = true
             blur.tag = 1
             blur.clipsToBounds = true
             blur.layer.cornerCurve = .continuous
