@@ -251,11 +251,14 @@ class DownloadsTableViewController: SileoViewController {
         cancelDownload?.frame = secondary
         completeLaterButton?.frame = CGRect(x: 20, y: 74, width: max(0, (w - 48) / 2), height: 44)
         if isFinishedInstalling {
-            completeButton?.frame = CGRect(x: 20, y: 14, width: max(0, w - 40), height: 50)
-            if completeLaterButton?.isHidden == false {
-                showDetailsButton?.frame = CGRect(x: w / 2 + 4, y: 74, width: max(0, (w - 48) / 2), height: 44)
-            } else {
-                showDetailsButton?.frame = CGRect(x: 20, y: 74, width: max(0, w - 40), height: 44)
+            let buttonWidth = min(340, max(0, w - 40))
+            let buttonX = (w - buttonWidth) / 2
+            var buttonY: CGFloat = 14
+            for button in [completeButton, completeLaterButton, showDetailsButton].compactMap({ $0 }) where !button.isHidden {
+                let height: CGFloat = button === completeButton ? 50 : 44
+                button.frame = CGRect(x: buttonX, y: buttonY, width: buttonWidth, height: height)
+                button.contentHorizontalAlignment = .center
+                buttonY += height + 10
             }
         }
     }
@@ -539,11 +542,17 @@ class DownloadsTableViewController: SileoViewController {
         cancelDownload?.isHidden = true
         completeButton?.isHidden = !isFinishedInstalling
         completeLaterButton?.isHidden = !isFinishedInstalling || completeLaterButton?.alpha == 0
-        showDetailsButton?.isHidden = !isDownloading && !isInstalling && !isFinishedInstalling
+        if isFinishedInstalling {
+            showDetailsButton?.isHidden = installExitStatus == 0
+        } else {
+            showDetailsButton?.isHidden = !isDownloading && !isInstalling
+        }
         confirmButton?.isEnabled = manager.vars.errors.isEmpty
         confirmButton?.alpha = manager.vars.errors.isEmpty ? 1 : 0.5
         let visible = manager.operationCount() > 0 || !errors.isEmpty || isDownloading || isInstalling || isFinishedInstalling
-        footerViewHeight?.constant = visible ? (isFinishedInstalling ? 132 : 80) : 0
+        let completionSecondaryCount = [completeLaterButton, showDetailsButton].compactMap({ $0 }).filter { !$0.isHidden }.count
+        let completionHeight = CGFloat(78 + 54 * completionSecondaryCount)
+        footerViewHeight?.constant = visible ? (isFinishedInstalling ? completionHeight : 80) : 0
         footerView?.alpha = visible ? 1 : 0
         refreshTaskPresentation()
     }
@@ -992,7 +1001,6 @@ class DownloadsTableViewController: SileoViewController {
                 self.refreshSileo = refresh
                 self.updateCompleteButton()
                 self.completeButton?.alpha = 1
-                self.showDetailsButton?.isHidden = false
                 self.completeLaterButton?.alpha = shouldShow(finish) ? 1 : 0
                 
                 self.reloadControlsOnly()
