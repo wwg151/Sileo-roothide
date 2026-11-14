@@ -18,7 +18,15 @@ const char *getBuildtimeAppPath(void) {
     const char *path = NULL;
 #ifndef MAC
     
-#ifdef PREBOOT
+#ifdef SILEO_ROOTLESS
+#ifdef NIGHTLY
+    path = "/var/jb/Applications/Sileo-Nightly.app/Sileo";
+#elif BETA
+    path = "/var/jb/Applications/Sileo-Beta.app/Sileo";
+#else
+    path = "/var/jb/Applications/Sileo.app/Sileo";
+#endif
+#elif defined(PREBOOT)
     
 #ifdef NIGHTLY
     path = "/var/jb/Applications/Sileo-Nightly.app/Sileo-Preboot";
@@ -55,7 +63,8 @@ void patch_setuid() {
     typedef void (*fix_setuid_prt_t)(pid_t pid);
     fix_setuid_prt_t ptr = (fix_setuid_prt_t)dlsym(handle, "jb_oneshot_fix_setuid_now");
     
-    ptr(getpid());
+    if (ptr) ptr(getpid());
+    dlclose(handle);
     
     setuid(0);
 }

@@ -124,6 +124,7 @@ final class BackupManager {
 
     private let rootURL = URL(fileURLWithPath: "/var/mobile/Documents", isDirectory: true)
     private let legacyFolderPrefix = "Sileo备份_"
+
     private let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -556,9 +557,9 @@ final class BackupManager {
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
-            // Tweak preferences live in the bootstrap's own /var/mobile/Library,
-            // not the system's: on roothide that is the jbroot's.
-            let libraryParent = "\(CommandPath.prefix)/var/mobile"
+            // Roothide preferences live inside its bootstrap; rootless preferences
+            // remain in the system mobile home.
+            let libraryParent = CommandPath.configurationHome
             let archive = folder.configurationURL.appendingPathComponent("Library.tar")
             try? fileManager.removeItem(at: archive)
             let (status, _, errorOutput) = spawnAsRoot(args: [
@@ -595,7 +596,7 @@ final class BackupManager {
                 DispatchQueue.main.async { completion(.failure(BackupError.nothingToRestore)) }
                 return
             }
-            let libraryParent = "\(CommandPath.prefix)/var/mobile"
+            let libraryParent = CommandPath.configurationHome
             guard !self.isCancelled else {
                 DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
                 return

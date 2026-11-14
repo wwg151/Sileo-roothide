@@ -26,6 +26,10 @@ else ifeq ($(NIGHTLY), 1)
 endif
 
 
+ifeq ($(SILEO_PLATFORM),iphoneos-arm64)
+	CFLAGS += -DSILEO_ROOTLESS=1
+endif
+
 ifeq ($(PREBOOT), 1)
 	CFLAGS += -D PREBOOT
 endif

@@ -72,7 +72,7 @@ enum RootlessConverter {
     """
 
     static func isConvertible(package: Package) -> Bool {
-        guard let architecture = package.architecture,
+        guard Bootstrap.roothide, let architecture = package.architecture,
               [DPKGArchitecture.Architecture.rootless.rawValue, DPKGArchitecture.Architecture.rootful.rawValue].contains(architecture)
         else { return false }
         return isConvertible(identifier: package.package, maintainer: package.rawControl["maintainer"])
@@ -87,6 +87,7 @@ enum RootlessConverter {
 
     /// Converts `deb` into a roothide package written to `output`. Blocking; call off the main thread.
     static func convert(deb: URL, to output: URL) throws {
+        guard Bootstrap.roothide else { throw Failure.notConvertible }
         let fm = FileManager.default
         let ldid = CommandPath.prefix + "/usr/bin/ldid"
         guard fm.fileExists(atPath: ldid) else { throw Failure.missingTool("ldid") }

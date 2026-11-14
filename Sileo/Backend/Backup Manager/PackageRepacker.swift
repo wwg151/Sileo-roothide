@@ -217,7 +217,7 @@ final class PackageRepacker {
             let relative = String(path.dropFirst())
             guard !relative.isEmpty else { continue }
             var info = stat()
-            guard lstat("\(CommandPath.prefix)/\(relative)", &info) == 0 else { continue }
+            guard lstat("\(CommandPath.packageFilesystemRoot)/\(relative)", &info) == 0 else { continue }
             relativePaths.append(relative)
         }
         guard !relativePaths.isEmpty else { throw RepackError.noFiles }
@@ -239,7 +239,7 @@ final class PackageRepacker {
         var materialised: [String] = []
         for relative in relativePaths {
             var info = stat()
-            guard lstat("\(CommandPath.prefix)/\(relative)", &info) == 0 else { continue }
+            guard lstat("\(CommandPath.packageFilesystemRoot)/\(relative)", &info) == 0 else { continue }
             if info.st_mode & S_IFMT == S_IFLNK, parents.contains(relative) {
                 materialised.append(relative)
             } else {
@@ -260,7 +260,7 @@ final class PackageRepacker {
 
         let (createStatus, _, createError) = spawnAsRoot(args: [
             tarPath, "-cf", rootfs(archive.path),
-            "-C", rootfs(CommandPath.prefix),
+            "-C", rootfs(CommandPath.packageFilesystemRoot),
             "--no-recursion", "--ignore-failed-read", "-T", rootfs(listURL.path)
         ])
         guard createStatus == 0 else {

@@ -668,6 +668,10 @@ func preferredPackage(old: Package, new: Package) -> Bool {
 
 
 func checkRootHide(_ package: Package) -> Bool {
+    if !Bootstrap.roothide {
+        return package.architecture == "all"
+            || package.architecture == DpkgWrapper.architecture.primary.rawValue
+    }
 
 //        NSLog("SileoLog: package.rawControl=\(package.rawControl)")
 //        var found=false

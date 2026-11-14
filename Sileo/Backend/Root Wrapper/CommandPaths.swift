@@ -24,6 +24,24 @@ public class CommandPath {
         #endif
     }()
 
+    // PATH is interpreted by bootstrap tools, which use a virtual root on roothide.
+    static var processSearchPath: String {
+        if Bootstrap.roothide {
+            return "/usr/bin:/rootfs/usr/bin:/usr/local/bin:/rootfs/usr/local/bin:/bin:/rootfs/bin:/usr/sbin:/rootfs/usr/sbin"
+        }
+        return "\(prefix)/usr/bin:\(prefix)/usr/local/bin:\(prefix)/bin:\(prefix)/usr/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+    }
+
+    static var configurationHome: String {
+        Bootstrap.roothide ? "\(prefix)/var/mobile" : "/var/mobile"
+    }
+
+    // dpkg lists are relative to the virtual root on roothide, but already
+    // include /var/jb on rootless. Preserve that prefix in rebuilt packages.
+    static var packageFilesystemRoot: String {
+        Bootstrap.roothide ? prefix : "/"
+    }
+
     // swiftlint:disable identifier_name
     static var mv: String = {
         if Jailbreak.bootstrap == .procursus {

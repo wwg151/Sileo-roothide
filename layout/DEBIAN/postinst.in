@@ -1,5 +1,5 @@
 #!/bin/sh
-sourcesDir="/etc/apt/sources.list.d"
+sourcesDir="@@PREFIX@@/etc/apt/sources.list.d"
 
 finish() {
 	f="${1}"
@@ -19,11 +19,16 @@ finish() {
 
 case "$1" in
 	(configure)
-		rm -rf $sourcesDir/../preferences.d/checkra1n
+		rm -rf "${sourcesDir:?}/../preferences.d/checkra1n"
+		if [ -z "${SILEO}" ]; then
+			@@PREFIX@@/usr/bin/uicache -p "@@PREFIX@@/Applications/@@SILEO_APP@@"
+		else
+			finish uicache
+		fi
 		exit 0
 		;;
 	(triggered)
-		if [ "$2" = "/Library/MobileSubstrate/DynamicLibraries" ]; then
+		if [ "$2" = "@@PREFIX@@/Library/MobileSubstrate/DynamicLibraries" ]; then
 			finish restart
 			exit 0
 		fi
@@ -38,6 +43,6 @@ case "$1" in
 esac
 
 if [ -z "${SILEO}" ]; then echo "Not running in Sileo. Trigger UICache"; fi
-if [ -z "${SILEO}" ]; then uicache -p /Applications/@@SILEO_APP@@; fi
+if [ -z "${SILEO}" ]; then @@PREFIX@@/usr/bin/uicache -p "@@PREFIX@@/Applications/@@SILEO_APP@@"; fi
 
 exit 0

@@ -21,7 +21,15 @@ env:
 
 jobs:
   build:
-    name: Build iphoneos-arm64e
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: iphoneos-arm64e
+            bootstrap: roothide
+          - arch: iphoneos-arm64
+            bootstrap: rootless
     runs-on: xcode-27
     timeout-minutes: 90
 
@@ -60,7 +68,7 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          make clean package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=iphoneos-arm64e V=1 2>&1 | tee build.log
+          make clean package DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=${{ matrix.arch }} V=1 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             # Surface the compiler errors as annotations: the run page shows
@@ -95,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           cd out
-          arch=iphoneos-arm64e
+          arch=${{ matrix.arch }}
           deb="$(ls ./*_"$arch".deb)"
           test "$(dpkg-deb -f "$deb" Architecture)" = "$arch"
           echo "$deb: $(dpkg-deb -f "$deb" Package) $(dpkg-deb -f "$deb" Version) [$arch]"
@@ -105,7 +113,7 @@ jobs:
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: sileo-roothide
+          name: sileo-${{ matrix.bootstrap }}
           path: |
             out/*.deb
             out/SHA256SUMS
@@ -113,6 +121,7 @@ jobs:
           retention-days: 30
 
       - name: Publish deb to GitHub Releases
+        if: matrix.bootstrap == 'roothide'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

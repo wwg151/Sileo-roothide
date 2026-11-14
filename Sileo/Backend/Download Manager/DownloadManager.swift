@@ -1080,7 +1080,7 @@ final class DownloadManager {
         if queue != .uninstallations && queue != .uninstalldeps {
             if !checkRootHide(package) {
                 
-                if package.tags.contains(.roothide) && FileManager.default.fileExists(atPath: jbroot("/usr/lib/libroot.dylib")) {
+                if Bootstrap.roothide && package.tags.contains(.roothide) && FileManager.default.fileExists(atPath: jbroot("/usr/lib/libroot.dylib")) {
                     NSLog("SileoLog: roothide suppport: \(package.package)")
                     self.downloadDeb(package:package, msg: String(localizationKey: "Loading"), handler: self.checkRootlessV2)
                     return

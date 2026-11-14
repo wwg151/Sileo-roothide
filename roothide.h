@@ -17,6 +17,19 @@
 extern "C" {
 #endif
 
+#if defined(SILEO_ROOTLESS) && SILEO_ROOTLESS
+// Rootless tools use kernel paths directly; only bootstrap-owned logical
+// paths need /var/jb. Keep already-prefixed dpkg paths unchanged.
+#ifdef __OBJC__
+static inline NSString* _Nonnull __attribute__((overloadable)) jbroot(NSString* _Nonnull path) {
+    if ([path isEqualToString:@"/var/jb"] || [path hasPrefix:@"/var/jb/"]) return path;
+    return [@"/var/jb" stringByAppendingString:path];
+}
+static inline NSString* _Nonnull __attribute__((overloadable)) rootfs(NSString* _Nonnull path) {
+    return path;
+}
+#endif
+#else
 const char* rootfs_alloc(const char* path);  /* free after use */
 const char* jbroot_alloc(const char* path); /* free after use */
 const char* jbrootat_alloc(int fd, const char* path); /* free after use */
@@ -36,6 +49,8 @@ const char* rootfs(const char* path);
 NSString* _Nonnull __attribute__((overloadable)) jbroot(NSString* _Nonnull path);
 NSString* _Nonnull  __attribute__((overloadable)) rootfs(NSString* _Nonnull path);
 #endif
+
+#endif // SILEO_ROOTLESS
 
 #ifdef __cplusplus
 }

@@ -24,6 +24,10 @@ ALDERIS_PATCH = $(CURDIR)/patches/alderis-ios26-tab.patch
 # Platform to build for.
 SILEO_PLATFORM ?= iphoneos-arm
 PREFIX ?=
+BOOTSTRAP_BUILD_FLAGS =
+ifeq ($(SILEO_PLATFORM),iphoneos-arm64)
+BOOTSTRAP_BUILD_FLAGS = SILEO_BOOTSTRAP_LDFLAGS= 'GCC_PREPROCESSOR_DEFINITIONS=$$(inherited) SILEO_ROOTLESS=1' 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$$(inherited) SILEO_ROOTLESS'
+endif
 
 ifeq ($(SILEO_PLATFORM),iphoneos-arm)
 ARCH            = arm64
@@ -229,7 +233,7 @@ stage: patch-deps all
 	@set -o pipefail; \
 		xcodebuild -jobs $(shell sysctl -n hw.ncpu) -project 'Sileo.xcodeproj' -scheme "$(SCHEME)" -configuration $(BUILD_CONFIG) -arch $(ARCH) -sdk $(PLATFORM) -derivedDataPath $(SILEOTMP) \
 		-disableAutomaticPackageResolution \
-		CODE_SIGNING_ALLOWED=NO PRODUCT_BUNDLE_IDENTIFIER=$(PRODUCT_BUNDLE_IDENTIFIER) DISPLAY_NAME=$(DISPLAY_NAME) \
+		CODE_SIGNING_ALLOWED=NO $(BOOTSTRAP_BUILD_FLAGS) PRODUCT_BUNDLE_IDENTIFIER=$(PRODUCT_BUNDLE_IDENTIFIER) DISPLAY_NAME=$(DISPLAY_NAME) \
 		DSTROOT=$(SILEOTMP)/install $(XCPRETTY) ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=NO
 	@rm -rf $(SILEO_STAGE_DIR)/
 	@mkdir -p $(SILEO_STAGE_DIR)/$(PREFIX)/Applications/
@@ -298,7 +302,9 @@ package: stage
 		-e 's/@@DEB_DEPENDS@@/$(DEB_DEPENDS)/' $(SILEO_STAGE_DIR)/DEBIAN/control.in > $(SILEO_STAGE_DIR)/DEBIAN/control
 	@rm -f $(SILEO_STAGE_DIR)/DEBIAN/control.in
 	@sed -e s/@@SILEO_APP@@/$(SILEO_APP)/ \
+		-e 's|@@PREFIX@@|$(PREFIX)|g' \
 		$(SILEO_STAGE_DIR)/DEBIAN/postinst.in > $(SILEO_STAGE_DIR)/DEBIAN/postinst
+	@sed 's|/Library/MobileSubstrate|$(PREFIX)/Library/MobileSubstrate|g' layout/DEBIAN/triggers > $(SILEO_STAGE_DIR)/DEBIAN/triggers
 	@chmod 0755 $(SILEO_STAGE_DIR)/DEBIAN/postinst
 	@rm -f $(SILEO_STAGE_DIR)/DEBIAN/postinst.in
 	@rm -rf $(SILEO_STAGE_DIR)/DEBIAN/postinst-mac.in

@@ -47,7 +47,11 @@ enum Jailbreak: String, Codable {
     case other = "Other"
     case simulator = "Simulator"
     
+    #if SILEO_ROOTLESS
+    case dopamine = "Dopamine"
+    #else
     case dopamine = "Dopamine-roothide"
+    #endif
     
     case BOOTSTRAP = "Bootstrap"
     
@@ -81,7 +85,7 @@ enum Jailbreak: String, Codable {
         //check palehide first
         let palehide = URL(fileURLWithPath: jbroot("/.installed_palera1n"))
         if palehide.exists {
-            self = .palehide
+            self = Bootstrap.roothide ? .palehide : .palera1n_rootless
             return
         }
         

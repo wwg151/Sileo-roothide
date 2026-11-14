@@ -306,7 +306,7 @@ class APTWrapper {
             }
 
             //apt will overwrite PATH for dpkg
-            let environment = ["SILEO=6 1", "CYDIA=6 1", "PATH=/usr/bin:/rootfs/usr/bin:/usr/local/bin:/rootfs/usr/local/bin:/bin:/rootfs/bin:/usr/sbin:/rootfs/usr/sbin", "LANG=C"]
+            let environment = ["SILEO=6 1", "CYDIA=6 1", "PATH=\(CommandPath.processSearchPath)", "LANG=C"]
             let env: [UnsafeMutablePointer<CChar>?] = environment.map { $0.withCString(strdup) }
             defer {
                 for case let key? in env {

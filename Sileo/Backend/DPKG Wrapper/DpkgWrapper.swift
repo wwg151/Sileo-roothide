@@ -84,8 +84,8 @@ class DpkgWrapper {
         return defaultArchitectures
         #else
         
-        //acc
-        return defaultArchitectures
+        // Keep roothide's compatibility architecture policy; query native dpkg elsewhere.
+        if Bootstrap.roothide { return defaultArchitectures }
         
         let (localStatus, localArchs, _) = spawn(command: CommandPath.dpkg, args: ["dpkg", "--print-architecture"])
         guard localStatus == 0 else {

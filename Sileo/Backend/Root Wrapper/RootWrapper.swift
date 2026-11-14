@@ -154,7 +154,7 @@ final public class MacRootWrapper {
     let spawnStatus = posix_spawn(&pid, command, &fileActions, nil, argv + [nil], proenv + [nil])
     #else
     // Weird problem with a weird workaround
-    let env = [ "PATH=/usr/bin:/rootfs/usr/bin:/usr/local/bin:/rootfs/usr/local/bin:/bin:/rootfs/bin:/usr/sbin:/rootfs/usr/sbin", "LANG=C" ] //the output JSON of apt may be localized so that sileo can't parse, here we forece set it to en_US.UTF-8
+    let env = [ "PATH=\(CommandPath.processSearchPath)", "LANG=C" ] //the output JSON of apt may be localized so that sileo can't parse, here we forece set it to en_US.UTF-8
     let envp: [UnsafeMutablePointer<CChar>?] = env.map { $0.withCString(strdup) }
     defer { for case let env? in envp { free(env) } }
     
