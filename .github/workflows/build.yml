@@ -160,11 +160,17 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-        - name: Download build artifacts
+        - name: Download roothide artifacts
           uses: actions/download-artifact@v4
           with:
             name: sileo-roothide
-            path: debs
+            path: debs/roothide
+
+        - name: Download rootless artifacts
+          uses: actions/download-artifact@v4
+          with:
+            name: sileo-rootless
+            path: debs/rootless
 
         - name: Checkout repo
           uses: actions/checkout@v4
@@ -179,7 +185,7 @@ jobs:
           run: |
             set -euo pipefail
             mkdir -p website/debs
-            cp debs/*.deb website/debs/
+            cp debs/roothide/*.deb debs/rootless/*.deb website/debs/
             ls -la website/debs/ | grep -i sileo
 
         - name: Commit and push
@@ -197,7 +203,7 @@ jobs:
               echo "No changes to deploy."
               exit 0
             fi
-            git commit -m "chore: update Sileo-roothide debs (${{ github.sha }})"
+            git commit -m "chore: update Sileo debs (${{ github.sha }})"
             # The repository's own workflow pushes an index commit on every deb it
             # sees, so the branch has usually moved on by the time this runs: the
             # commit is put on top of the current main and the push retried.
