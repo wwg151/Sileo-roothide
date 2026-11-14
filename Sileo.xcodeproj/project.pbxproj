@@ -1175,6 +1175,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C32000000000000000000001 /* zh_CN */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh_CN; path = Sileo/zh_CN.lproj/Categories.strings; sourceTree = "<group>"; };
+		C32000000000000000000002 /* zh_CN */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh_CN; path = Sileo/zh_CN.lproj/Errors.strings; sourceTree = "<group>"; };
+		C32000000000000000000003 /* zh_CN */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh_CN; path = Sileo/zh_CN.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		C32000000000000000000004 /* zh_CN */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = zh_CN; path = Sileo/zh_CN.lproj/Localizable.strings; sourceTree = "<group>"; };
+		C32000000000000000000005 /* zh_CN */ = {isa = PBXFileReference; lastKnownFileType = text.plist.stringsdict; name = zh_CN; path = Sileo/zh_CN.lproj/Localizable.stringsdict; sourceTree = "<group>"; };
 		A1F0C0DE0000000000000002 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Sileo/zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		A1F0C0DE0000000000000003 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "Sileo/zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		A1C0DE0000000000000000B1 /* MachOPatcher.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MachOPatcher.swift; sourceTree = "<group>"; };
@@ -3559,6 +3564,7 @@
 				cs,
 				da,
 				"zh-Hans",
+				zh_CN,
 				pt,
 				nl,
 				el,
@@ -4769,6 +4775,7 @@
 			isa = PBXVariantGroup;
 			children = (
 				A1F0C0DE0000000000000002 /* zh-Hans */,
+				C32000000000000000000003 /* zh_CN */,
 				A1F0C0DE0000000000000003 /* zh-Hant */,
 			);
 			name = InfoPlist.strings;
@@ -4794,6 +4801,7 @@
 				1B2E137E26162D6D005C380C /* cs */,
 				1B2E138226162DF1005C380C /* da */,
 				1B2E138626162E2C005C380C /* zh-Hans */,
+				C32000000000000000000004 /* zh_CN */,
 				1B2E138A26162EDE005C380C /* pt */,
 				1B2E138E26162EFF005C380C /* nl */,
 				1B2E139226162FB3005C380C /* el */,
@@ -4834,6 +4842,7 @@
 				1B2E137D26162D6D005C380C /* cs */,
 				1B2E138126162DF1005C380C /* da */,
 				1B2E138526162E2C005C380C /* zh-Hans */,
+				C32000000000000000000002 /* zh_CN */,
 				1B2E138926162EDE005C380C /* pt */,
 				1B2E138D26162EFF005C380C /* nl */,
 				1B2E139126162FB3005C380C /* el */,
@@ -4874,6 +4883,7 @@
 				1B2E137C26162D6D005C380C /* cs */,
 				1B2E138026162DF1005C380C /* da */,
 				1B2E138426162E2C005C380C /* zh-Hans */,
+				C32000000000000000000001 /* zh_CN */,
 				1B2E138826162EDE005C380C /* pt */,
 				1B2E138C26162EFF005C380C /* nl */,
 				1B2E139026162FB2005C380C /* el */,
@@ -4914,6 +4924,7 @@
 				1B2E137F26162D6E005C380C /* cs */,
 				1B2E138326162DF1005C380C /* da */,
 				1B2E138726162E2C005C380C /* zh-Hans */,
+				C32000000000000000000005 /* zh_CN */,
 				1B2E138B26162EDE005C380C /* pt */,
 				1B2E138F26162EFF005C380C /* nl */,
 				1B2E139326162FB3005C380C /* el */,
