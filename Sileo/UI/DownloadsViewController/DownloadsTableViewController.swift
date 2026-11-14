@@ -855,6 +855,15 @@ class DownloadsTableViewController: SileoViewController {
         completeLaterButton?.isEnabled = false
         let finish = returnButtonAction
         let refresh = refreshSileo
+        let restartRequested = finish == .reload || finish == .restart || finish == .reboot || finish == .usreboot
+        let clearedRestartReminder = restartRequested && refresh
+            && UserDefaults.standard.bool(forKey: "uicacheRequired")
+        // Persist before requesting a restart: success terminates this process,
+        // so there may never be a completion callback to clear the reminder.
+        if clearedRestartReminder {
+            UserDefaults.standard.set(false, forKey: "uicacheRequired")
+            UserDefaults.standard.synchronize()
+        }
         // Keep the window visible and the main thread responsive if a helper fails.
         DispatchQueue.global(qos: .userInitiated).async {
             var result: (Int, String, String) = (0, "", "")
@@ -881,9 +890,12 @@ class DownloadsTableViewController: SileoViewController {
             }
             let commandStatus = result.0
             let commandError = result.2
-            let restartRequested = finish == .reload || finish == .restart || finish == .reboot || finish == .usreboot
             let delay: TimeInterval = commandStatus == 0 && restartRequested ? 3 : 0
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if clearedRestartReminder {
+                    UserDefaults.standard.set(true, forKey: "uicacheRequired")
+                    UserDefaults.standard.synchronize()
+                }
                 self.isFired = false
                 self.completeButton?.isEnabled = true
                 self.completeLaterButton?.isEnabled = true
