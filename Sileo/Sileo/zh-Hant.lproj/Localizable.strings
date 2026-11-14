@@ -305,3 +305,18 @@
 "No_Broken_Sources" = "沒有損壞的來源";
 "Broken_Sources_Removed" = "已移除損壞的來源";
 "Broken_Sources_Refreshing" = "來源仍在載入或重新整理中，請完成後再試。";
+
+/* Batch import and removed source history */
+"Batch_Import_Packages" = "批次匯入插件";
+"Batch_Import_Packages_No_Deb" = "未選取 .deb 檔案。";
+"Batch_Import_Packages_Failed" = "無法讀取所選插件，已略過 %lu 個檔案。";
+"Batch_Import_Packages_Reading" = "正在讀取插件…";
+"Batch_Import_Packages_Queued" = "已將 %lu 個插件加入佇列";
+"Removed_Sources_Title" = "已移除的越獄來源紀錄";
+"Removed_Sources_Header_Count" = "共 %lu 個已移除的越獄來源，勾選後點選下方按鈕即可還原。";
+"Removed_Sources_Empty" = "尚無紀錄。向左滑動移除的越獄來源會儲存在這裡，可隨時重新加入。";
+"Removed_Sources_Add" = "加入越獄來源";
+"Removed_Sources_Add_Count" = "還原（%lu）";
+"Removed_Sources_Forget" = "刪除紀錄";
+"Removed_Sources_Add_Failed" = "無法加入所選的越獄來源。";
+"Select_All" = "全選";
