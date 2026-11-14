@@ -849,52 +849,60 @@ class DownloadsTableViewController: SileoViewController {
             return
         }
         
+        guard !isFired else { return }
         isFired = true
-        setNeedsStatusBarAppearanceUpdate()
-        
-        let window = UIApplication.shared.keyWindow
-
-        let animator = UIViewPropertyAnimator(duration: 0.3, dampingRatio: 1) {
-            window?.alpha = 0
-            window?.transform = .init(scaleX: 0.9, y: 0.9)
-        }
-
-        // When the animation has finished, fire the dumb respring code
-        animator.addCompletion { _ in
+        completeButton?.isEnabled = false
+        completeLaterButton?.isEnabled = false
+        let finish = returnButtonAction
+        let refresh = refreshSileo
+        // Keep the window visible and the main thread responsive if a helper fails.
+        DispatchQueue.global(qos: .userInitiated).async {
+            var result: (Int, String, String) = (0, "", "")
             
             //1: at least since iOS16, "uicache -p sileo.app" will kill the sileo process (when only the bundle mtime changed)
             //2: rebooting userspace immediately after executing uicache may cause jailbreak apps to disappear
             
-            switch self.returnButtonAction {
-                case .uicache:
-                    spawnAsRoot(args:[jbroot("/usr/bin/uicache"), "-a"])
-                
-                case .reload, .restart:
-                    spawnAsRoot(args:[jbroot("/usr/bin/sbreload")])
-                
-                case .reboot, .usreboot:
-                    spawnAsRoot(args:[jbroot("/usr/bin/sync")])
-                    spawnAsRoot(args:[jbroot("/usr/bin/launchctl"), "reboot", "userspace"])
-                
-                case .reopen:
-                    if self.refreshSileo {
+            switch finish {
+            case .uicache:
+                result = spawnAsRoot(args: [jbroot("/usr/bin/uicache"), "-a"])
+            case .reload, .restart:
+                result = spawnAsRoot(args: [jbroot("/usr/bin/sbreload")])
+            case .reboot, .usreboot:
+                spawnAsRoot(args: [jbroot("/usr/bin/sync")])
+                result = spawnAsRoot(args: [jbroot("/usr/bin/launchctl"), "reboot", "userspace"])
+            case .reopen, .back:
+                if refresh {
+                    result = spawnAsRoot(args: [jbroot("/usr/bin/uicache"), "-p", rootfs(Bundle.main.bundlePath)])
+                    if result.0 == 0 {
                         UserDefaults.standard.setValue(false, forKey: "uicacheRequired")
-                        UserDefaults.standard.synchronize()
-                        spawnAsRoot(args:[jbroot("/usr/bin/uicache"), "-p", rootfs(Bundle.main.bundlePath)])
                     }
-                    exit(0)
-                
-                default:
-                    if self.refreshSileo {
-                        UserDefaults.standard.setValue(false, forKey: "uicacheRequired")
-                        UserDefaults.standard.synchronize()
-                        spawnAsRoot(args:[jbroot("/usr/bin/uicache"), "-p", rootfs(Bundle.main.bundlePath)])
-                        exit(0)
-                    }
+                }
+                if result.0 == 0 && (finish == .reopen || refresh) { exit(0) }
+            }
+            let commandStatus = result.0
+            let commandError = result.2
+            let restartRequested = finish == .reload || finish == .restart || finish == .reboot || finish == .usreboot
+            let delay: TimeInterval = commandStatus == 0 && restartRequested ? 3 : 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                self.isFired = false
+                self.completeButton?.isEnabled = true
+                self.completeLaterButton?.isEnabled = true
+                self.setNeedsStatusBarAppearanceUpdate()
+                if commandStatus == 0 && (finish == .uicache || finish == .back) {
+                    self.queueCompleted()
+                } else {
+                    // A restart normally terminates this process. If it returns,
+                    // keep the completion screen available for a manual retry.
+                    let alert = UIAlertController(
+                        title: String(localizationKey: "Task_Attention"),
+                        message: String(localizationKey: "Task_Finish_Action_Failed")
+                            + (commandError.isEmpty ? "" : "\n" + commandError),
+                        preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: String(localizationKey: "Done"), style: .default))
+                    self.present(alert, animated: true)
+                }
             }
         }
-        // Fire the animation
-        animator.startAnimation()
     }
     
     @IBAction private func completeLaterButtonTapped(_ sender: Any?) {

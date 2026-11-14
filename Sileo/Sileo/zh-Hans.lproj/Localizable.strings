@@ -28,6 +28,7 @@
 "Task_Title_Removal" = "卸载";
 "Task_Title_Mixed" = "下载、安装与卸载";
 "Task_Attention" = "需要处理";
+"Task_Finish_Action_Failed" = "收尾操作未完成。你可以点击完成按钮重试，或稍后再处理。";
 "Task_Install_Issue" = "安装结果需要检查";
 "Task_Completed" = "所有任务已完成";
 "Task_Check_Log" = "请查看安装日志，确认问题后再继续。";

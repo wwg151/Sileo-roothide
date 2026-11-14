@@ -505,7 +505,10 @@ class APTWrapper {
 
             var status: Int32 = 0
             waitpid(pid, &status, 0)
-            var refreshSileo = false
+            // A same-version reinstall may leave the app scan unchanged.
+            let ownPackageID = FeaturedInfoFooterView.package?.package ?? "org.coolstar.sileo"
+            let reinstallsSileo = (installs + installDeps).contains { $0.package.package == ownPackageID }
+            var refreshSileo = status == 0 && reinstallsSileo
             
             let newApps = dictionaryOfScannedApps()
             var difference = Set<String>()
@@ -540,6 +543,10 @@ class APTWrapper {
                 }
             }
 
+            // uicache can terminate Sileo before it requests the restart.
+            if status == 0 && refreshSileo && finish.rawValue < FINISH.restart.rawValue {
+                finish = .restart
+            }
             spawnAsRoot(args: [CommandPath.aptget, "clean"])
             for file in DownloadManager.shared.vars.cachedDownloadFiles.raw {
                 deleteFileAsRoot(file)

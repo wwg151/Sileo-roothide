@@ -29,6 +29,7 @@
 "Task_Title_Removal" = "Uninstall";
 "Task_Title_Mixed" = "Downloads, Installation & Removal";
 "Task_Attention" = "Needs attention";
+"Task_Finish_Action_Failed" = "The completion action did not finish. You can retry using the completion button or return later.";
 "Task_Install_Issue" = "Installation needs review";
 "Task_Completed" = "All tasks completed";
 "Task_Check_Log" = "Check the installation log before continuing.";
