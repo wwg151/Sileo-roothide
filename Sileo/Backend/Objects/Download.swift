@@ -31,14 +31,20 @@ final class Download {
     
     /// Shared by the transaction summary and individual rows. Cached downloads
     /// have no byte callbacks; servers may omit Content-Length entirely.
-    var presentationProgress: CGFloat {
+    var presentationExpectedBytes: Int64 {
+        max(0, totalBytesExpectedToWrite > 0
+            ? totalBytesExpectedToWrite : (Int64(package.size ?? "") ?? 0))
+    }
+
+    var presentationWrittenBytes: Int64 {
+        if success && progress == 1 { return presentationExpectedBytes }
+        return min(presentationExpectedBytes, max(0, totalBytesWritten))
+    }
+
+    var presentationProgress: CGFloat? {
         if success && progress == 1 { return 1 }
-        let expected = totalBytesExpectedToWrite > 0
-            ? totalBytesExpectedToWrite : (Int64(package.size ?? "") ?? 0)
-        if expected > 0 {
-            return min(1, max(0, CGFloat(totalBytesWritten) / CGFloat(expected)))
-        }
-        return progress.isFinite ? min(1, max(0, progress)) : 0
+        guard presentationExpectedBytes > 0 else { return nil }
+        return CGFloat(presentationWrittenBytes) / CGFloat(presentationExpectedBytes)
     }
 
     func beginBackgroundTask() {

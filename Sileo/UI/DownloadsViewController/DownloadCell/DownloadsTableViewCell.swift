@@ -67,12 +67,8 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
     }
 
     public var download: Download? {
-        didSet {
-            if oldValue !== download { measuredDownloadProgress = 0 }
-            updateStatus()
-        }
+        didSet { updateStatus() }
     }
-    private var measuredDownloadProgress: CGFloat = 0
 
     public var errorDescription: String? {
         didSet { updateStatus() }
@@ -209,22 +205,21 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 status = String(format: String(localizationKey: "Error_Indicator", type: .error), failure)
                 retryButton.isHidden = false
             } else if download.success && download.progress == 1 {
-                activityProgress = 0.4
+                activityProgress = 1
                 activityTrack.isHidden = false
                 status = String(localizationKey: "Task_Downloaded")
             } else if download.started || download.message != nil {
-                measuredDownloadProgress = max(measuredDownloadProgress, 0.4 * download.presentationProgress)
-                activityProgress = measuredDownloadProgress
-                activityTrack.isHidden = false
+                activityProgress = download.presentationProgress ?? 0
+                activityTrack.isHidden = download.presentationProgress == nil
                 if let message = download.message, !message.isEmpty {
                     status = message
                 } else if download.totalBytesWritten > 0 {
                     let written = ByteCountFormatter.string(fromByteCount: download.totalBytesWritten, countStyle: .file)
-                    if download.totalBytesExpectedToWrite <= 0 {
+                    if download.presentationExpectedBytes <= 0 {
                         status = written + " …"
                     } else {
                         status = String(format: String(localizationKey: "Download_Progress"), written,
-                                        ByteCountFormatter.string(fromByteCount: download.totalBytesExpectedToWrite, countStyle: .file))
+                                        ByteCountFormatter.string(fromByteCount: download.presentationExpectedBytes, countStyle: .file))
                     }
                 } else {
                     status = String(localizationKey: "Download_Starting")

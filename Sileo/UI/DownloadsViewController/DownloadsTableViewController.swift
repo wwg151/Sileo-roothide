@@ -102,15 +102,6 @@ class DownloadsTableViewController: SileoViewController {
     private var aptProgress: Double = 0
     private let taskPercentage = UILabel()
 
-    private var downloadWeight: Double {
-        (installations + upgrades + installdeps).isEmpty ? 0 : 0.4
-    }
-
-    private func updateOverallProgress(_ candidate: Double) {
-        guard candidate.isFinite else { return }
-        overallProgress = max(overallProgress, min(0.99, max(0, candidate)))
-    }
-
     public var presentationHasFailed: Bool {
         !errors.isEmpty || (isFinishedInstalling && installExitStatus != 0)
     }
@@ -285,17 +276,27 @@ class DownloadsTableViewController: SileoViewController {
         if active { stageActivity.startAnimating() } else { stageActivity.stopAnimating() }
         taskProgress.isHidden = !(isDownloading || isInstalling || isFinishedInstalling)
         taskPercentage.isHidden = taskProgress.isHidden
+        // Account for queued packages before their network task starts, using
+        // repository Size metadata until a response supplies the actual length.
+        let entries = installations + upgrades + installdeps
+        let sizes = entries.map { entry -> (expected: Int64, written: Int64) in
+            if let download = downloads.first(where: { $0.package.package == entry.package.package }) {
+                return (download.presentationExpectedBytes, download.presentationWrittenBytes)
+            }
+            return (max(0, Int64(entry.package.size ?? "") ?? 0), 0)
+        }
+        let knownSize = !sizes.isEmpty && sizes.allSatisfy { $0.expected > 0 }
+        let expected = sizes.reduce(Int64(0)) { $0 + $1.expected }
+        let written = sizes.reduce(Int64(0)) { $0 + $1.written }
         if isFinishedInstalling && !blocked {
             overallProgress = 1
         } else if isInstalling {
-            updateOverallProgress(downloadWeight + (1 - downloadWeight) * aptProgress)
+            overallProgress = min(0.99, aptProgress)
         } else if isDownloading {
-            // Include queued packages as zero and cached packages as complete.
-            // One missing Content-Length must not freeze the entire transaction.
-            let count = max(manager.installingPackages(), downloads.count)
-            if count > 0 {
-                let completed = downloads.reduce(0.0) { $0 + Double($1.presentationProgress) }
-                updateOverallProgress(downloadWeight * completed / Double(count))
+            overallProgress = knownSize && expected > 0 ? Double(written) / Double(expected) : 0
+            if !knownSize {
+                taskProgress.isHidden = true
+                taskPercentage.isHidden = true
             }
         }
         if isFinishedInstalling {
@@ -317,14 +318,11 @@ class DownloadsTableViewController: SileoViewController {
         } else if isDownloading {
             taskStage.text = String(localizationKey: "Downloading_Package_Status")
             taskHeadline.text = String(format: String(localizationKey: "Task_Download_Count"), finished, manager.installingPackages())
-            let written = downloads.reduce(Int64(0)) { $0 + max(0, $1.totalBytesWritten) }
-            let expected = downloads.reduce(Int64(0)) { $0 + max(0, $1.totalBytesExpectedToWrite) }
-            let knownSize = downloads.count == manager.installingPackages() && downloads.allSatisfy { $0.totalBytesExpectedToWrite > 0 }
             if knownSize && expected > 0 {
                 taskDetail.text = String(format: String(localizationKey: "Download_Progress"), ByteCountFormatter.string(fromByteCount: written, countStyle: .file), ByteCountFormatter.string(fromByteCount: expected, countStyle: .file))
             } else {
-                taskDetail.text = written > 0 ? ByteCountFormatter.string(fromByteCount: written, countStyle: .file) + " …" : String(localizationKey: "Download_Starting")
-                // Byte totals are informational; progress is aggregated per package above.
+                let received = downloads.reduce(Int64(0)) { $0 + max(0, $1.totalBytesWritten) }
+                taskDetail.text = received > 0 ? ByteCountFormatter.string(fromByteCount: received, countStyle: .file) + " …" : String(localizationKey: "Download_Starting")
             }
         } else {
             overallProgress = 0
@@ -744,6 +742,8 @@ class DownloadsTableViewController: SileoViewController {
             return
         }
         isInstalling = true
+        aptProgress = 0
+        overallProgress = 0
         var earlyBreak = false
         if UIApplication.shared.applicationState == .background || UIApplication.shared.applicationState == .inactive, let completion = backgroundCallback {
             earlyBreak = true
@@ -758,7 +758,7 @@ class DownloadsTableViewController: SileoViewController {
         let removals = uninstallations + uninstalldeps
         self.actions += installs.map {
             let action = Action(package: $0.package, type: .install)
-            action.transactionProgress = 0.4
+            action.transactionProgress = 0
             return action
         }
         self.actions += removals.map { Action(package: $0.package, type: .removal) }
@@ -940,8 +940,7 @@ class DownloadsTableViewController: SileoViewController {
                         self.aptProgress = max(self.aptProgress, min(1, max(0, progress / 100)))
                     }
                     for action in self.actions {
-                        let base: CGFloat = action.type == .install ? 0.4 : 0
-                        action.transactionProgress = max(action.transactionProgress, min(0.99, base + (1 - base) * CGFloat(self.aptProgress)))
+                        action.transactionProgress = CGFloat(min(0.99, self.aptProgress))
                         action.cell?.updateStatus()
                     }
                     self.statusWork(package: package, status: statusReadable)
