@@ -20,6 +20,12 @@
 "Task_Operation_Reinstall_Running" = "Reinstalling %@";
 "Task_Operation_Downgrade_Running" = "Downgrading %@";
 "Task_Operation_Remove_Running" = "Removing %@";
+"Task_Operation_Install_Completed" = "Installed";
+"Task_Operation_Update_Completed" = "Updated";
+"Task_Operation_Reinstall_Completed" = "Reinstalled";
+"Task_Operation_Downgrade_Completed" = "Downgraded";
+"Task_Operation_Remove_Completed" = "Removed";
+"Task_Result_Unconfirmed" = "Check log to confirm result";
 "Task_Title_Removal" = "Uninstall";
 "Task_Title_Mixed" = "Downloads, Installation & Removal";
 "Task_Attention" = "Needs attention";

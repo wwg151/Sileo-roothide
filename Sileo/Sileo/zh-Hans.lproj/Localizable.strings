@@ -19,6 +19,12 @@
 "Task_Operation_Reinstall_Running" = "正在重新安装 %@";
 "Task_Operation_Downgrade_Running" = "正在降级 %@";
 "Task_Operation_Remove_Running" = "正在卸载 %@";
+"Task_Operation_Install_Completed" = "已安装";
+"Task_Operation_Update_Completed" = "已更新";
+"Task_Operation_Reinstall_Completed" = "已重新安装";
+"Task_Operation_Downgrade_Completed" = "已降级";
+"Task_Operation_Remove_Completed" = "已卸载";
+"Task_Result_Unconfirmed" = "请查看日志确认结果";
 "Task_Title_Removal" = "卸载";
 "Task_Title_Mixed" = "下载、安装与卸载";
 "Task_Attention" = "需要处理";

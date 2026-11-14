@@ -771,7 +771,8 @@ class DownloadsTableViewController: SileoViewController {
             }
             return
         }
-        guard let action = actions.first(where: { $0.package.package == package }) else { return }
+        guard !isFinishedInstalling,
+              let action = actions.first(where: { $0.package.package == package }) else { return }
         action.progressCounter += 1
         let step = status.trimmingCharacters(in: .whitespacesAndNewlines)
         let stepKey: String?
@@ -915,6 +916,7 @@ class DownloadsTableViewController: SileoViewController {
             NSLog("SileoLog: progressCallback \(statusValid) \(package) \(statusReadable)")
             if statusValid {
                 DispatchQueue.main.async {
+                    guard !self.isFinishedInstalling else { return }
                     if progress.isFinite {
                         self.aptProgress = max(self.aptProgress, min(1, max(0, progress / 100)))
                     }
@@ -972,9 +974,17 @@ class DownloadsTableViewController: SileoViewController {
                 let updatesNotIgnored = rawUpdates.filter({ $0.1?.wantInfo != .hold })
                 UIApplication.shared.applicationIconBadgeNumber = updatesNotIgnored.count
                 
+                self.installExitStatus = Int32(status)
+                self.isFinishedInstalling = true
+                self.currentTaskStatus = nil
+                self.currentOperationTitle = nil
                 self.actions.forEach {
                     if status == 0 { $0.transactionProgress = 1 }
+                    // A nonzero transaction exit cannot confirm each item's result.
+                    $0.status = String(localizationKey: status == 0
+                        ? $0.operationKey + "_Completed" : "Task_Result_Unconfirmed")
                     $0.progressCounter = 7
+                    $0.cell?.updateStatus()
                 }
                 self.tableView?.reloadData()
                 
@@ -985,8 +995,6 @@ class DownloadsTableViewController: SileoViewController {
                 self.showDetailsButton?.isHidden = false
                 self.completeLaterButton?.alpha = shouldShow(finish) ? 1 : 0
                 
-                self.installExitStatus = Int32(status)
-                self.isFinishedInstalling = true
                 self.reloadControlsOnly()
                 
                 TabBarController.singleton?.updatePopup()
