@@ -1085,10 +1085,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let headerWidth = actualVersionWidth - 4
         let wrapStatus = traitCollection.preferredContentSizeCategory.isAccessibilityCategory || versionHeadingButton.intrinsicContentSize.width + versionStatusLabel.intrinsicContentSize.width + 16 > headerWidth
         let headingWidth = wrapStatus ? headerWidth : min(headerWidth, versionHeadingButton.intrinsicContentSize.width + 8)
-        let headingHeight = max(44, versionHeadingButton.sizeThatFits(CGSize(width: headingWidth, height: .greatestFiniteMagnitude)).height)
+        let versionHeadingHeight = max(44, versionHeadingButton.sizeThatFits(CGSize(width: headingWidth, height: .greatestFiniteMagnitude)).height)
         let statusWidth = wrapStatus ? headerWidth : max(0, headerWidth - headingWidth - 8)
         let statusTextHeight = versionStatusLabel.sizeThatFits(CGSize(width: statusWidth, height: .greatestFiniteMagnitude)).height
-        let statusHeight = wrapStatus ? headingHeight + statusTextHeight : max(headingHeight, statusTextHeight)
+        let statusHeight = wrapStatus ? versionHeadingHeight + statusTextHeight : max(versionHeadingHeight, statusTextHeight)
         let versionRowHeight = max(44, versionButton.sizeThatFits(CGSize(width: actualVersionWidth, height: .greatestFiniteMagnitude)).height)
         let actualVersionHeight = statusHeight + versionRowHeight
         let availableWidth = dockWidth - 24
@@ -1105,10 +1105,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         actionDock.frame = CGRect(x: (width - dockWidth) / 2,
                                   y: view.bounds.height - bottom - dockHeight,
                                   width: dockWidth, height: dockHeight)
-        versionHeadingButton.frame = CGRect(x: 20, y: 12, width: headingWidth, height: headingHeight)
+        versionHeadingButton.frame = CGRect(x: 20, y: 12, width: headingWidth, height: versionHeadingHeight)
         versionStatusLabel.textAlignment = wrapStatus ? .left : .right
         versionStatusLabel.frame = CGRect(x: wrapStatus ? 20 : 20 + headingWidth + 8,
-                                          y: wrapStatus ? 12 + headingHeight : 12,
+                                          y: wrapStatus ? 12 + versionHeadingHeight : 12,
                                           width: statusWidth, height: wrapStatus ? statusTextHeight : statusHeight)
         versionButton.frame = CGRect(x: 16, y: 12 + statusHeight, width: actualVersionWidth, height: versionRowHeight)
         let actionsY = actualVersionHeight + 20
