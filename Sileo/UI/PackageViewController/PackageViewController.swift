@@ -324,6 +324,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         versionHeadingButton.isEnabled = versionButton.isEnabled
         downloadOnlyButton.isEnabled = !provisional
         downloadButton.updateInfo()
+        refreshShareMenu()
         view.setNeedsLayout()
     }
 
@@ -1359,13 +1360,14 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             })
         }
 
-        if let installedPackage = installedPackage {
-            let title = installedPackage.wantInfo == .hold ?
-                String(localizationKey: "Package_Hold_Disable_Action") : String(localizationKey: "Package_Hold_Enable_Action")
+        if !(package.isProvisional ?? false) {
+            let holding = downloadButton.ignoresShowcaseUpdates
+            let title = String(localizationKey: holding ? "Package_Hold_Disable_Action" : "Package_Hold_Enable_Action")
             actions.append(SileoActionMenuItem(title: title,
-                                               imageName: "pause.circle") { [weak self] in
-                self?.downloadButton.setShowcaseUpdatesIgnored(!(self?.downloadButton.ignoresShowcaseUpdates ?? false))
-                self?.refreshShowcaseControls()
+                                               imageName: holding ? "play.circle" : "pause.circle") { [weak self] in
+                guard let self = self else { return }
+                self.downloadButton.setShowcaseUpdatesIgnored(!self.downloadButton.ignoresShowcaseUpdates)
+                self.refreshShowcaseControls()
             })
         }
 
