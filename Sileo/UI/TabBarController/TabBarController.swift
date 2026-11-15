@@ -392,14 +392,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                     displayed.symbol = "exclamationmark"
                     displayed.failed = true
                 }
-                if applying && !finished {
-                    displayed.title = DownloadManager.shared.viewController.currentOperationTitle
+                let controller = DownloadManager.shared.viewController
+                if finished {
+                    displayed.fraction = controller.presentationHasFailed
+                        ? CGFloat(min(0.99, controller.aptProgress)) : 1
+                } else if applying {
+                    displayed.title = controller.currentOperationTitle
                         ?? String(localizationKey: "Task_Installing")
+                    displayed.fraction = CGFloat(min(0.99, controller.aptProgress))
                 }
                 item.title = displayed.title
                 item.subtitle = displayed.subtitle
                 item.image = self.queueRingImage(fraction: displayed.fraction, symbol: displayed.symbol, failed: displayed.failed)
-                // Keep the framework's bottom progress line empty; the ring is download-only.
+                // The ring shows download bytes or apt transaction progress.
+                // Keep the framework's separate bottom progress line empty.
                 item.progress = 0
             }
         }
@@ -560,8 +566,17 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let toolbar = bar.toolbar
         for sub in inner.subviews {
             if sub === toolbar { continue }
-            let name = String(describing: type(of: sub))
-            if name.contains("Image") || name.contains("Effect") || name.contains("Background") {
+            // Only the title container gets a content inset. Plain UIViews
+            // also include the press highlight, and our glass is a sibling.
+            // Moving either leaves a differently shaded strip at the left.
+            func containsLabel(_ view: UIView) -> Bool {
+                view is UILabel || view.subviews.contains(where: containsLabel)
+            }
+            guard containsLabel(sub) else {
+                if objc_getAssociatedObject(sub, &popupTitleShiftKey) != nil {
+                    sub.transform = .identity
+                    objc_setAssociatedObject(sub, &popupTitleShiftKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                }
                 continue
             }
             // Where the bar itself lays this view out: a transform is kept by

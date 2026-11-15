@@ -99,7 +99,7 @@ class DownloadsTableViewController: SileoViewController {
     public private(set) var currentOperationTitle: String?
     private var currentTaskStatus: String?
     private var overallProgress: Double = 0
-    private var aptProgress: Double = 0
+    public private(set) var aptProgress: Double = 0
     private let taskPercentage = UILabel()
 
     public var presentationHasFailed: Bool {
@@ -816,8 +816,6 @@ class DownloadsTableViewController: SileoViewController {
         currentTaskStatus = action.status
         currentOperationTitle = String(format: String(localizationKey: action.operationKey + "_Running"), "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        refreshTaskPresentation()
-        TabBarController.singleton?.updatePopup()
     }
     
     private func queueCompleted() {
@@ -965,6 +963,9 @@ class DownloadsTableViewController: SileoViewController {
                     }
                     self.statusWork(package: package, status: statusReadable)
                     self.refreshTaskPresentation()
+                    // apt also reports transaction-wide steps with no matching
+                    // package action; those must advance the collapsed ring too.
+                    TabBarController.singleton?.updatePopup()
                 }
             }
         }, outputCallback: { output, pipe in
