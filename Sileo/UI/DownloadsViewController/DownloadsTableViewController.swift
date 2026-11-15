@@ -87,7 +87,6 @@ class DownloadsTableViewController: SileoViewController {
     private let taskGrabberButton = UIButton(type: .custom)
     private let taskGrabber = UIView()
     private let taskPrimaryButton = UIButton(type: .system)
-    private let cancelFromLogButton = UIButton(type: .system)
     private let taskStage = UILabel()
     private let taskHeadline = UILabel()
     private let taskDetail = UILabel()
@@ -283,20 +282,6 @@ class DownloadsTableViewController: SileoViewController {
         detailsTextView?.backgroundColor = .clear
         detailsTextView?.layer.cornerRadius = 20
         detailsTextView?.textContainerInset = UIEdgeInsets(top: 18, left: 12, bottom: 18, right: 12)
-        cancelFromLogButton.setTitle(cancelDownload?.title(for: .normal), for: .normal)
-        cancelFromLogButton.addTarget(self, action: #selector(cancelFromDownloadLog), for: .touchUpInside)
-        cancelFromLogButton.isHidden = true
-        if let details = detailsView, let textView = detailsTextView {
-            cancelFromLogButton.translatesAutoresizingMaskIntoConstraints = false
-            details.addSubview(cancelFromLogButton)
-            NSLayoutConstraint.activate([
-                cancelFromLogButton.centerXAnchor.constraint(equalTo: textView.centerXAnchor),
-                cancelFromLogButton.leadingAnchor.constraint(greaterThanOrEqualTo: textView.leadingAnchor, constant: 12),
-                cancelFromLogButton.trailingAnchor.constraint(lessThanOrEqualTo: textView.trailingAnchor, constant: -12),
-                cancelFromLogButton.bottomAnchor.constraint(equalTo: textView.bottomAnchor, constant: -8),
-                cancelFromLogButton.heightAnchor.constraint(equalToConstant: 44)
-            ])
-        }
     }
 
     private func layoutTaskPresentation() {
@@ -367,6 +352,17 @@ class DownloadsTableViewController: SileoViewController {
         taskPrimaryButton.frame = main
         collapseButton.frame = main
         cancelDownload?.frame = secondary
+        if (isDownloading || isInstalling) && !isFinishedInstalling {
+            let gap: CGFloat = 8
+            let buttonWidth = max(0, (w - 32 - gap * 2) / 3)
+            let frames = (0..<3).map { index in
+                CGRect(x: 16 + CGFloat(index) * (buttonWidth + gap), y: 14, width: buttonWidth, height: 50)
+            }
+            showDetailsButton?.frame = frames[0]
+            cancelDownload?.frame = frames[1]
+            taskPrimaryButton.frame = frames[2]
+            collapseButton.frame = frames[2]
+        }
         completeLaterButton?.frame = CGRect(x: 20, y: 74, width: max(0, (w - 48) / 2), height: 44)
         if isFinishedInstalling {
             let buttonWidth = min(340, max(0, w - 40))
@@ -636,7 +632,9 @@ class DownloadsTableViewController: SileoViewController {
         let waiting = !isDownloading && !isInstalling && !isFinishedInstalling
         clearButton?.isHidden = !waiting
         confirmButton?.isHidden = !waiting
-        cancelDownload?.isHidden = true
+        cancelDownload?.isHidden = !(isDownloading || isInstalling) || isFinishedInstalling
+        cancelDownload?.isEnabled = isDownloading && !isInstalling && !manager.aptRunning
+        cancelDownload?.alpha = cancelDownload?.isEnabled == true ? 1 : 0.4
         completeButton?.isHidden = !isFinishedInstalling
         completeLaterButton?.isHidden = !isFinishedInstalling || completeLaterButton?.alpha == 0
         if isFinishedInstalling {
@@ -719,6 +717,9 @@ class DownloadsTableViewController: SileoViewController {
             fatalError("Wtf are you doing")
         }
         
+        guard isDownloading && !isInstalling && !isFinishedInstalling,
+              !DownloadManager.shared.aptRunning else { return }
+
         if let sender = sender as? UIButton, sender.isHidden {
             return //UIKit bug: https://stackoverflow.com/questions/37916952/ios-why-does-hidden-button-still-receive-tap-events/37918283#37918283
         }
@@ -1195,16 +1196,9 @@ class DownloadsTableViewController: SileoViewController {
         }
     }
     
-    @objc private func cancelFromDownloadLog() {
-        guard isDownloading && !isInstalling && !isFinishedInstalling else { return }
-        hideDetails(nil)
-        cancelDownload(nil)
-    }
-
     private func refreshDownloadLog() {
         let downloading = isDownloading && !isInstalling && !isFinishedInstalling
-        cancelFromLogButton.isHidden = !downloading
-        detailsTextView?.textContainerInset.bottom = downloading ? 60 : 18
+        detailsTextView?.textContainerInset.bottom = 18
         guard downloading, detailsView?.superview != nil else { return }
         let manager = DownloadManager.shared
         let lines = (installations + upgrades + installdeps).map { entry -> String in
