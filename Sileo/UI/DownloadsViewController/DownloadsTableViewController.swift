@@ -1097,11 +1097,12 @@ class DownloadsTableViewController: SileoViewController {
         }
     }
 
+    private func shouldShow(_ finish: APTWrapper.FINISH) -> Bool {
+        finish == .reload || finish == .restart || finish == .reboot || finish == .usreboot
+    }
+
     private func performInstallAction() {
         NSLog("SileoLog: startAction")
-        func shouldShow(_ finish: APTWrapper.FINISH) -> Bool {
-            finish == .reload || finish == .restart || finish == .reboot || finish == .usreboot
-        }
         
         if let detailsAttributedString = self.detailsAttributedString {
             detailsTextView?.attributedText = self.transform(attributedString: detailsAttributedString)
@@ -1227,7 +1228,7 @@ class DownloadsTableViewController: SileoViewController {
                 self.updateCompleteButton()
                 restoreBatch?.taskSession?.finish(restoreBatch?.summary ?? "")
                 self.completeButton?.alpha = 1
-                self.completeLaterButton?.alpha = shouldShow(self.returnButtonAction) ? 1 : 0
+                self.completeLaterButton?.alpha = self.shouldShow(self.returnButtonAction) ? 1 : 0
                 
                 self.reloadControlsOnly()
                 
