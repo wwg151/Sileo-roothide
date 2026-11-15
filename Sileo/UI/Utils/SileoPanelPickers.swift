@@ -29,7 +29,8 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
         if let currentRepo = current.sourceRepo {
             for (section, entry) in sections.enumerated() {
                 for (row, package) in entry.packages.enumerated()
-                    where package.version == current.version && package.sourceRepo?.url == currentRepo.url {
+                    where package.version == current.version && package.sourceRepo?.url == currentRepo.url
+                        && package.architecture == current.architecture {
                     winner = IndexPath(row: row, section: section)
                     break
                 }
@@ -41,7 +42,8 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                 let originSource = originPackage.sourceFile
                 for (section, entry) in sections.enumerated() {
                     for (row, package) in entry.packages.enumerated()
-                        where package.version == current.version && package.sourceFile == originSource {
+                        where package.version == current.version && package.sourceFile == originSource
+                            && package.architecture == originPackage.architecture {
                         winner = IndexPath(row: row, section: section)
                         break
                     }
@@ -61,17 +63,30 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
             ))
         }
         for (section, entry) in sections.enumerated() {
-            if sections.count > 1 {
-                items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(entry.title), height: 34))
-            }
+            // Always name the source, even when only one repository matches.
+            items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(entry.title), height: 34))
             for (row, package) in entry.packages.enumerated() {
                 let selected = winner == IndexPath(row: row, section: section)
-                let row = SileoPanelViewController.choiceRow(title: package.version,
-                                                             detail: nil,
+                let compatible = PackageQueueButton.supportsSelectedPackage(package)
+                let size: String
+                if let bytes = Int64(package.size ?? ""), bytes >= 0 {
+                    size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+                } else {
+                    size = String(localizationKey: "Package_Version_Size_Unknown")
+                }
+                let detail = (package.architecture ?? String(localizationKey: "Package_Version_Arch_Unknown")) + " · " + size
+                let title = package.version + (compatible ? "" : " · " + String(localizationKey: "Package_Version_Incompatible"))
+                let row = SileoPanelViewController.choiceRow(title: title,
+                                                             detail: detail,
                                                              selected: selected) { [weak self] in
+                    guard compatible else { return }
                     self?.close { onPick(package) }
                 }
-                items.append(SileoPanelTable.Item(row, height: 52))
+                row.isEnabled = compatible
+                row.alpha = compatible ? 1 : 0.5
+                row.accessibilityLabel = [package.version, entry.title, detail, compatible ? "" : String(localizationKey: "Package_Version_Incompatible")].filter { !$0.isEmpty }.joined(separator: ", ")
+                row.isAccessibilityElement = true
+                items.append(SileoPanelTable.Item(row, height: compatible ? 68 : 88))
             }
         }
         table.setItems(items)

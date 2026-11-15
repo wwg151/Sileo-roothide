@@ -5343,7 +5343,7 @@
 					"$(PROJECT_DIR)/Deps/libzstd",
 					"$(PROJECT_DIR)/Deps/liblz4",
 				);
-				MARKETING_VERSION = "2.5.1-16";
+				MARKETING_VERSION = "2.1.5-17";
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_LDFLAGS = "$(SILEO_BOOTSTRAP_LDFLAGS)";
 				SILEO_BOOTSTRAP_LDFLAGS = "-lroothide";
@@ -5797,7 +5797,7 @@
 					"$(PROJECT_DIR)/Deps/libzstd",
 					"$(PROJECT_DIR)/Deps/liblz4",
 				);
-				MARKETING_VERSION = "2.5.1-16";
+				MARKETING_VERSION = "2.1.5-17";
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_LDFLAGS = "$(SILEO_BOOTSTRAP_LDFLAGS)";
 				SILEO_BOOTSTRAP_LDFLAGS = "-lroothide";
@@ -5863,7 +5863,7 @@
 					"$(PROJECT_DIR)/Deps/libzstd",
 					"$(PROJECT_DIR)/Deps/liblz4",
 				);
-				MARKETING_VERSION = "2.5.1-16";
+				MARKETING_VERSION = "2.1.5-17";
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_LDFLAGS = "$(SILEO_BOOTSTRAP_LDFLAGS)";
 				SILEO_BOOTSTRAP_LDFLAGS = "-lroothide";

@@ -40,6 +40,15 @@ class PackageQueueButton: PackageButton {
         }
     }
     
+    /// Detail pages opt in; list buttons keep their existing behavior.
+    var selectsVersionBeforeInstalling = false {
+        didSet { updateInfo() }
+    }
+
+    /// Called synchronously before installing the exact picked package.
+    /// Detail controllers should capture themselves weakly and call show(package:).
+    var onPackageSelectedForInstallation: ((Package) -> Void)?
+
     public var overrideTitle: String = ""
     
     private var installedPackage: Package?
@@ -201,8 +210,12 @@ class PackageQueueButton: PackageButton {
         let holdTitle = String(localizationKey: holding ? "Package_Hold_Disable_Action" : "Package_Hold_Enable_Action")
         items.append((holdTitle, holding ? "hand.raised.slash" : "hand.raised", false, true, { self.setIgnoreUpdates(!holding, package: holdTarget ?? package) }))
 
-        if let downloadable = downloadablePackage(for: package) {
-            items.append((String(localizationKey: "Package_Download_Deb"), "arrow.down.to.line", false, unlocked, { self.downloadDeb(downloadable) }))
+        if package.local_deb != nil || (package.filename != nil && package.sourceRepo != nil) {
+            items.append((String(localizationKey: "Package_Download_Deb"), "arrow.down.to.line", false, unlocked, { self.downloadDeb(package) }))
+        } else if package.fromStatusFile {
+            items.append((String(localizationKey: "Package_Download_Deb"), "arrow.down.to.line", false, true, {
+                self.selectPackageVersion { selected in self.downloadDeb(selected) }
+            }))
         }
         items.append((String(localizationKey: "Package_View_Info"), "doc.text", false, true, { self.showPackageInfo(package) }))
         return items
@@ -215,10 +228,6 @@ class PackageQueueButton: PackageButton {
             return (package, false)
         }
         return PackageListManager.shared.installedOrigin(of: package)
-    }
-
-    private func downloadablePackage(for package: Package) -> Package? {
-        resolveDownloadable(for: package).package
     }
 
     private func setIgnoreUpdates(_ ignore: Bool, package installed: Package) {
@@ -236,24 +245,113 @@ class PackageQueueButton: PackageButton {
         NotificationCenter.default.post(Notification(name: PackageListManager.prefsNotification))
     }
 
-    private func downloadDeb(_ package: Package) {
+    /// Mirrors the installation entry's architecture eligibility without
+    /// performing its conversion; download-only exports the original archive.
+    static func supportsSelectedPackage(_ package: Package) -> Bool {
+        checkRootHide(package) || DownloadManager.needsConversion(package)
+            || (Bootstrap.roothide && package.tags.contains(.roothide)
+                && FileManager.default.fileExists(atPath: jbroot("/usr/lib/libroot.dylib")))
+    }
+
+    /// Exports precisely this Package. Status-only entries must first be selected
+    /// from a source with selectPackageVersion; this never installs dependencies.
+    func downloadDeb(_ package: Package) {
+        useVisiblePresenter()
+        guard !(package.isProvisional ?? false),
+              package.local_deb != nil || (!package.fromStatusFile && package.filename != nil && package.sourceRepo != nil) else {
+            showDownloadMessage("Package_Download_Select_Source")
+            return
+        }
+        guard Self.supportsSelectedPackage(package) else {
+            showDownloadMessage("Package_Version_Incompatible")
+            return
+        }
+        guard let repo = package.sourceRepo, package.local_deb == nil else {
+            exportDeb(package)
+            return
+        }
+        // Older versions may omit cydia::commercial. Never reuse a purchase
+        // result from the page's other source when downloading a selected row.
+        let commercial = package.commercial || repo.allVersions(identifier: package.package, ignoreArch: true).contains { $0.commercial }
+        guard commercial else {
+            exportDeb(package)
+            return
+        }
+        PaymentManager.shared.getPaymentProvider(for: repo) { error, provider in
+            if let error = error {
+                self.presentAlert(paymentError: error, title: String(localizationKey: "Purchase_Auth_Complete_Fail.Title", type: .error))
+                return
+            }
+            guard let provider = provider else {
+                self.presentAlert(paymentError: .noPaymentProvider, title: String(localizationKey: "Purchase_Auth_Complete_Fail.Title", type: .error))
+                return
+            }
+            guard provider.isAuthenticated else {
+                self.authenticate(provider: provider, package: package) { self.downloadDeb(package) }
+                return
+            }
+            provider.getPackageInfo(forIdentifier: package.package) { error, info in
+                if let error = error {
+                    self.presentAlert(paymentError: error, title: String(localizationKey: "Purchase_Auth_Complete_Fail.Title", type: .error))
+                    return
+                }
+                guard let info = info else {
+                    self.presentAlert(paymentError: .invalidResponse, title: String(localizationKey: "Purchase_Auth_Complete_Fail.Title", type: .error))
+                    return
+                }
+                DispatchQueue.main.async {
+                    guard info.available else { self.showDownloadMessage("Package_Unavailable"); return }
+                    guard info.purchased else { self.showDownloadMessage("Package_Download_Purchase_Required"); return }
+                    self.exportDeb(package)
+                }
+            }
+        }
+    }
+
+    private func showDownloadMessage(_ key: String, titleKey: String = "Package_Download_Deb") {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(title: String(localizationKey: titleKey),
+                                          message: String(localizationKey: key), preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel))
+            SileoAppDelegate.presentController(alert)
+        }
+    }
+
+    private static func exportNameComponent(_ value: String) -> String {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.+-_")
+        let safe = String(value.unicodeScalars.prefix(72).map { allowed.contains($0) ? Character(String($0)) : Character("_") })
+        return safe.isEmpty || safe == "." || safe == ".." ? "unknown" : safe
+    }
+
+    private func exportDeb(_ package: Package) {
         DownloadManager.shared.downloadDeb(package: package, msg: String(localizationKey: "Package_Downloading"), showsProgress: true) { package, fileURL in
-            let name = "\(package.package)_\(package.version)_\(package.architecture ?? "unknown").deb"
-            let shared = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-            try? FileManager.default.removeItem(at: shared)
+            let name = [package.package, package.version, package.architecture ?? "unknown"]
+                .map(Self.exportNameComponent).joined(separator: "_") + ".deb"
+            // Unique directory prevents one export overwriting another or the
+            // original local deb. Only our own temporary copy is ever removed.
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let shared = directory.appendingPathComponent(name)
             do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
                 try FileManager.default.copyItem(at: fileURL, to: shared)
             } catch {
+                try? FileManager.default.removeItem(at: directory)
                 let alert = UIAlertController(title: String(localizationKey: "Unknown", type: .error), message: "\(error)", preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: nil))
-                self.viewControllerForPresentation?.present(alert, animated: true, completion: nil)
+                SileoAppDelegate.presentController(alert)
+                return
+            }
+            self.useVisiblePresenter()
+            guard let presenter = self.viewControllerForPresentation, presenter.viewIfLoaded?.window != nil else {
+                try? FileManager.default.removeItem(at: directory)
                 return
             }
             let activity = UIActivityViewController(activityItems: [shared], applicationActivities: nil)
-            activity.completionWithItemsHandler = { _, _, _, _ in try? FileManager.default.removeItem(at: shared) }
-            activity.popoverPresentationController?.sourceView = self
-            activity.popoverPresentationController?.sourceRect = self.bounds
-            self.viewControllerForPresentation?.present(activity, animated: true, completion: nil)
+            activity.completionWithItemsHandler = { _, _, _, _ in try? FileManager.default.removeItem(at: directory) }
+            let anchor = self.window != nil ? self : presenter.view!
+            activity.popoverPresentationController?.sourceView = anchor
+            activity.popoverPresentationController?.sourceRect = anchor.bounds
+            presenter.present(activity, animated: true, completion: nil)
         }
     }
 
@@ -284,10 +382,11 @@ class PackageQueueButton: PackageButton {
         SileoPackageInfoPanel(package: package).present(from: presenter)
     }
 
-    @objc func showVersionPrompt(_ sender: Any?) {
-        guard let package = package, !(package.isProvisional ?? false) else {
-            return
-        }
+    /// Picks an exact source/version on the current page; never queues or installs it.
+    /// Cancellation does not invoke onSelect. Callers update their page in onSelect.
+    func selectPackageVersion(onSelect: @escaping (Package) -> Void) {
+        guard let package = package, !(package.isProvisional ?? false) else { return }
+        useVisiblePresenter()
         var repos = RepoManager.shared.repoList
         if let sourceRepo = package.sourceRepo, !repos.contains(sourceRepo) {
             repos.append(sourceRepo)
@@ -305,12 +404,18 @@ class PackageQueueButton: PackageButton {
             first.title.localizedCaseInsensitiveCompare(second.title) == .orderedAscending
         }
 
-        // The panel opens even when no source offers this package: it then
-        // says the current version came from a local install.
-        // capture strongly: the long-press preview (and this button) may be released before a version is picked
+        if let presenter = viewControllerForPresentation {
+            SileoVersionPickerPanel(sections: sections, current: package, onPick: onSelect)
+                .present(from: presenter)
+        }
+    }
+
+    @objc func showVersionPrompt(_ sender: Any?) {
+        useVisiblePresenter()
+        // Keep legacy navigation behavior for menus and list previews.
         let listNavigationController = self.versionSelectionNavigationController
         let presenter = self.viewControllerForPresentation
-        let panel = SileoVersionPickerPanel(sections: sections, current: package) { selected in
+        selectPackageVersion { selected in
             guard let viewController = presenter else { return }
             if let navigationController = listNavigationController {
                 navigationController.pushViewController(
@@ -330,9 +435,6 @@ class PackageQueueButton: PackageButton {
                     animated: true
                 )
             }
-        }
-        if let presenter = viewControllerForPresentation {
-            panel.present(from: presenter)
         }
     }
     
@@ -396,8 +498,11 @@ class PackageQueueButton: PackageButton {
         
         if !overrideTitle.isEmpty {
             self.updateButton(title: overrideTitle)
-        } else if checkQueued(package: package) {
+        } else if checkQueued(package: package) || (selectsVersionBeforeInstalling &&
+                    (DownloadManager.shared.queueRunning || DownloadManager.shared.find(package: package) != .none)) {
             self.updateButton(title: String(localizationKey: "Package_Queue_Action"))
+        } else if selectsVersionBeforeInstalling && installedPackage != nil {
+            self.updateButton(title: String(localizationKey: "Package_Choose_Version"))
         } else if installedPackage != nil {
             self.updateButton(title: String(localizationKey: "Package_Modify_Action"))
         } else if let price = paymentInfo?.price, package.commercial && !purchased {
@@ -407,7 +512,7 @@ class PackageQueueButton: PackageButton {
             self.isProminent = true
         }
         
-        self.isEnabled = !DownloadManager.shared.queueRunning
+        self.isEnabled = selectsVersionBeforeInstalling || !DownloadManager.shared.queueRunning
     }
     
     func updateButton(title: String) {
@@ -501,11 +606,48 @@ class PackageQueueButton: PackageButton {
         }
     }
     
+    /// Explicit management entry for detail-page overflow controls. Long press
+    /// continues to offer the same actions, including uninstall for installed packages.
+    func showPackageManagementActions() {
+        useVisiblePresenter()
+        presentActionCard()
+    }
+
+    private func handleDetailButtonPress(_ package: Package) {
+        useVisiblePresenter()
+        // Any queued operation for this identifier belongs to the task view,
+        // including a different version or an uninstall already in progress.
+        if DownloadManager.shared.queueRunning || DownloadManager.shared.find(package: package) != .none {
+            TabBarController.singleton?.presentPopupController()
+            return
+        }
+        if package.isProvisional ?? false {
+            handleButtonPress(package)
+            return
+        }
+        if package.local_deb != nil {
+            onPackageSelectedForInstallation?(package)
+            installSelectedPackage(package)
+            return
+        }
+        hapticResponse()
+        selectPackageVersion { selected in
+            // Retain this button through the picker: show(package:) may replace
+            // the page's button, but installation must keep this exact choice.
+            self.onPackageSelectedForInstallation?(selected)
+            self.installSelectedPackage(selected)
+        }
+    }
+
     @objc func buttonTapped(_ sender: Any?) {
         guard let package = self.package else {
             return
         }
-        self.handleButtonPress(package)
+        if selectsVersionBeforeInstalling {
+            handleDetailButtonPress(package)
+        } else {
+            handleButtonPress(package)
+        }
     }
     
     private func queuePackage(_ package: Package, _ queue: DownloadManagerQueue)
@@ -530,21 +672,47 @@ class PackageQueueButton: PackageButton {
         return paymentInfo.purchased && paymentInfo.available
     }
     
+    /// Installs/upgrades/reinstalls/downgrades the exact source/version chosen
+    /// by the detail page. Never resolves a status entry to a newest candidate.
+    func installSelectedPackage(_ package: Package) {
+        useVisiblePresenter()
+        guard !(package.isProvisional ?? false),
+              package.local_deb != nil || (!package.fromStatusFile && package.sourceRepo != nil && package.filename != nil) else {
+            showDownloadMessage("Package_Install_Select_Source", titleKey: "Package_Choose_Version")
+            return
+        }
+        guard Self.supportsSelectedPackage(package) else {
+            showDownloadMessage("Package_Version_Incompatible", titleKey: "Package_Choose_Version")
+            return
+        }
+        if DownloadManager.shared.queueRunning || checkQueued(package: package) {
+            TabBarController.singleton?.presentPopupController()
+            return
+        }
+        let installed = PackageListManager.shared.installedPackage(identifier: package.package)
+        let queue: DownloadManagerQueue
+        if let installed = installed, DpkgWrapper.isVersion(package.version, greaterThan: installed.version) {
+            queue = .upgrades
+        } else {
+            queue = .installations
+        }
+        hapticResponse()
+        requestQueuePackage(package: package, queue: queue)
+    }
+
     private func requestQueuePackage(package: Package, queue: DownloadManagerQueue)
     {
         NSLog("SileoLog: requestQueuePackage \(package.package)=\(package.version) commercial=\(package.commercial) \(package.sourceRepo):\(package.sourceRepo?.rawURL) purchased=\(self.hasPurchased) queue=\(queue.rawValue)")
         
         if DownloadManager.shared.queueRunning { return }
         
-        //some repos(eg:Chariz) only set the latest packages as cydia::commercial
-        guard let mainPackage = self.package else {
-            return
-        }
-        
-        //local deb?
-        guard let repo = package.sourceRepo, mainPackage.commercial, !self.hasPurchased, queue != .uninstallations else {
+        // Purchase state belongs to the selected source. Older versions can
+        // omit cydia::commercial, so inspect this source's other versions too.
+        guard let repo = package.sourceRepo, package.local_deb == nil, queue != .uninstallations else {
             return queuePackage(package, queue)
         }
+        let commercial = package.commercial || repo.allVersions(identifier: package.package, ignoreArch: true).contains { $0.commercial }
+        guard commercial else { return queuePackage(package, queue) }
         
         PaymentManager.shared.getPaymentProvider(for: repo) { error, provider in
             if let error = error {

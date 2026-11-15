@@ -22,6 +22,33 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private let fixedQueueDetail = UILabel()
     private let fixedQueueRing = UIImageView()
     private var fixedTaskClosing = false
+    private weak var showcaseHost: PackageViewController?
+
+    func setShowcaseHost(_ controller: PackageViewController, active: Bool) {
+        if active {
+            showcaseHost = controller
+        } else if showcaseHost === controller {
+            controller.updateShowcaseTaskVisibility(false)
+            controller.showcaseBottomObstruction = 0
+            showcaseHost = nil
+        }
+        layoutFixedQueue()
+        refreshShowcaseObstruction()
+    }
+
+    func refreshShowcaseObstruction() {
+        guard let host = showcaseHost, host.isViewLoaded, host.view.window != nil else { return }
+        host.updateShowcaseTaskVisibility(usesFixedQueue && popupIsPresented)
+        var top = host.view.bounds.maxY - host.view.safeAreaInsets.bottom
+        if !tabBar.isHidden {
+            let bar: UIView = isFloatingEnabled ? (floatingBackground ?? tabBar) : tabBar
+            top = min(top, bar.convert(bar.bounds, to: host.view).minY)
+        }
+        if !usesFixedQueue, popupIsPresented, !TabBarController.popupIsOpen, !popupBar.isHidden {
+            top = min(top, popupBar.convert(popupBar.bounds, to: host.view).minY)
+        }
+        host.showcaseBottomObstruction = max(0, host.view.bounds.maxY - host.view.safeAreaInsets.bottom - top)
+    }
 
     private func layoutFixedQueue() {
         guard usesFixedQueue else { return }
@@ -50,8 +77,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             fixedQueueRing.frame = CGRect(x: 14, y: 12, width: 40, height: 40)
             fixedQueueTitle.frame = CGRect(x: 66, y: 11, width: fixedQueue.bounds.width - 82, height: 22)
             fixedQueueDetail.frame = CGRect(x: 66, y: 35, width: fixedQueue.bounds.width - 82, height: 18)
-            fixedQueue.isHidden = !popupIsPresented || TabBarController.popupIsOpen || fixedTaskClosing
+            fixedQueue.isHidden = !popupIsPresented || TabBarController.popupIsOpen || fixedTaskClosing || showcaseHost != nil
         }
+        refreshShowcaseObstruction()
         if taskPeek == nil { view.bringSubviewToFront(fixedQueue) }
     }
 
@@ -239,6 +267,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         
         if usesFixedQueue {
             popupIsPresented = false
+            refreshShowcaseObstruction()
             dismissTaskPeek()
             fixedQueue.isHidden = true
             if fixedTaskClosing {
@@ -421,6 +450,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             fixedQueueTitle.textColor = task.failed ? .systemRed : .label
             fixedQueue.accessibilityLabel = [fixedQueueTitle.text ?? task.title, task.detail].joined(separator: ", ")
         }
+        refreshShowcaseObstruction()
         taskPeek?.update(title: task.title, detail: task.detail,
                          rows: Array(task.rows.prefix(3)), image: image,
                          failed: task.failed, active: progress == nil && !task.failed && !finished
@@ -1493,6 +1523,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         applyFloatingStyle()
         if !usesFixedQueue { applyFloatingPopupShape() }
         layoutFixedQueue()
+        refreshShowcaseObstruction()
         layoutTaskPeek()
         if UIDevice.current.userInterfaceIdiom == .pad {
             self.updatePopup(animated: false)
