@@ -342,38 +342,23 @@ class DownloadsTableViewController: SileoViewController {
         guard let footer = footerView else { return }
         footerMaterial.frame = footer.bounds
         let w = footer.bounds.width
-        let side = min(122, w * 0.34)
-        let main = CGRect(x: side + 24, y: 14, width: max(0, w - side - 44), height: 50)
-        let secondary = CGRect(x: 16, y: 14, width: side, height: 50)
-        confirmButton?.frame = main
-        clearButton?.frame = secondary
-        completeButton?.frame = main
-        showDetailsButton?.frame = secondary
-        taskPrimaryButton.frame = main
-        collapseButton.frame = main
-        cancelDownload?.frame = secondary
-        if (isDownloading || isInstalling) && !isFinishedInstalling {
-            let gap: CGFloat = 8
-            let buttonWidth = max(0, (w - 32 - gap * 2) / 3)
-            let frames = (0..<3).map { index in
-                CGRect(x: 16 + CGFloat(index) * (buttonWidth + gap), y: 14, width: buttonWidth, height: 50)
-            }
-            showDetailsButton?.frame = frames[0]
-            cancelDownload?.frame = frames[1]
-            taskPrimaryButton.frame = frames[2]
-            collapseButton.frame = frames[2]
-        }
-        completeLaterButton?.frame = CGRect(x: 20, y: 74, width: max(0, (w - 48) / 2), height: 44)
+        let candidates: [UIButton?]
         if isFinishedInstalling {
-            let buttonWidth = min(340, max(0, w - 40))
-            let buttonX = (w - buttonWidth) / 2
-            var buttonY: CGFloat = 14
-            for button in [completeButton, completeLaterButton, showDetailsButton].compactMap({ $0 }) where !button.isHidden {
-                let height: CGFloat = button === completeButton ? 50 : 44
-                button.frame = CGRect(x: buttonX, y: buttonY, width: buttonWidth, height: height)
-                button.contentHorizontalAlignment = .center
-                buttonY += height + 10
-            }
+            candidates = [showDetailsButton, completeLaterButton, completeButton]
+        } else if isDownloading || isInstalling {
+            candidates = [showDetailsButton, cancelDownload, taskPrimaryButton, collapseButton]
+        } else {
+            candidates = [clearButton, confirmButton]
+        }
+        let buttons = candidates.compactMap { $0 }.filter { !$0.isHidden }
+        let gap: CGFloat = 8
+        let buttonWidth = max(0, (w - 32 - gap * CGFloat(max(0, buttons.count - 1))) / CGFloat(max(1, buttons.count)))
+        for (index, button) in buttons.enumerated() {
+            button.frame = CGRect(x: 16 + CGFloat(index) * (buttonWidth + gap), y: 14, width: buttonWidth, height: 50)
+            button.contentHorizontalAlignment = .center
+            button.layer.cornerRadius = 25
+            button.titleLabel?.adjustsFontSizeToFitWidth = true
+            button.titleLabel?.minimumScaleFactor = 0.7
         }
     }
 
@@ -645,9 +630,7 @@ class DownloadsTableViewController: SileoViewController {
         confirmButton?.isEnabled = manager.vars.errors.isEmpty
         confirmButton?.alpha = manager.vars.errors.isEmpty ? 1 : 0.5
         let visible = manager.operationCount() > 0 || !errors.isEmpty || isDownloading || isInstalling || isFinishedInstalling
-        let completionSecondaryCount = [completeLaterButton, showDetailsButton].compactMap({ $0 }).filter { !$0.isHidden }.count
-        let completionHeight = CGFloat(78 + 54 * completionSecondaryCount)
-        footerViewHeight?.constant = visible ? (isFinishedInstalling ? completionHeight : 80) : 0
+        footerViewHeight?.constant = visible ? 80 : 0
         footerView?.alpha = visible ? 1 : 0
         refreshTaskPresentation()
     }
