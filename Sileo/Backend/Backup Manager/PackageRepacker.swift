@@ -49,6 +49,7 @@ final class PackageRepacker {
     static func repack(
         package: Package,
         to destination: URL,
+        shouldContinue: (() -> Bool)? = nil,
         progress: ((Double) -> Void)? = nil
     ) throws -> URL {
         let fileManager = FileManager.default
@@ -59,7 +60,11 @@ final class PackageRepacker {
             spawnAsRoot(args: [CommandPath.rm, "-rf", rootfs(work.path)])
         }
 
-        progress?(0.05)
+        func report(_ fraction: Double) throws {
+            progress?(fraction)
+            if shouldContinue?() == false { throw BackupManager.BackupError.cancelled }
+        }
+        try report(0.05)
         let controlDirectory = work.appendingPathComponent("DEBIAN", isDirectory: true)
         try fileManager.createDirectory(at: controlDirectory, withIntermediateDirectories: true)
         try writeControl(package: package, to: controlDirectory)
@@ -67,7 +72,7 @@ final class PackageRepacker {
         let paths = try recordedPaths(package: package)
         guard !paths.isEmpty else { throw RepackError.noFiles }
 
-        progress?(0.2)
+        try report(0.2)
         let payload = work.appendingPathComponent("payload", isDirectory: true)
         try fileManager.createDirectory(at: payload, withIntermediateDirectories: true)
         try copyPayload(paths: paths, to: payload, in: work)
@@ -80,7 +85,7 @@ final class PackageRepacker {
             throw RepackError.commandFailed(controlError.isEmpty ? "cp exited with \(controlStatus)" : controlError)
         }
 
-        progress?(0.8)
+        try report(0.8)
         try? fileManager.removeItem(at: destination)
         let (status, _, errorOutput) = spawnAsRoot(args: [
             CommandPath.dpkgdeb, "-b", "-Zxz",

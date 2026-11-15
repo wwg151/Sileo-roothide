@@ -47,16 +47,23 @@ final class BackupTaskSession {
     }
 
     // Only called by workers at safe boundaries, never while dpkg is running.
-    func waitUntilResumed(_ id: String) {
+    @discardableResult
+    func waitUntilResumed(_ id: String) -> Bool {
         pauseCondition.lock()
-        while pausedIDs.contains(id) && !BackupManager.shared.isCancelled {
+        defer { pauseCondition.unlock() }
+        while pausedIDs.contains(id) && !storedRemovedIDs.contains(id) && !BackupManager.shared.isCancelled {
             _ = pauseCondition.wait(until: Date(timeIntervalSinceNow: 0.2))
         }
-        pauseCondition.unlock()
+        return !storedRemovedIDs.contains(id)
     }
 
     var activeIDs = Set<String>()
-    var removedIDs = Set<String>()
+    private var storedRemovedIDs = Set<String>()
+    var removedIDs: Set<String> {
+        pauseCondition.lock()
+        defer { pauseCondition.unlock() }
+        return storedRemovedIDs
+    }
     var closed = false
     var backupFolder: BackupManager.BackupFolder?
     var accumulatedFinish: APTWrapper.FINISH = .back
@@ -141,10 +148,15 @@ final class BackupTaskSession {
 
     func remove(ids: Set<String>) {
         guard Thread.isMainThread else { DispatchQueue.main.async { self.remove(ids: ids) }; return }
-        guard !closed, activeIDs.isEmpty else { return }
+        guard !closed else { return }
         defer { onChange?() }
+        pauseCondition.lock()
+        storedRemovedIDs.formUnion(ids)
+        pausedIDs.subtract(ids)
+        pauseCondition.broadcast()
+        pauseCondition.unlock()
+        activeIDs.subtract(ids)
         for task in tasks where ids.contains(task.id) {
-            removedIDs.insert(task.id)
             if let outcome = task.outcome {
                 removedResults.append(RemovedResult(id: task.id, name: task.name, outcome: outcome))
             }
@@ -231,20 +243,14 @@ private final class BackupTaskRow: UIView {
         fraction = CGFloat(task.fraction)
         setNeedsLayout()
         nameLabel.text = task.name
-        detailLabel.text = paused && task.outcome == nil ? String(localizationKey: "Backup_Task_Pause_Requested") : (task.detail.isEmpty ? String(localizationKey: "Backup_Task_Waiting") : task.detail)
+        detailLabel.text = task.outcome == true ? nil : (paused && task.outcome == nil ? String(localizationKey: "Backup_Task_Pause_Requested") : (task.detail.isEmpty ? String(localizationKey: "Backup_Task_Waiting") : task.detail))
         progress.progressTintColor = task.outcome == false ? .systemRed : .systemBlue
         progress.setProgress(Float(task.fraction), animated: true)
         percentLabel.text = "\(Int(task.fraction * 100))%"
-        if let outcome = task.outcome {
-            resultImage.image = UIImage(systemName: outcome ? "checkmark.circle.fill" : "xmark.circle.fill")
-            resultImage.tintColor = outcome ? .systemGreen : .systemRed
-            progress.isHidden = outcome == true
-            percentLabel.isHidden = outcome == true
-        } else {
-            resultImage.image = nil
-            progress.isHidden = false
-            percentLabel.isHidden = false
-        }
+        resultImage.image = task.outcome == false ? UIImage(systemName: "xmark.circle.fill") : nil
+        resultImage.tintColor = .systemRed
+        progress.isHidden = false
+        percentLabel.isHidden = false
     }
 }
 
@@ -305,8 +311,12 @@ final class BackupProgressAlert: SileoPanelViewController {
         filters.heightAnchor.constraint(equalToConstant: 32).isActive = true
         setBody(listBody)
         let start = Self.headerButton(title: String(localizationKey: "Backup_Task_Start_All")) { [weak self] in self?.startTask(nil) }
-        let hide = Self.headerButton(title: String(localizationKey: "Close")) { [weak self] in self?.close() }
-        headerAccessory = UIStackView(arrangedSubviews: [start, hide])
+        start.setTitle(nil, for: .normal)
+        start.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        start.accessibilityLabel = String(localizationKey: "Backup_Task_Start_All")
+        start.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        start.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        headerAccessory = start
         startAllButton = start
         session.onRoundFinished = { [weak self] in
             self?.roundRunning = false
@@ -487,7 +497,7 @@ final class BackupProgressAlert: SileoPanelViewController {
 
     private func removeVisibleRow(_ index: Int) {
         let rows = visibleTasks()
-        guard rows.indices.contains(index), !roundRunning else { return }
+        guard rows.indices.contains(index) else { return }
         session.remove(ids: [rows[index].id])
         render()
     }
@@ -545,16 +555,25 @@ final class BackupProgressAlert: SileoPanelViewController {
                             self.startTask(task.id)
                         }
                     }
+                    control.setTitle(nil, for: .normal)
+                    control.setImage(UIImage(systemName: inRound && !paused ? "pause.fill" : "play.fill"), for: .normal)
+                    control.accessibilityLabel = String(localizationKey: key)
                     control.isEnabled = !cancelling && (!roundRunning || (inRound && task.id != "archive"))
-                    control.widthAnchor.constraint(equalToConstant: 56).isActive = true
+                    control.widthAnchor.constraint(equalToConstant: 44).isActive = true
                     control.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
                     controls.addArrangedSubview(control)
                 }
-                let stack = UIStackView(arrangedSubviews: controls.arrangedSubviews.isEmpty ? [row] : [row, controls])
+                controls.widthAnchor.constraint(equalToConstant: 44).isActive = true
+                let stack = UIStackView(arrangedSubviews: [row, controls])
                 stack.axis = .horizontal
                 stack.alignment = .center
-                stack.spacing = 2
-                return SileoPanelTable.Item(stack)
+                stack.spacing = 0
+                let separator = UIView()
+                separator.backgroundColor = .separator
+                separator.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
+                let item = UIStackView(arrangedSubviews: task.id == rows.last?.id ? [stack] : [stack, separator])
+                item.axis = .vertical
+                return SileoPanelTable.Item(item)
             })
             table.layoutIfNeeded()
             let minimumY = -table.adjustedContentInset.top
@@ -594,10 +613,9 @@ final class BackupProgressAlert: SileoPanelViewController {
         }
         let ready = startHandler != nil && !roundRunning && session.hasPendingTasks
         startAllButton?.isEnabled = ready
-        // No pending work means nothing to start: an always-visible button
-        // reads as a second, useless action next to 关闭.
+        // Show the batch start control only while pending work can start.
         startAllButton?.isHidden = !ready
-        action.isHidden = roundRunning && !cancellable
+        action.isHidden = roundRunning ? !cancellable : onFinishedClose == nil
         action.isEnabled = !cancelling
         action.setTitle(String(localizationKey: roundRunning ? "Cancel" : (onFinishedClose != nil ? "Backup_Task_Complete_Action" : "Close")), for: .normal)
     }

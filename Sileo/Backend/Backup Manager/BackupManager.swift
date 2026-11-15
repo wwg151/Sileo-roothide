@@ -213,6 +213,11 @@ final class BackupRestoreBatch {
                 stopped = String(localizationKey: "Restore_Isolation_Global")
             }
             while !pending.isEmpty && stopped == nil {
+                if let removed = self.taskSession?.removedIDs {
+                    self.removedIDs.formUnion(removed)
+                    pending.removeAll { removed.contains($0.package) }
+                }
+                if pending.isEmpty { break }
                 PackageListManager.shared.reloadInstalled()
                 if Self.hasPendingTriggers || DpkgWrapper.dpkgInterrupted() {
                     stopped = String(localizationKey: "Restore_Isolation_Global")
@@ -270,6 +275,11 @@ final class BackupRestoreBatch {
                 }
                 let package = pending.remove(at: index)
                 completed += 1
+                if self.taskSession?.waitUntilResumed(package.package) == false { continue }
+                if BackupManager.shared.isCancelled {
+                    stopped = String(localizationKey: "Restore_Isolation_Cancelled")
+                    break
+                }
                 if let current = installed.first(where: { $0.package == package.package }), current.version != package.version {
                     self.results[package.package] = String(localizationKey: "Restore_Isolation_Unsupported")
                     continue
@@ -308,7 +318,7 @@ final class BackupRestoreBatch {
                     manager.checkSavedPackages([package], progress: { output($0 + "\n", APTWrapper.debugFD) }, completion: { saved.signal() })
                     saved.wait()
                 }
-                self.taskSession?.waitUntilResumed(package.package)
+                if self.taskSession?.waitUntilResumed(package.package) == false { continue }
                 if BackupManager.shared.isCancelled {
                     self.results[package.package] = String(localizationKey: "Restore_Isolation_Cancelled")
                     stopped = String(localizationKey: "Restore_Isolation_Cancelled")
@@ -712,7 +722,7 @@ final class BackupManager {
             }
 
             for (index, package) in packages.enumerated() {
-                taskSession?.waitUntilResumed(package.package)
+                if taskSession?.waitUntilResumed(package.package) == false { continue }
                 if self.isCancelled { break }
                 let detail = "\(index + 1)/\(packages.count)"
                 func report(_ phase: Double) {
@@ -724,6 +734,7 @@ final class BackupManager {
                     }
                 }
                 report(0)
+                if taskSession?.removedIDs.contains(package.package) == true { continue }
                 // A cached copy is done in a moment; a repack reports its own
                 // phases, and the pause keeps each step on screen.
                 Thread.sleep(forTimeInterval: 0.05)
@@ -750,6 +761,10 @@ final class BackupManager {
                     entry.deb = fileName
                     entries.append(entry)
                     report(1)
+                    if taskSession?.removedIDs.contains(package.package) == true {
+                        entries.removeLast()
+                        continue
+                    }
                     if let error = writeManifest() {
                         entries.removeLast()
                         try? fileManager.removeItem(at: destination)
@@ -763,9 +778,12 @@ final class BackupManager {
                 }
 
                 do {
-                    _ = try PackageRepacker.repack(package: package, to: destination) { phase in
+                    _ = try PackageRepacker.repack(package: package, to: destination, shouldContinue: {
+                        taskSession?.removedIDs.contains(package.package) != true && !self.isCancelled
+                    }) { phase in
                         report(phase)
                     }
+                    if taskSession?.removedIDs.contains(package.package) == true { continue }
                     entry.deb = fileName
                     entries.append(entry)
                     if let error = writeManifest() {
@@ -778,6 +796,7 @@ final class BackupManager {
                         taskSession?.update(package.package, fraction: 1, detail: String(localizationKey: "Done"), outcome: true)
                     }
                 } catch {
+                    if taskSession?.removedIDs.contains(package.package) == true { continue }
                     taskSession?.update(package.package, fraction: 0, detail: error.localizedDescription, outcome: false)
                     failures.append("\(package.name) (\(package.package)): \(error.localizedDescription)")
                     NSLog("SileoLog: backup failed \(package.package): \(error)")
