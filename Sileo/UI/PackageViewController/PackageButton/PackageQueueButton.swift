@@ -180,7 +180,7 @@ class PackageQueueButton: PackageButton {
                 title = String(localizationKey: "Package_Downgrade_Action")
                 image = "arrow.down.circle"
             }
-            if let target = target {
+            if !selectsVersionBeforeInstalling, let target = target {
                 items.append((title, image, false, true, {
                     self.hapticResponse()
                     if ambiguous {
@@ -196,26 +196,31 @@ class PackageQueueButton: PackageButton {
                 self.hapticResponse()
                 self.requestQueuePackage(package: package, queue: .uninstallations)
             }))
-        } else if !package.fromStatusFile && (package.sourceRepo != nil || package.local_deb != nil) {
+        } else if !selectsVersionBeforeInstalling && !package.fromStatusFile && (package.sourceRepo != nil || package.local_deb != nil) {
             items.append((String(localizationKey: "Package_Get_Action"), "square.and.arrow.down", false, unlocked, {
                 self.hapticResponse()
                 self.requestQueuePackage(package: package, queue: .installations)
             }))
         }
 
-        items.append((String(localizationKey: "Package_Choose_Version"), "list.bullet", false, unlocked, { self.showVersionPrompt(nil) }))
+        // Detail pages expose these actions in their persistent bottom dock.
+        if !selectsVersionBeforeInstalling {
+            items.append((String(localizationKey: "Package_Choose_Version"), "list.bullet", false, unlocked, { self.showVersionPrompt(nil) }))
+        }
 
         let holdTarget = PackageListManager.shared.installedPackage(identifier: package.package)
         let holding = holdTarget?.wantInfo == .hold || (holdTarget == nil && DpkgWrapper.isIgnoringUpdates(package: package.package))
         let holdTitle = String(localizationKey: holding ? "Package_Hold_Disable_Action" : "Package_Hold_Enable_Action")
         items.append((holdTitle, holding ? "hand.raised.slash" : "hand.raised", false, true, { self.setIgnoreUpdates(!holding, package: holdTarget ?? package) }))
 
-        if package.local_deb != nil || (package.filename != nil && package.sourceRepo != nil) {
-            items.append((String(localizationKey: "Package_Download_Deb"), "arrow.down.to.line", false, unlocked, { self.downloadDeb(package) }))
-        } else if package.fromStatusFile {
-            items.append((String(localizationKey: "Package_Download_Deb"), "arrow.down.to.line", false, true, {
-                self.selectPackageVersion { selected in self.downloadDeb(selected) }
-            }))
+        if !selectsVersionBeforeInstalling {
+            if package.local_deb != nil || (package.filename != nil && package.sourceRepo != nil) {
+                items.append((String(localizationKey: "Package_Download_Deb"), "arrow.down.to.line", false, unlocked, { self.downloadDeb(package) }))
+            } else if package.fromStatusFile {
+                items.append((String(localizationKey: "Package_Download_Deb"), "arrow.down.to.line", false, true, {
+                    self.selectPackageVersion { selected in self.downloadDeb(selected) }
+                }))
+            }
         }
         items.append((String(localizationKey: "Package_View_Info"), "doc.text", false, true, { self.showPackageInfo(package) }))
         return items
