@@ -79,7 +79,6 @@ class DownloadsTableViewController: SileoViewController {
     
     private var returnButtonAction: APTWrapper.FINISH = .back
     private var refreshSileo = false
-    private var hasErrored = false
     private var detailsAttributedString: NSMutableAttributedString?
 
     private let taskHeader = UIView()
@@ -729,7 +728,6 @@ class DownloadsTableViewController: SileoViewController {
         isFinishedInstalling = false
         returnButtonAction = .back
         refreshSileo = false
-        hasErrored = false
         installExitStatus = nil
         currentTaskStatus = nil
         currentOperationTitle = nil
@@ -751,7 +749,6 @@ class DownloadsTableViewController: SileoViewController {
         isFinishedInstalling = false
         returnButtonAction = .back
         refreshSileo = false
-        hasErrored = false
         installExitStatus = nil
         currentTaskStatus = nil
         currentOperationTitle = nil
@@ -794,6 +791,13 @@ class DownloadsTableViewController: SileoViewController {
             return
         }
         
+        // This controller is reused between transactions. Do not carry an open
+        // log overlay from the previous transaction into the new one.
+        detailsView?.layer.removeAllAnimations()
+        detailsView?.removeFromSuperview()
+        detailsView?.alpha = 0
+        taskGrabberButton.isHidden = false
+        statusBarStyle = UIDevice.current.userInterfaceIdiom == .pad ? .default : .lightContent
         isDownloading = true
         overallProgress = 0
         aptProgress = 0
@@ -935,7 +939,6 @@ class DownloadsTableViewController: SileoViewController {
         isFinishedInstalling = false
         returnButtonAction = .back
         refreshSileo = false
-        hasErrored = false
         installExitStatus = nil
         currentTaskStatus = nil
         currentOperationTitle = nil
@@ -1086,7 +1089,8 @@ class DownloadsTableViewController: SileoViewController {
             var textColor = Dusk.foregroundColor
             if pipe == STDERR_FILENO {
                 textColor = Dusk.errorColor
-                self.hasErrored = true
+                // stderr also carries warnings and maintainer-script diagnostics.
+                // Keep their log colour, but determine failure from apt's result.
             }
             if pipe == APTWrapper.debugFD {
                 textColor = Dusk.debugColor
@@ -1151,12 +1155,11 @@ class DownloadsTableViewController: SileoViewController {
                 
                 TabBarController.singleton?.updatePopup()
                 
-                if UserDefaults.standard.bool(forKey: "AlwaysShowLog") || self.hasErrored {
+                // Successful transactions respect the preference even if apt
+                // emitted warnings. Failed transactions must remain inspectable.
+                if UserDefaults.standard.bool(forKey: "AlwaysShowLog") || status != 0 {
                     self.showDetails(nil)
-                }
-                else
-                if (status == 0 && UserDefaults.standard.bool(forKey: "AutoComplete") && !self.hasErrored)
-                {
+                } else if UserDefaults.standard.bool(forKey: "AutoComplete") {
                     self.completeButtonTapped(nil)
                 }
                 NotificationCenter.default.post(name: NSNotification.Name("Sileo.CompleteInstall"), object: nil)
