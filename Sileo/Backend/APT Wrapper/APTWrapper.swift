@@ -213,6 +213,17 @@ class APTWrapper {
             let packageStr = package.package.package + "-"
             arguments.append(packageStr)
         }
+        // Capture before dpkg runs: removing Sileo can invalidate its installed metadata.
+        let ownPackageID = FeaturedInfoFooterView.package?.package ?? {
+            switch Bundle.main.bundleIdentifier {
+            case "org.coolstar.SileoBeta": return "org.coolstar.sileobeta"
+            case "org.coolstar.SileoNightly": return "org.coolstar.sileonightly"
+            default: return "org.coolstar.sileo"
+            }
+        }()
+        let changesSileo = (installs + installDeps + removals).contains {
+            $0.package.package == ownPackageID
+        }
         var finish = FINISH.back
         #if targetEnvironment(macCatalyst)
 //        arguments[0] = "apt-get"
@@ -505,10 +516,9 @@ class APTWrapper {
 
             var status: Int32 = 0
             waitpid(pid, &status, 0)
-            // A same-version reinstall may leave the app scan unchanged.
-            let ownPackageID = FeaturedInfoFooterView.package?.package ?? "org.coolstar.sileo"
-            let reinstallsSileo = (installs + installDeps).contains { $0.package.package == ownPackageID }
-            var refreshSileo = status == 0 && reinstallsSileo
+            // Explicitly cover installs, reinstalls, upgrades and removals even
+            // when the app scan does not detect a change.
+            var refreshSileo = status == 0 && changesSileo
             
             let newApps = dictionaryOfScannedApps()
             var difference = Set<String>()
