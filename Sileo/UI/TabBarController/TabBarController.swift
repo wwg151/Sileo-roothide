@@ -806,13 +806,23 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         popupBar.isHidden = false
         popupBar.alpha = 0
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, !TabBarController.popupIsOpen else { return }
+            guard let self = self, self.popupIsPresented,
+                  !self.popupIsClosing, !TabBarController.popupIsOpen else { return }
             UIView.performWithoutAnimation {
                 self.floatingRetryCount = 0
                 self.applyFloatingStyle()
                 TabBarController.applyFloatingPopupContentInset(to: self.popupBar)
                 self.popupBar.setNeedsLayout()
                 self.popupBar.layoutIfNeeded()
+                // Closing lays the bar out again in the framework's docking
+                // coordinates. The first presentation's lift is no longer
+                // necessarily valid. Recalibrate once, while still invisible,
+                // against the same capsule edge and gap used on presentation.
+                if self.isFloatingEnabled, let container = self.floatingBackground,
+                   !container.isHidden, self.popupBar.bounds.height > 0 {
+                    _ = self.measurePopupBarLift(on: container)
+                    self.updateFloatingPopupOffset()
+                }
                 self.popupBar.alpha = 1
                 // Whatever the window's landing left behind at the bottom goes
                 // with it; it is shown again when the queue is opened.
@@ -887,6 +897,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // is worked out again for it.
         floatingPopupTabBarHeightCache = nil
         floatingPopupTabBarHeightCacheSize = .zero
+        TabBarController.popupBarLift = nil
+        TabBarController.popupBarLiftSize = .zero
         if popupIsPresented {
             self.popupBar.tabBarHeight = floatingPopupTabBarHeight
         }
