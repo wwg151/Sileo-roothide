@@ -214,14 +214,14 @@ private enum BackupCompletionToast {
         controller.view.backgroundColor = .clear
         window.rootViewController = controller
         let card = UIVisualEffectView(effect: nil)
-        card.contentView.backgroundColor = UIColor(red: 0.78, green: 0.94, blue: 0.82, alpha: 1)
+        card.contentView.backgroundColor = .systemGreen
         card.translatesAutoresizingMaskIntoConstraints = false
         card.layer.cornerRadius = 18
         card.clipsToBounds = true
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.text = message
-        label.textColor = UIColor(red: 0.10, green: 0.22, blue: 0.14, alpha: 1)
+        label.textColor = .white
         label.numberOfLines = 0
         label.font = .preferredFont(forTextStyle: .subheadline)
         label.textAlignment = .center
