@@ -98,6 +98,88 @@ class DownloadsTableViewController: SileoViewController {
     private var installExitStatus: Int32?
     public private(set) var currentOperationTitle: String?
     private var currentTaskStatus: String?
+    struct TaskPresentation {
+        let title: String
+        let detail: String
+        let progress: Double?
+        let stage: Int
+        let failed: Bool
+        let rows: [String]
+    }
+
+    /// Main-thread snapshot shared by the window, collapsed queue and peek.
+    public var taskPresentation: TaskPresentation {
+        let manager = DownloadManager.shared
+        let entries = installations + upgrades + installdeps
+        let downloads = entries.compactMap { manager.queuedDownload(package: $0.package.package) }
+            .filter { $0.session == manager.currentDownloadSession }
+        let failures = downloads.filter { !($0.failureReason ?? "").isEmpty }
+        let blocked = !errors.isEmpty || !failures.isEmpty
+        let rows: [String]
+        if !actions.isEmpty {
+            rows = actions.map { ($0.package.name ?? $0.package.package) + " · " + ($0.status ?? String(localizationKey: "Ready_Status")) }
+        } else {
+            rows = (entries + uninstallations + uninstalldeps).map { entry in
+                let download = downloads.first { $0.package.package == entry.package.package }
+                let status = download?.failureReason.flatMap { $0.isEmpty ? nil : $0 }
+                    ?? (download?.success == true && download?.progress == 1
+                        ? String(localizationKey: "Task_Downloaded")
+                        : download?.message ?? String(localizationKey: "Queued_Package_Status"))
+                return (entry.package.name ?? entry.package.package) + " · " + status
+            }
+        }
+        // Completion always wins over every running flag and cached message.
+        if isFinishedInstalling {
+            let failed = installExitStatus != 0
+            return TaskPresentation(title: String(localizationKey: failed ? "Task_Install_Issue" : "Task_Completed"),
+                detail: String(localizationKey: failed ? "Task_Check_Log" : "Task_Finish_Hint"),
+                progress: failed ? (hasAPTProgress ? min(0.99, aptProgress) : nil) : 1,
+                stage: failed ? 1 : 2, failed: failed, rows: rows)
+        }
+        if isInstalling {
+            return TaskPresentation(title: currentOperationTitle ?? String(localizationKey: "Deck_Executing"),
+                detail: currentTaskStatus ?? String(localizationKey: "Task_Keep_Open"),
+                progress: hasAPTProgress ? min(0.99, aptProgress) : nil, stage: 1, failed: false, rows: rows)
+        }
+        if blocked {
+            return TaskPresentation(title: String(localizationKey: "Task_Attention"),
+                detail: failures.first?.failureReason ?? String(localizationKey: "Task_Resolve_Dependencies"),
+                progress: nil, stage: 0, failed: true, rows: rows)
+        }
+        if isDownloading {
+            let converting = downloads.contains { $0.message == String(localizationKey: "Compat_Converting") }
+            let ready = !entries.isEmpty && downloads.count == entries.count
+                && downloads.allSatisfy { $0.success && $0.progress == 1 }
+            let network = entries.filter { $0.package.local_deb == nil }
+            var written: Double = 0
+            var expected: Double = 0
+            var known = !network.isEmpty
+            for entry in network {
+                let download = downloads.first { $0.package.package == entry.package.package }
+                let size = download?.presentationExpectedBytes ?? max(0, Int64(entry.package.size ?? "") ?? 0)
+                written += Double(download?.presentationWrittenBytes ?? 0)
+                expected += Double(size)
+                known = known && size > 0
+            }
+            let fraction = known && expected > 0 ? max(0, min(1, written / expected)) : nil
+            let detail = ready ? String(localizationKey: "Ready_Status")
+                : converting ? String(localizationKey: "Compat_Converting")
+                : known ? String(format: String(localizationKey: "Download_Progress"),
+                    ByteCountFormatter.string(fromByteCount: Int64(min(written, Double(Int64.max / 2))), countStyle: .file),
+                    ByteCountFormatter.string(fromByteCount: Int64(min(expected, Double(Int64.max / 2))), countStyle: .file))
+                : String(localizationKey: "Download_Starting")
+            return TaskPresentation(title: String(localizationKey: ready ? "Ready_Status" : converting ? "Compat_Converting" : "Downloading_Package_Status"),
+                detail: detail, progress: converting ? nil : ready ? 1 : fraction, stage: 0, failed: false, rows: rows)
+        }
+        return TaskPresentation(title: String(localizationKey: "Task_Ready"),
+            detail: String(format: String(localizationKey: "Task_Summary"), entries.count, uninstallations.count + uninstalldeps.count),
+            progress: nil, stage: 0, failed: false, rows: rows)
+    }
+
+    private var hasAPTProgress = false
+    private let stageLabels = (0..<3).map { _ in UILabel() }
+    private let stageTracks = (0..<3).map { _ in UIProgressView(progressViewStyle: .bar) }
+    private let collapseButton = UIButton(type: .system)
     private var overallProgress: Double = 0
     public private(set) var aptProgress: Double = 0
     private let taskPercentage = UILabel()
@@ -130,7 +212,21 @@ class DownloadsTableViewController: SileoViewController {
         taskTitle.font = .systemFont(ofSize: 29, weight: .bold)
         taskTitle.numberOfLines = 0
         taskTitle.textColor = .label
-        taskTitle.text = String(localizationKey: "Task_Title")
+        taskTitle.text = String(localizationKey: "Deck_Title")
+        for (index, label) in stageLabels.enumerated() {
+            label.text = String(localizationKey: ["Deck_Download", "Deck_Execute", "Done"][index])
+            label.font = .systemFont(ofSize: 12, weight: .medium)
+            taskCard.contentView.addSubview(label)
+            let track = stageTracks[index]
+            track.trackTintColor = .tertiarySystemFill
+            track.semanticContentAttribute = .forceLeftToRight
+            taskCard.contentView.addSubview(track)
+        }
+        collapseButton.setTitle(String(localizationKey: "Deck_Collapse"), for: .normal)
+        collapseButton.addTarget(self, action: #selector(collapseTask), for: .touchUpInside)
+        collapseButton.layer.cornerRadius = 25
+        collapseButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        footerView?.addSubview(collapseButton)
         taskStage.font = .systemFont(ofSize: 13, weight: .semibold)
         taskHeadline.font = .systemFont(ofSize: 25, weight: .bold)
         taskHeadline.adjustsFontSizeToFitWidth = true
@@ -220,11 +316,17 @@ class DownloadsTableViewController: SileoViewController {
         stageActivity.frame = CGRect(x: inner + 1, y: 17, width: 20, height: 20)
         taskHeadline.frame = CGRect(x: 20, y: taskStage.frame.maxY + 7, width: inner, height: headlineHeight)
         taskDetail.frame = CGRect(x: 20, y: taskHeadline.frame.maxY + 3, width: inner, height: detailHeight)
-        let percentageWidth = min(inner, max(36, ceil(taskPercentage.intrinsicContentSize.width)))
-        let percentageX = max(0, min(inner - percentageWidth, inner * CGFloat(overallProgress) - percentageWidth / 2))
-        taskPercentage.frame = CGRect(x: 20 + percentageX, y: taskDetail.frame.maxY + 6, width: percentageWidth, height: 18)
-        taskProgress.frame = CGRect(x: 20, y: taskPercentage.frame.maxY + 6, width: inner, height: 4)
-        taskCard.frame = CGRect(x: 20, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 14)
+        let percentageWidth: CGFloat = 72
+        taskPercentage.frame = CGRect(x: max(20, cardWidth - 92), y: taskStage.frame.maxY + 8, width: percentageWidth, height: 36)
+        taskHeadline.frame.size.width = max(0, inner - 80)
+        taskProgress.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 14, width: inner, height: 4)
+        let segmentWidth = max(0, (inner - 16) / 3)
+        for index in 0..<3 {
+            let x = 20 + CGFloat(index) * (segmentWidth + 8)
+            stageTracks[index].frame = CGRect(x: x, y: taskProgress.frame.minY, width: segmentWidth, height: 4)
+            stageLabels[index].frame = CGRect(x: x, y: taskProgress.frame.maxY + 9, width: segmentWidth, height: 20)
+        }
+        taskCard.frame = CGRect(x: 20, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 43)
         let headerHeight = taskCard.frame.maxY + 14
         if taskHeader.frame.width != width || taskHeader.frame.height != headerHeight {
             taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: headerHeight)
@@ -242,6 +344,7 @@ class DownloadsTableViewController: SileoViewController {
         completeButton?.frame = main
         showDetailsButton?.frame = secondary
         taskPrimaryButton.frame = main
+        collapseButton.frame = main
         cancelDownload?.frame = secondary
         completeLaterButton?.frame = CGRect(x: 20, y: 74, width: max(0, (w - 48) / 2), height: 44)
         if isFinishedInstalling {
@@ -260,78 +363,36 @@ class DownloadsTableViewController: SileoViewController {
     private func refreshTaskPresentation() {
         guard isViewLoaded else { return }
         let manager = DownloadManager.shared
-        let hasInstalls = !(installations + upgrades + installdeps).isEmpty
-        let hasRemovals = !(uninstallations + uninstalldeps).isEmpty
-        let titleKey = hasRemovals ? (hasInstalls ? "Task_Title_Mixed" : "Task_Title_Removal") : "Task_Title"
-        taskTitle.text = String(localizationKey: titleKey)
         let downloads = Array(manager.vars.queuedDownloads.raw.values).filter { $0.session == manager.currentDownloadSession }
         let failed = downloads.filter { !($0.failureReason ?? "").isEmpty }
-        let finished = downloads.filter { $0.success && $0.progress == 1 && ($0.failureReason ?? "").isEmpty }.count
-        let blocked = !errors.isEmpty || !failed.isEmpty || (isFinishedInstalling && installExitStatus != 0)
-        let color: UIColor = blocked ? .systemOrange : (UINavigationBar.appearance().tintColor ?? .systemTeal)
-        taskStage.textColor = color
-        taskProgress.progressTintColor = color
-        stageActivity.color = color
         let active = !isFinishedInstalling && (isInstalling || (isDownloading && failed.isEmpty))
-        if active { stageActivity.startAnimating() } else { stageActivity.stopAnimating() }
-        taskProgress.isHidden = !(isDownloading || isInstalling || isFinishedInstalling)
-        taskPercentage.isHidden = taskProgress.isHidden
-        // Account for queued packages before their network task starts, using
-        // repository Size metadata until a response supplies the actual length.
-        let entries = installations + upgrades + installdeps
-        let sizes = entries.map { entry -> (expected: Int64, written: Int64) in
-            if let download = downloads.first(where: { $0.package.package == entry.package.package }) {
-                return (download.presentationExpectedBytes, download.presentationWrittenBytes)
-            }
-            return (max(0, Int64(entry.package.size ?? "") ?? 0), 0)
-        }
-        let knownSize = !sizes.isEmpty && sizes.allSatisfy { $0.expected > 0 }
-        let expected = sizes.reduce(Int64(0)) { $0 + $1.expected }
-        let written = sizes.reduce(Int64(0)) { $0 + $1.written }
-        if isFinishedInstalling && !blocked {
-            overallProgress = 1
-        } else if isInstalling {
-            overallProgress = min(0.99, aptProgress)
-        } else if isDownloading {
-            overallProgress = knownSize && expected > 0 ? Double(written) / Double(expected) : 0
-            if !knownSize {
-                taskProgress.isHidden = true
-                taskPercentage.isHidden = true
-            }
-        }
-        if isFinishedInstalling {
-            taskStage.text = String(localizationKey: blocked ? "Task_Attention" : "Done")
-            taskHeadline.text = String(localizationKey: blocked ? "Task_Install_Issue" : "Task_Completed")
-            taskDetail.text = String(localizationKey: blocked ? "Task_Check_Log" : "Task_Finish_Hint")
-        } else if isInstalling {
-            taskStage.text = currentOperationTitle ?? String(localizationKey: "Task_Installing")
-            taskHeadline.text = String(localizationKey: "Task_Installing")
-            taskDetail.text = currentTaskStatus ?? String(localizationKey: "Task_Keep_Open")
-        } else if !errors.isEmpty {
-            taskStage.text = String(localizationKey: "Task_Attention")
-            taskHeadline.text = String(format: String(localizationKey: "Task_Issue_Count"), errors.count)
-            taskDetail.text = String(localizationKey: "Task_Resolve_Dependencies")
-        } else if !failed.isEmpty {
-            taskStage.text = String(localizationKey: "Task_Download_Issue")
-            taskHeadline.text = String(format: String(localizationKey: "Task_Issue_Count"), failed.count)
-            taskDetail.text = String(format: String(localizationKey: "Task_Download_Failure_Summary"), finished)
-        } else if isDownloading {
-            taskStage.text = String(localizationKey: "Downloading_Package_Status")
-            taskHeadline.text = String(format: String(localizationKey: "Task_Download_Count"), finished, manager.installingPackages())
-            if knownSize && expected > 0 {
-                taskDetail.text = String(format: String(localizationKey: "Download_Progress"), ByteCountFormatter.string(fromByteCount: written, countStyle: .file), ByteCountFormatter.string(fromByteCount: expected, countStyle: .file))
-            } else {
-                let received = downloads.reduce(Int64(0)) { $0 + max(0, $1.totalBytesWritten) }
-                taskDetail.text = received > 0 ? ByteCountFormatter.string(fromByteCount: received, countStyle: .file) + " …" : String(localizationKey: "Download_Starting")
-            }
-        } else {
-            overallProgress = 0
-            taskStage.text = String(localizationKey: "Queued_Package_Status")
-            taskHeadline.text = String(localizationKey: "Task_Ready")
-            taskDetail.text = String(format: String(localizationKey: "Task_Summary"), manager.installingPackages(), manager.uninstallingPackages())
-        }
-        taskProgress.setProgress(Float(overallProgress), animated: false)
+        let snapshot = taskPresentation
+        let color: UIColor = snapshot.failed ? .systemRed : (UINavigationBar.appearance().tintColor ?? .systemTeal)
+        stageActivity.color = color
+        taskTitle.text = String(localizationKey: "Deck_Title")
+        taskStage.text = String(localizationKey: snapshot.failed ? "Task_Attention"
+            : snapshot.stage == 2 ? "Done" : snapshot.stage == 1 ? "Deck_Execute" : "Deck_Download")
+        taskHeadline.text = snapshot.title
+        taskDetail.text = snapshot.detail
+        overallProgress = snapshot.progress ?? 0
+        taskProgress.isHidden = true
+        taskPercentage.isHidden = snapshot.progress == nil
         taskPercentage.text = "\(Int(overallProgress * 100))%"
+        taskPercentage.font = .monospacedDigitSystemFont(ofSize: 23, weight: .semibold)
+        let accent: UIColor = snapshot.failed ? .systemRed : (view.tintColor ?? .systemTeal)
+        taskCard.contentView.backgroundColor = accent.withAlphaComponent(0.06)
+        taskStage.textColor = accent
+        taskPercentage.textColor = accent
+        for index in 0..<3 {
+            let value: Double = index < snapshot.stage ? 1 : index == snapshot.stage ? overallProgress : 0
+            stageTracks[index].setProgress(Float(value), animated: false)
+            stageTracks[index].progressTintColor = accent
+            stageLabels[index].textColor = index == snapshot.stage ? accent : .secondaryLabel
+        }
+        if active && !snapshot.failed { stageActivity.startAnimating() } else { stageActivity.stopAnimating() }
+        collapseButton.isHidden = !isInstalling || isFinishedInstalling
+        collapseButton.backgroundColor = accent
+        collapseButton.setTitleColor(.white, for: .normal)
         let downloadStage = isDownloading && !isInstalling && !isFinishedInstalling
         taskPrimaryButton.isHidden = !downloadStage
         taskPrimaryButton.isEnabled = downloadStage && !failed.isEmpty
@@ -400,6 +461,7 @@ class DownloadsTableViewController: SileoViewController {
         public var progress: CGFloat {
             transactionProgress
         }
+        var isActive = false
         var transactionProgress: CGFloat = 0
         
         init(package: Package, type: ActionType) {
@@ -707,6 +769,7 @@ class DownloadsTableViewController: SileoViewController {
         isDownloading = true
         overallProgress = 0
         aptProgress = 0
+        hasAPTProgress = false
         installExitStatus = nil
         currentTaskStatus = nil
         currentOperationTitle = nil
@@ -743,6 +806,7 @@ class DownloadsTableViewController: SileoViewController {
         }
         isInstalling = true
         aptProgress = 0
+        hasAPTProgress = false
         overallProgress = 0
         var earlyBreak = false
         if UIApplication.shared.applicationState == .background || UIApplication.shared.applicationState == .inactive, let completion = backgroundCallback {
@@ -790,10 +854,30 @@ class DownloadsTableViewController: SileoViewController {
             }
             return
         }
-        guard !isFinishedInstalling,
-              let action = actions.first(where: { $0.package.package == package }) else { return }
+        guard !isFinishedInstalling else { return }
+        let matching = actions.first { $0.package.package == package }
+        for previous in actions where previous !== matching && previous.isActive {
+            previous.isActive = false
+            previous.status = String(localizationKey: "Deck_Waiting_Result")
+            previous.cell?.updateStatus()
+        }
+        guard let action = matching else {
+            currentOperationTitle = String(localizationKey: "Deck_Executing")
+            currentTaskStatus = APTLogTranslator.localize(status)
+            return
+        }
+        action.isActive = true
         action.progressCounter += 1
         let step = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        if (action.type == .removal && step.hasPrefix("Removed"))
+            || (action.type == .install && step.hasPrefix("Installed")) {
+            action.isActive = false
+            action.status = String(localizationKey: action.operationKey + "_Completed")
+            action.cell?.updateStatus()
+            currentOperationTitle = String(localizationKey: "Deck_Executing")
+            currentTaskStatus = action.status
+            return
+        }
         let stepKey: String?
         if step.hasPrefix("Preparing") {
             stepKey = "Task_Step_Preparing"
@@ -955,6 +1039,7 @@ class DownloadsTableViewController: SileoViewController {
                 DispatchQueue.main.async {
                     guard !self.isFinishedInstalling else { return }
                     if progress.isFinite {
+                        self.hasAPTProgress = true
                         self.aptProgress = max(self.aptProgress, min(1, max(0, progress / 100)))
                     }
                     for action in self.actions {
@@ -1018,6 +1103,7 @@ class DownloadsTableViewController: SileoViewController {
                 self.currentTaskStatus = nil
                 self.currentOperationTitle = nil
                 self.actions.forEach {
+                    $0.isActive = false
                     if status == 0 { $0.transactionProgress = 1 }
                     // A nonzero transaction exit cannot confirm each item's result.
                     $0.status = String(localizationKey: status == 0
@@ -1041,7 +1127,7 @@ class DownloadsTableViewController: SileoViewController {
                     self.showDetails(nil)
                 }
                 else
-                if (UserDefaults.standard.bool(forKey: "AutoComplete") && !self.hasErrored) // || !(TabBarController.singleton?.popupIsPresented ?? false)
+                if (status == 0 && UserDefaults.standard.bool(forKey: "AutoComplete") && !self.hasErrored)
                 {
                     self.completeButtonTapped(nil)
                 }

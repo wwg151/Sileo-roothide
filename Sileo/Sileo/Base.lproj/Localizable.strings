@@ -9,6 +9,14 @@
 */
 
 // Common Prompts
+"Deck_Title" = "Task Center";
+"Deck_Download" = "Download";
+"Deck_Execute" = "Apply";
+"Deck_Executing" = "Applying changes";
+"Deck_Waiting_Result" = "Waiting for final result";
+"Deck_Peek_Title" = "Task preview";
+"Deck_Open" = "Open task center";
+"Deck_Collapse" = "Continue browsing";
 "Task_Title" = "Downloads & Installation";
 "Task_Operation_Install" = "Install %ld";
 "Task_Operation_Update" = "Update %ld";
@@ -30,7 +38,7 @@
 "Task_Title_Mixed" = "Downloads, Installation & Removal";
 "Task_Attention" = "Needs attention";
 "Task_Finish_Action_Failed" = "The completion action did not finish. You can retry using the completion button or return later.";
-"Task_Install_Issue" = "Installation needs review";
+"Task_Install_Issue" = "Task results need review";
 "Task_Completed" = "All tasks completed";
 "Task_Check_Log" = "Check the installation log before continuing.";
 "Task_Finish_Hint" = "Review the results, then choose the next step below.";

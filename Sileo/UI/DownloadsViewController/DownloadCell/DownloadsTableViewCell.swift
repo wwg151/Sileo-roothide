@@ -197,7 +197,9 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         } else if let action = action {
             status = action.status ?? String(localizationKey: "Ready_Status")
             activityProgress = clampedProgress(action.progress)
-            activityTrack.isHidden = false
+            // apt reports transaction progress, not this package's progress.
+            // Only a confirmed result may fill an individual execution row.
+            activityTrack.isHidden = action.progress < 1
         } else if let download = download {
             // A failure must win over a stale conversion/download message.
             if let failure = download.failureReason, !failure.isEmpty {

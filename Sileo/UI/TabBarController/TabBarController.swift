@@ -61,6 +61,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         applyFloatingStyle()
         TabBarController.installPopupBarLayoutHook()
         popupBar.popupOpenGestureRecognizer.addTarget(self, action: #selector(popupBarTapped))
+        installTaskPeekGesture()
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(floatingTabBarChanged),
                                                name: Notification.Name("FloatingTabBar"),
@@ -185,6 +186,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         
         popupIsPresented = false
+        dismissTaskPeek()
             
         TabBarController.popupQueue.async {
             self.popupQueueLock.wait()
@@ -221,6 +223,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             popupLock.signal()
         }
         
+        dismissTaskPeek()
         self.openPopup(animated: true, completion: completion)
     }
     
@@ -281,134 +284,100 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         updatePopup(completion: nil)
     }
     
-    private var queueSummaryGeneration = 0
-
-    private struct QueueSummary {
-        var title: String
-        var subtitle: String
-        var symbol: String
-        var fraction: CGFloat?
-        var failed = false
+    /// Queue, peek and full window share one main-thread snapshot. No delayed
+    /// download summary can overwrite the final result after apt has exited.
+    private func updateQueueSummary() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.updateQueueSummary() }
+            return
+        }
+        let task = DownloadManager.shared.viewController.taskPresentation
+        let finished = task.stage == 2 && !task.failed
+        let progress = task.progress.flatMap { $0.isFinite ? CGFloat(max(0, min(1, $0))) : nil }
+        let symbol = task.failed ? "exclamationmark" : finished ? "checkmark"
+            : task.stage == 1 ? "shippingbox" : progress == nil ? "clock" : "arrow.down"
+        let image = queueRingImage(fraction: finished ? 1 : progress, symbol: symbol, failed: task.failed)
+        if let item = downloadsController?.popupItem {
+            item.title = task.title
+            item.subtitle = task.detail
+            if let progress = progress, !finished, !task.failed {
+                item.title = task.title + " · \(Int(progress * 100))%"
+            }
+            item.image = image
+            item.progress = 0
+        }
+        taskPeek?.update(title: task.title, detail: task.detail,
+                         rows: Array(task.rows.prefix(3)), image: image,
+                         failed: task.failed, active: progress == nil && !task.failed && !finished
+                            && (task.stage == 1 || DownloadManager.shared.queueRunning))
     }
 
-    /// Read the mutable Download objects on the same queue as their callbacks.
-    /// Only the immutable presentation values cross back to UIKit.
-    private func updateQueueSummary() {
-        queueSummaryGeneration += 1
-        let generation = queueSummaryGeneration
-        DownloadManager.aptQueue.async { [weak self] in
-            let manager = DownloadManager.shared
-            let count = manager.operationCount()
-            let countText = String(format: String(localizationKey: "Package_Queue_Count"), count)
-            let packages = manager.vars.upgrades.raw.union(manager.vars.installations.raw)
-                .union(manager.vars.installdeps.raw)
-            let removals = manager.vars.uninstallations.raw.union(manager.vars.uninstalldeps.raw)
-            var operationCounts: [String: Int] = [:]
-            for entry in packages {
-                let key = DownloadsTableViewController.Action.operationKey(for: entry.package)
-                operationCounts[key, default: 0] += 1
-            }
-            operationCounts["Task_Operation_Remove"] = removals.count
-            let operationSummary = ["Task_Operation_Install", "Task_Operation_Update", "Task_Operation_Reinstall",
-                                    "Task_Operation_Downgrade", "Task_Operation_Remove"].compactMap { key -> String? in
-                guard let count = operationCounts[key], count > 0 else { return nil }
-                return String(format: String(localizationKey: key), count)
-            }.joined(separator: " · ")
-            var summary = QueueSummary(title: String(localizationKey: "Queued_Package_Status"),
-                                       subtitle: operationSummary, symbol: "clock", fraction: nil)
-            var quantity = countText
-            let finished = manager.aptFinished
-            let applying = manager.aptRunning
-            if manager.queueRunning {
-                if manager.aptFinished {
-                    summary.title = String(localizationKey: "Done")
-                    summary.symbol = "checkmark"
-                } else if manager.aptRunning {
-                    summary.title = String(localizationKey: manager.installingPackages() > 0
-                        ? "Installing_Package_Status" : "Removal_Queued_Package_Status")
-                    summary.symbol = "shippingbox"
-                } else {
-                    let packages = manager.vars.upgrades.raw.union(manager.vars.installations.raw)
-                        .union(manager.vars.installdeps.raw)
-                    let downloads = packages.compactMap { manager.queuedDownload(package: $0.package.package) }
-                        .filter { $0.session == manager.currentDownloadSession }
-                    let completed = downloads.filter { $0.success && $0.progress == 1 }.count
-                    if !packages.isEmpty {
-                        quantity = String.localizedStringWithFormat("%d / %d", completed, packages.count)
-                    }
-                    let failed = downloads.contains { !($0.failureReason ?? "").isEmpty }
-                    let ready = manager.verifyComplete()
-                    let preparing = downloads.contains { $0.message == String(localizationKey: "Compat_Converting") }
-                    summary.title = String(localizationKey: failed ? "Download_Errors_Heading"
-                        : ready ? "Ready_Status" : preparing ? "Compat_Converting" : "Downloading_Package_Status")
-                    summary.symbol = failed ? "exclamationmark" : ready ? "checkmark" : preparing ? "shippingbox" : ""
-                    summary.failed = failed
-                    if !ready && !preparing {
-                        // The denominator includes pending network tasks, but not local .debs.
-                        // Never average Download.progress: conversion changes it to 0.99.
-                        var written: Double = 0
-                        var expected: Double = 0
-                        var known = true
-                        var networkCount = 0
-                        for entry in packages {
-                            let download = manager.queuedDownload(package: entry.package.package)
-                            let current = download?.session == manager.currentDownloadSession ? download : nil
-                            guard entry.package.local_deb == nil || (current?.totalBytesWritten ?? 0) > 0 else { continue }
-                            networkCount += 1
-                            let bytes = max(0, current?.totalBytesWritten ?? 0)
-                            let reported = current?.totalBytesExpectedToWrite ?? 0
-                            let size = reported > 0 ? reported : (Int64(entry.package.size ?? "") ?? 0)
-                            written += Double(bytes)
-                            if size > 0 {
-                                expected += Double(size)
-                            } else {
-                                known = false
-                            }
-                        }
-                        if networkCount > 0 {
-                            let writtenText = ByteCountFormatter.string(fromByteCount: Int64(min(written, Double(Int64.max / 2))), countStyle: .file)
-                            if known && expected > 0 {
-                                summary.subtitle = String(format: String(localizationKey: "Download_Progress"),
-                                    writtenText, ByteCountFormatter.string(fromByteCount: Int64(min(expected, Double(Int64.max / 2))), countStyle: .file))
-                                summary.fraction = CGFloat(max(0, min(1, written / expected)))
-                            } else if written > 0 {
-                                summary.subtitle = writtenText
-                            }
-                        }
-                    }
-                }
-            }
-            if manager.queueRunning && !applying {
-                summary.title += " · " + quantity
-            }
-            let result = summary
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self, self.queueSummaryGeneration == generation,
-                      let item = self.downloadsController?.popupItem else { return }
-                var displayed = result
-                // aptFinished means the process exited, including a failed exit.
-                if finished && DownloadManager.shared.viewController.presentationHasFailed {
-                    displayed.title = String(localizationKey: "Download_Errors_Heading") + " · " + countText
-                    displayed.symbol = "exclamationmark"
-                    displayed.failed = true
-                }
-                let controller = DownloadManager.shared.viewController
-                if finished {
-                    displayed.fraction = controller.presentationHasFailed
-                        ? CGFloat(min(0.99, controller.aptProgress)) : 1
-                } else if applying {
-                    displayed.title = controller.currentOperationTitle
-                        ?? String(localizationKey: "Task_Installing")
-                    displayed.fraction = CGFloat(min(0.99, controller.aptProgress))
-                }
-                item.title = displayed.title
-                item.subtitle = displayed.subtitle
-                item.image = self.queueRingImage(fraction: displayed.fraction, symbol: displayed.symbol, failed: displayed.failed)
-                // The ring shows download bytes or apt transaction progress.
-                // Keep the framework's separate bottom progress line empty.
-                item.progress = 0
-            }
+    private var taskPeek: SileoTaskPeekView?
+    private var taskPeekTimer: Timer?
+    private lazy var taskPeekGesture = UILongPressGestureRecognizer(target: self, action: #selector(taskPeekPressed(_:)))
+
+    private func installTaskPeekGesture() {
+        taskPeekGesture.minimumPressDuration = 0.45
+        taskPeekGesture.allowableMovement = 10
+        popupBar.addGestureRecognizer(taskPeekGesture)
+        // A short tap fails the long press immediately on release. A successful
+        // hold consumes that touch, so releasing it cannot also open the window.
+        popupBar.popupOpenGestureRecognizer.require(toFail: taskPeekGesture)
+        // Drag wins as soon as the finger moves; a stationary hold wins instead.
+        // Do not replace LNPopupController's own recognizer delegates.
+        popupContentView.popupInteractionGestureRecognizer.require(toFail: taskPeekGesture)
+    }
+
+    @objc private func taskPeekPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, popupIsPresented,
+              !TabBarController.popupIsOpen, taskPeek == nil,
+              presentedViewController == nil else { return }
+        let peek = SileoTaskPeekView()
+        peek.onDismiss = { [weak self] in self?.dismissTaskPeek() }
+        peek.onOpen = { [weak self] in
+            self?.dismissTaskPeek()
+            self?.presentPopupController()
         }
+        view.addSubview(peek)
+        taskPeek = peek
+        updateQueueSummary()
+        layoutTaskPeek()
+        peek.alpha = 0
+        peek.card.transform = UIAccessibility.isReduceMotionEnabled ? .identity : CGAffineTransform(scaleX: 0.97, y: 0.97)
+        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.3) {
+            peek.alpha = 1
+            peek.card.transform = .identity
+        }
+        UIAccessibility.post(notification: .screenChanged, argument: peek.heading)
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] timer in
+            guard let self = self, self.taskPeek != nil, self.view.window != nil,
+                  self.popupIsPresented, !TabBarController.popupIsOpen,
+                  UIApplication.shared.applicationState == .active else {
+                timer.invalidate()
+                self?.dismissTaskPeek()
+                return
+            }
+            self.updateQueueSummary()
+            self.layoutTaskPeek()
+        }
+        taskPeekTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func layoutTaskPeek() {
+        guard let peek = taskPeek else { return }
+        peek.frame = view.bounds
+        let queueFrame = popupBar.convert(popupBar.bounds, to: view)
+        peek.layoutCard(bottom: queueFrame.maxY, safeArea: view.safeAreaInsets)
+        view.bringSubviewToFront(peek)
+    }
+
+    private func dismissTaskPeek() {
+        taskPeekTimer?.invalidate()
+        taskPeekTimer = nil
+        guard let peek = taskPeek else { return }
+        taskPeek = nil
+        peek.removeFromSuperview()
     }
 
     private func queueRingImage(fraction: CGFloat?, symbol: String, failed: Bool) -> UIImage {
@@ -676,6 +645,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         if material == nil {
             let fresh = SileoTabGlassView()
+            fresh.flatSurface = true
             objc_setAssociatedObject(bar, popupCapsuleMaterialKey, fresh, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
             material = fresh
         }
@@ -813,9 +783,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let capsuleTop = container.convert(CGPoint.zero, to: nil).y
         let barBottom = popupBar.convert(CGPoint(x: 0, y: popupBar.bounds.height), to: nil).y
         popupBar.transform = previous
-        let lift = max(0, barBottom - capsuleTop)
+        let lift = max(0, barBottom - capsuleTop + 10)
         TabBarController.popupBarLift = lift
-        UserDefaults.standard.set(Double(view.bounds.height), forKey: "FloatingPopupBarLiftHeight")
+        TabBarController.popupBarLiftSize = view.bounds.size
         NSLog("SileoLog: popupBarLift=\(lift) capsuleTop=\(capsuleTop) barBottom=\(barBottom)")
         return lift
     }
@@ -1276,7 +1246,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
 
     /// The bar is tapped to open the queue: hide it right away.
     @objc private func popupBarTapped() {
-        guard popupBar.popupOpenGestureRecognizer.state == .began else { return }
+        guard popupBar.popupOpenGestureRecognizer.state == .ended else { return }
+        dismissTaskPeek()
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
         popupBarHiddenAt = Date()
@@ -1296,6 +1267,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // The capsule belongs to the collapsed bar; the open window must not
         // keep its inset frame or its rounding. The bar itself is hidden for
         // the duration, or it shows above the window as it is pushed up.
+        dismissTaskPeek()
         cancelPopupBarReveal()
         TabBarController.popupIsOpen = true
         popupBar.isHidden = true
@@ -1372,6 +1344,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         updatePopupOpenState()
         applyFloatingStyle()
         applyFloatingPopupShape()
+        layoutTaskPeek()
         if UIDevice.current.userInterfaceIdiom == .pad {
             self.updatePopup(animated: false)
         }
@@ -1387,6 +1360,125 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let alertController = UIAlertController(title: String(localizationKey: "Unknown", type: .error), message: string, preferredStyle: .alert)
         alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default))
         self.present(alertController, animated: true, completion: nil)
+    }
+}
+
+/// A local overlay: it never changes the popup bar's frame or presents it again.
+private final class SileoTaskPeekView: UIView {
+    let card = UIView()
+    let heading = UILabel()
+    var onDismiss: (() -> Void)?
+    var onOpen: (() -> Void)?
+    private let stack = UIStackView()
+    private let scroll = UIScrollView()
+    private let titleLabel = UILabel()
+    private let detailLabel = UILabel()
+    private let ring = UIImageView()
+    private let activity = UIActivityIndicatorView(style: .medium)
+    private var rowLabels: [UILabel] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        accessibilityViewIsModal = true
+        let outside = UIButton(type: .custom)
+        outside.frame = bounds
+        outside.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        outside.backgroundColor = UIColor.black.withAlphaComponent(0.08)
+        outside.accessibilityLabel = String(localizationKey: "Deck_Collapse")
+        outside.addTarget(self, action: #selector(close), for: .touchUpInside)
+        addSubview(outside)
+        card.backgroundColor = .secondarySystemBackground
+        card.layer.cornerRadius = 26
+        card.layer.cornerCurve = .continuous
+        card.clipsToBounds = true
+        addSubview(card)
+        card.addSubview(scroll)
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -18),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 18),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -18),
+            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -36)
+        ])
+        heading.text = String(localizationKey: "Deck_Peek_Title")
+        heading.font = .preferredFont(forTextStyle: .headline)
+        heading.adjustsFontForContentSizeCategory = true
+        heading.numberOfLines = 0
+        stack.addArrangedSubview(heading)
+        let summary = UIStackView(arrangedSubviews: [ring, titleLabel, activity])
+        summary.spacing = 10
+        summary.alignment = .center
+        ring.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        ring.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 0
+        titleLabel.adjustsFontForContentSizeCategory = true
+        stack.addArrangedSubview(summary)
+        detailLabel.font = .preferredFont(forTextStyle: .subheadline)
+        detailLabel.textColor = .secondaryLabel
+        detailLabel.numberOfLines = 0
+        detailLabel.adjustsFontForContentSizeCategory = true
+        stack.addArrangedSubview(detailLabel)
+        for _ in 0..<3 {
+            let label = UILabel()
+            label.font = .preferredFont(forTextStyle: .subheadline)
+            label.adjustsFontForContentSizeCategory = true
+            label.numberOfLines = 2
+            stack.addArrangedSubview(label)
+            rowLabels.append(label)
+        }
+        let open = UIButton(type: .system)
+        open.setTitle(String(localizationKey: "Deck_Open"), for: .normal)
+        open.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        open.titleLabel?.adjustsFontForContentSizeCategory = true
+        open.titleLabel?.numberOfLines = 0
+        open.backgroundColor = .tertiarySystemFill
+        open.layer.cornerRadius = 18
+        open.contentEdgeInsets = UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        open.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        open.addTarget(self, action: #selector(openFullWindow), for: .touchUpInside)
+        stack.addArrangedSubview(open)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func update(title: String, detail: String, rows: [String], image: UIImage, failed: Bool, active: Bool) {
+        activity.isHidden = !active
+        if active { activity.startAnimating() } else { activity.stopAnimating() }
+        titleLabel.text = title
+        titleLabel.textColor = failed ? .systemRed : .label
+        detailLabel.text = detail
+        detailLabel.isHidden = detail.isEmpty
+        ring.image = image
+        for (index, label) in rowLabels.enumerated() {
+            label.text = index < rows.count ? rows[index] : nil
+            label.isHidden = index >= rows.count
+        }
+    }
+
+    func layoutCard(bottom: CGFloat, safeArea: UIEdgeInsets) {
+        let width = min(440, max(0, bounds.width - safeArea.left - safeArea.right - 20))
+        let top = safeArea.top + 10
+        let bottom = min(bounds.height - safeArea.bottom, max(top + 44, bottom))
+        let fitting = stack.systemLayoutSizeFitting(
+            CGSize(width: max(0, width - 36), height: 0),
+            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+        let height = min(max(44, bottom - top), fitting.height + 36)
+        // Bounds/center remain stable while the entrance transform animates.
+        card.bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        card.center = CGPoint(x: bounds.midX, y: bottom - height / 2)
+        scroll.frame = card.bounds
+    }
+
+    @objc private func close() { onDismiss?() }
+    @objc private func openFullWindow() { onOpen?() }
+    override func accessibilityPerformEscape() -> Bool {
+        onDismiss?()
+        return true
     }
 }
 
