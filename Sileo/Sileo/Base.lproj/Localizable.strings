@@ -452,6 +452,11 @@
 "Source_Bad_Hash" = "Hash for %@ from %@ is invalid!";
 "Source_Decompress_Failed" = "Could not decompress packages from %@ (%@): %@";
 
+"Auto_Save_Packages_Checking" = "Checking saved packages…";
+"Auto_Save_Packages_Exists" = "Already saved, skipping: %@";
+"Auto_Save_Packages_Saving" = "Saving package: %@";
+"Auto_Save_Packages" = "Auto-Save Packages";
+"Auto_Save_Packages_Failed" = "Could not save a package to /var/mobile/Downloads/. Installation will continue.";
 "Log_Running_Dpkg" = "Running dpkg";
 "Log_Read_Lists" = "Reading package lists...";
 "Log_Build_Tree" = "Building dependency tree...";

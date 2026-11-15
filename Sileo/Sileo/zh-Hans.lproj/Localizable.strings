@@ -458,6 +458,11 @@
 "Source_Bad_Hash" = "%2$@ 里 %1$@ 的哈希校验失败！";
 "Source_Decompress_Failed" = "无法解压 %@ 的插件包列表（%@）：%@";
 
+"Auto_Save_Packages_Checking" = "正在检查已保存的插件包…";
+"Auto_Save_Packages_Exists" = "已保存，跳过：%@";
+"Auto_Save_Packages_Saving" = "正在保存插件包：%@";
+"Auto_Save_Packages" = "自动保存插件包";
+"Auto_Save_Packages_Failed" = "无法将插件包保存到 /var/mobile/Downloads/，安装将继续。";
 "Log_Running_Dpkg" = "正在运行 dpkg";
 "Log_Read_Lists" = "正在读取插件包列表...";
 "Log_Build_Tree" = "正在分析依赖关系树...";

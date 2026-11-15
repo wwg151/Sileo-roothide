@@ -484,6 +484,57 @@ final class DownloadManager {
         return true
     }
     
+    // Run after all downloads/conversions finish, before starting dpkg.
+    func checkSavedPackages(_ packages: [Package], progress: @escaping (String) -> Void, completion: @escaping () -> Void) {
+        DownloadManager.aptQueue.async {
+            let directory = URL(fileURLWithPath: "/var/mobile/Downloads", isDirectory: true)
+            let existing = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            var saved = Set<String>()
+            func identity(_ package: Package) -> String {
+                [package.package, package.version, package.architecture ?? ""].joined(separator: "\n")
+            }
+            for url in existing where url.pathExtension.lowercased() == "deb" {
+                if let package = PackageListManager.shared.package(url: url) { saved.insert(identity(package)) }
+            }
+            for package in packages {
+                let key = identity(package)
+                if saved.contains(key) {
+                    progress(String(format: String(localizationKey: "Auto_Save_Packages_Exists"), package.name ?? package.package))
+                    continue
+                }
+                let filename = "\(self.aptEncoded(string: package.package, isArch: false))_\(self.aptEncoded(string: package.version, isArch: false))_\(self.aptEncoded(string: package.architecture ?? "", isArch: true)).deb"
+                let source = URL(fileURLWithPath: package.local_deb ?? "\(CommandPath.prefix)/var/cache/apt/archives/\(filename)")
+                progress(String(format: String(localizationKey: "Auto_Save_Packages_Saving"), package.name ?? package.package))
+                if self.saveDownloadedPackage(package: package, fileURL: source, progress: progress) { saved.insert(key) }
+            }
+            DispatchQueue.main.async { completion() }
+        }
+    }
+
+    private func saveDownloadedPackage(package: Package, fileURL: URL, progress: (String) -> Void) -> Bool {
+        let directory = URL(fileURLWithPath: "/var/mobile/Downloads", isDirectory: true)
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-")
+        func component(_ value: String) -> String {
+            let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "package"
+            return String(encoded.prefix(64))
+        }
+        let filename = [package.package, package.version, package.architecture ?? "unknown"].map(component).joined(separator: "_")
+        let manager = FileManager.default
+        do {
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            var destination = directory.appendingPathComponent(filename + ".deb")
+            // Preserve existing exports, including same-version archives from other sources.
+            if manager.fileExists(atPath: destination.path) {
+                destination = directory.appendingPathComponent(filename + "_" + UUID().uuidString + ".deb")
+            }
+            try manager.copyItem(at: fileURL, to: destination)
+            return true
+        } catch {
+            progress(String(localizationKey: "Auto_Save_Packages_Failed") + " " + error.localizedDescription)
+            return false
+        }
+    }
+
     private func verifyRepoPackage(package: Package, fileURL: URL, moveToCache: Bool = true) throws -> Bool {
         let packageControl = package.rawControl
     

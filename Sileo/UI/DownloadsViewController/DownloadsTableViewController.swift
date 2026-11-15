@@ -1032,6 +1032,31 @@ class DownloadsTableViewController: SileoViewController {
     }
     
     private func startAction() {
+        let packages = (installations + upgrades + installdeps).map { $0.package }
+        guard UserDefaults.standard.bool(forKey: "AutoSavePackages"), !packages.isEmpty else {
+            performInstallAction()
+            return
+        }
+        // Lock the transaction during the preparation step as well.
+        DownloadManager.shared.aptRunning = true
+        func showSaveProgress(_ message: String) {
+            DispatchQueue.main.async {
+                self.currentTaskStatus = message
+                self.detailsAttributedString?.append(NSAttributedString(string: message + "\n"))
+                if let details = self.detailsAttributedString {
+                    self.detailsTextView?.attributedText = self.transform(attributedString: details)
+                }
+                self.reloadControlsOnly()
+            }
+        }
+        showSaveProgress(String(localizationKey: "Auto_Save_Packages_Checking"))
+        DownloadManager.shared.checkSavedPackages(packages, progress: showSaveProgress) {
+            self.currentTaskStatus = nil
+            self.performInstallAction()
+        }
+    }
+
+    private func performInstallAction() {
         NSLog("SileoLog: startAction")
         func shouldShow(_ finish: APTWrapper.FINISH) -> Bool {
             finish == .reload || finish == .restart || finish == .reboot || finish == .usreboot
