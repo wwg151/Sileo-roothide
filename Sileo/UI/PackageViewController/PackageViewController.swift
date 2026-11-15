@@ -103,6 +103,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private let actionDock = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
     private let versionButton = UIButton(type: .system)
     private let versionStatusLabel = UILabel()
+    private let versionHeadingButton = UIButton(type: .system)
     private let downloadOnlyButton = UIButton(type: .system)
     private let showcaseTaskButton = UIButton(type: .system)
     private var showcaseTaskVisible = false
@@ -239,7 +240,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         actionDock.clipsToBounds = true
         view.addSubview(actionDock)
         versionButton.contentHorizontalAlignment = .leading
-        versionButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+        versionButton.titleLabel?.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold))
         versionButton.titleLabel?.adjustsFontForContentSizeCategory = true
         versionButton.titleLabel?.numberOfLines = 2
         versionButton.titleLabel?.lineBreakMode = .byTruncatingTail
@@ -257,7 +258,16 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         downloadOnlyButton.accessibilityLabel = String(localizationKey: "Showcase_Download_Only")
         downloadOnlyButton.isEnabled = true
         downloadOnlyButton.addTarget(self, action: #selector(downloadShowcasePackage), for: .touchUpInside)
-        versionStatusLabel.font = .preferredFont(forTextStyle: .caption1)
+        versionHeadingButton.setTitle(String(localizationKey: "Package_Choose_Version"), for: .normal)
+        versionHeadingButton.setTitleColor(.label, for: .normal)
+        versionHeadingButton.contentHorizontalAlignment = .leading
+        versionHeadingButton.titleLabel?.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .systemFont(ofSize: 15, weight: .medium))
+        versionHeadingButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        versionHeadingButton.titleLabel?.numberOfLines = 0
+        versionHeadingButton.addTarget(self, action: #selector(selectShowcaseVersion), for: .touchUpInside)
+        actionDock.contentView.addSubview(versionHeadingButton)
+        versionStatusLabel.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .systemFont(ofSize: 13))
+        versionStatusLabel.textAlignment = .right
         versionStatusLabel.adjustsFontForContentSizeCategory = true
         versionStatusLabel.textColor = .secondaryLabel
         versionStatusLabel.numberOfLines = 0
@@ -299,7 +309,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         if let installed = PackageListManager.shared.installedPackage(identifier: package.package) {
             versionStatusLabel.text = String(localizationKey: "Installed_Heading") + " " + installed.version
         } else {
-            versionStatusLabel.text = String(localizationKey: "Package_Choose_Version")
+            versionStatusLabel.text = nil
         }
         let busy = DownloadManager.shared.queueRunning || DownloadManager.shared.find(package: package) != .none
         let provisional = package.isProvisional ?? false
@@ -308,6 +318,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         ignoreSwitch.isEnabled = !busy && !provisional
         infoButton.isEnabled = !provisional
         versionButton.isEnabled = !busy && !provisional
+        versionHeadingButton.isEnabled = versionButton.isEnabled
         downloadOnlyButton.isEnabled = !provisional
         downloadButton.updateInfo()
         view.setNeedsLayout()
@@ -1058,7 +1069,26 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
         let dockWidth = max(1, min(720, width - 24 - horizontalSafe * 2))
         let actualVersionWidth = max(44, dockWidth - 32)
-        let statusHeight = versionStatusLabel.sizeThatFits(CGSize(width: actualVersionWidth, height: .greatestFiniteMagnitude)).height
+        if let title = versionButton.title(for: .normal), let package = package {
+            let text = NSMutableAttributedString(string: title, attributes: [
+                .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17)),
+                .foregroundColor: UIColor.secondaryLabel
+            ])
+            if title.hasPrefix(package.version) {
+                text.addAttributes([
+                    .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold)),
+                    .foregroundColor: UIColor.label
+                ], range: NSRange(location: 0, length: (package.version as NSString).length))
+            }
+            versionButton.setAttributedTitle(text, for: .normal)
+        }
+        let headerWidth = actualVersionWidth - 4
+        let wrapStatus = traitCollection.preferredContentSizeCategory.isAccessibilityCategory || versionHeadingButton.intrinsicContentSize.width + versionStatusLabel.intrinsicContentSize.width + 16 > headerWidth
+        let headingWidth = wrapStatus ? headerWidth : min(headerWidth, versionHeadingButton.intrinsicContentSize.width + 8)
+        let headingHeight = max(44, versionHeadingButton.sizeThatFits(CGSize(width: headingWidth, height: .greatestFiniteMagnitude)).height)
+        let statusWidth = wrapStatus ? headerWidth : max(0, headerWidth - headingWidth - 8)
+        let statusTextHeight = versionStatusLabel.sizeThatFits(CGSize(width: statusWidth, height: .greatestFiniteMagnitude)).height
+        let statusHeight = wrapStatus ? headingHeight + statusTextHeight : max(headingHeight, statusTextHeight)
         let versionRowHeight = max(44, versionButton.sizeThatFits(CGSize(width: actualVersionWidth, height: .greatestFiniteMagnitude)).height)
         let actualVersionHeight = statusHeight + versionRowHeight
         let availableWidth = dockWidth - 24
@@ -1075,7 +1105,11 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         actionDock.frame = CGRect(x: (width - dockWidth) / 2,
                                   y: view.bounds.height - bottom - dockHeight,
                                   width: dockWidth, height: dockHeight)
-        versionStatusLabel.frame = CGRect(x: 20, y: 12, width: actualVersionWidth - 4, height: statusHeight)
+        versionHeadingButton.frame = CGRect(x: 20, y: 12, width: headingWidth, height: headingHeight)
+        versionStatusLabel.textAlignment = wrapStatus ? .left : .right
+        versionStatusLabel.frame = CGRect(x: wrapStatus ? 20 : 20 + headingWidth + 8,
+                                          y: wrapStatus ? 12 + headingHeight : 12,
+                                          width: statusWidth, height: wrapStatus ? statusTextHeight : statusHeight)
         versionButton.frame = CGRect(x: 16, y: 12 + statusHeight, width: actualVersionWidth, height: versionRowHeight)
         let actionsY = actualVersionHeight + 20
         let exportX: CGFloat = stacked || uninstallButton.isHidden ? 12 : 12 + uninstallWidth + 8
