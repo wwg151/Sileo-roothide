@@ -26,6 +26,8 @@
 "Backup_Task_Preserved" = "已完成的备份已保留在：%@";
 "Backup_Task_Start_All" = "全部开始";
 "Backup_Task_Start" = "开始";
+"Backup_Task_Pause" = "暂停";
+"Backup_Task_Pause_Requested" = "已请求暂停，将在安全节点等待；点开始继续。";
 "Backup_Task_Ready" = "已准备就绪。点击开始或全部开始，所需依赖会先执行。";
 "Backup_Task_Preparing" = "正在准备任务并检查依赖…";
 "Backup_Task_Dependency_Unavailable" = "依赖不可用：%@。现有源中没有可安全安装的兼容候选。";

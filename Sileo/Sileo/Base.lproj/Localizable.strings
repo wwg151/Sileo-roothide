@@ -27,6 +27,8 @@
 "Backup_Task_Preserved" = "Completed backups have been kept at: %@";
 "Backup_Task_Start_All" = "Start All";
 "Backup_Task_Start" = "Start";
+"Backup_Task_Pause" = "Pause";
+"Backup_Task_Pause_Requested" = "Pause requested; waiting at a safe boundary. Tap Start to resume.";
 "Backup_Task_Ready" = "Ready. Start a task or all tasks; dependencies run first.";
 "Backup_Task_Preparing" = "Preparing tasks and checking dependencies…";
 "Backup_Task_Dependency_Unavailable" = "Dependency unavailable: %@. No compatible candidate can be safely installed from the configured sources.";

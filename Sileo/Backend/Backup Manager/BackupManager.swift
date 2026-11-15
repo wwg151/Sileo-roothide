@@ -308,6 +308,7 @@ final class BackupRestoreBatch {
                     manager.checkSavedPackages([package], progress: { output($0 + "\n", APTWrapper.debugFD) }, completion: { saved.signal() })
                     saved.wait()
                 }
+                self.taskSession?.waitUntilResumed(package.package)
                 if BackupManager.shared.isCancelled {
                     self.results[package.package] = String(localizationKey: "Restore_Isolation_Cancelled")
                     stopped = String(localizationKey: "Restore_Isolation_Cancelled")
@@ -338,6 +339,7 @@ final class BackupRestoreBatch {
                         wait.signal()
                     }, restoreArchive: archive, restoreIconChanges: { changedApps.formUnion($0) })
                 wait.wait()
+                self.taskSession?.waitUntilResumed(package.package)
                 PackageListManager.shared.reloadInstalled()
                 if Self.hasPendingTriggers {
                     stopped = String(localizationKey: "Restore_Isolation_Global")
@@ -692,11 +694,29 @@ final class BackupManager {
             }
             var failures: [String] = []
             let total = Double(packages.count)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+            // Commit each archive as soon as it is written: the list then shows
+            // real progress, and a process that dies mid-way keeps what it
+            // already finished instead of losing the whole manifest.
+            func writeManifest() -> Error? {
+                let updatedIDs = Set(entries.map { $0.package })
+                let merged = previousEntries.filter { !updatedIDs.contains($0.package) } + entries
+                do {
+                    try encoder.encode(merged).write(to: manifestURL, options: .atomic)
+                    return nil
+                } catch {
+                    return error
+                }
+            }
 
             for (index, package) in packages.enumerated() {
+                taskSession?.waitUntilResumed(package.package)
                 if self.isCancelled { break }
                 let detail = "\(index + 1)/\(packages.count)"
                 func report(_ phase: Double) {
+                    taskSession?.waitUntilResumed(package.package)
                     taskSession?.update(package.package, fraction: phase, detail: String(localizationKey: "Backup_Task_Archiving"))
                     let value = (Double(index) + phase) / total
                     DispatchQueue.main.sync {
@@ -729,8 +749,16 @@ final class BackupManager {
                 if BackupManager.copyCachedPackage(package: package, to: destination) {
                     entry.deb = fileName
                     entries.append(entry)
-                    taskSession?.update(package.package, fraction: 0.99, detail: String(localizationKey: "Backup_Task_Processing"))
                     report(1)
+                    if let error = writeManifest() {
+                        entries.removeLast()
+                        try? fileManager.removeItem(at: destination)
+                        taskSession?.update(package.package, fraction: 0.99, detail: error.localizedDescription, outcome: false)
+                        failures.append("\(package.name) (\(package.package)): \(error.localizedDescription)")
+                        NSLog("SileoLog: backup manifest failed \(package.package): \(error)")
+                    } else {
+                        taskSession?.update(package.package, fraction: 1, detail: String(localizationKey: "Done"), outcome: true)
+                    }
                     continue
                 }
 
@@ -740,7 +768,15 @@ final class BackupManager {
                     }
                     entry.deb = fileName
                     entries.append(entry)
-                    taskSession?.update(package.package, fraction: 0.99, detail: String(localizationKey: "Backup_Task_Processing"))
+                    if let error = writeManifest() {
+                        entries.removeLast()
+                        try? fileManager.removeItem(at: destination)
+                        taskSession?.update(package.package, fraction: 0.99, detail: error.localizedDescription, outcome: false)
+                        failures.append("\(package.name) (\(package.package)): \(error.localizedDescription)")
+                        NSLog("SileoLog: backup manifest failed \(package.package): \(error)")
+                    } else {
+                        taskSession?.update(package.package, fraction: 1, detail: String(localizationKey: "Done"), outcome: true)
+                    }
                 } catch {
                     taskSession?.update(package.package, fraction: 0, detail: error.localizedDescription, outcome: false)
                     failures.append("\(package.name) (\(package.package)): \(error.localizedDescription)")
@@ -749,22 +785,6 @@ final class BackupManager {
                 }
             }
 
-            do {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let updatedIDs = Set(entries.map { $0.package })
-                let merged = previousEntries.filter { !updatedIDs.contains($0.package) } + entries
-                try encoder.encode(merged).write(to: manifestURL, options: .atomic)
-            } catch {
-                for entry in entries {
-                    taskSession?.update(entry.package, fraction: 0.99, detail: error.localizedDescription, outcome: false)
-                }
-                DispatchQueue.main.async { completion(.failure(error)) }
-                return
-            }
-            for entry in entries {
-                taskSession?.update(entry.package, fraction: 1, detail: String(localizationKey: "Done"), outcome: true)
-            }
             if self.isCancelled {
                 DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
                 return
