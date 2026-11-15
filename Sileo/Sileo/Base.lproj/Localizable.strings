@@ -14,7 +14,8 @@
 "Backup_Task_Running" = "Running tasks in order…";
 "Backup_Packages" = "Back Up Packages";
 "Backup_Task_Search" = "Search name or identifier";
-"Backup_Task_Manage" = "Manage";
+"Backup_Task_Manage" = "Select Multiple";
+"Backup_Task_Clear_Selected" = "Clear Selected";
 "Backup_Task_Remove" = "Remove Task";
 "Backup_Task_Remove_Count" = "Remove Selected (%d)";
 "Backup_Task_Select_Visible" = "Select Visible";

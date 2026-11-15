@@ -345,12 +345,9 @@ final class BackupProgressAlert: SileoPanelViewController {
     var hasUnfinishedTasks: Bool { roundRunning || (startHandler == nil && resultMessage == nil) || session.hasPendingTasks }
     var hasPendingCompletion: Bool { onFinishedClose != nil }
     private let manage = UIButton(type: .system)
-    private let selectVisible = UIButton(type: .system)
-    private let removeSelected = UIButton(type: .system)
     private let clear = UIButton(type: .system)
     private let action = UIButton(type: .system)
     private var footer: UIStackView!
-    private var selectionRow: UIStackView?
     private var renderScheduled = false
     private var startHandler: ((String?) -> Void)?
     private var currentFilter = 0
@@ -431,18 +428,12 @@ final class BackupProgressAlert: SileoPanelViewController {
         search.addTarget(self, action: #selector(searchChanged), for: .editingChanged)
         manage.setTitle(String(localizationKey: "Backup_Task_Manage"), for: .normal)
         manage.addTarget(self, action: #selector(manageTapped), for: .touchUpInside)
-        selectVisible.addTarget(self, action: #selector(selectVisibleTapped), for: .touchUpInside)
-        removeSelected.addTarget(self, action: #selector(removeSelectedTapped), for: .touchUpInside)
         clear.setTitle(String(localizationKey: "Backup_Task_Clear"), for: .normal)
         clear.addTarget(self, action: #selector(clearTapped), for: .touchUpInside)
         let management = UIStackView(arrangedSubviews: [manage, clear])
         management.axis = .horizontal
         management.distribution = .fillEqually
-        let selection = UIStackView(arrangedSubviews: [selectVisible, removeSelected])
-        selection.axis = .horizontal
-        selection.distribution = .fillEqually
-        selectionRow = selection
-        footer = UIStackView(arrangedSubviews: [management, selection, action])
+        footer = UIStackView(arrangedSubviews: [management, action])
         footer.axis = .vertical
         footer.spacing = 8
         setFooter(footer)
@@ -614,25 +605,20 @@ final class BackupProgressAlert: SileoPanelViewController {
 
     @objc private func manageTapped() {
         managing.toggle()
-        render()
-    }
-
-    @objc private func selectVisibleTapped() {
-        let visible = visibleTasks()
-        let ids = Set(visible.map(\.id))
-        if ids.isSubset(of: selectedIDs) { selectedIDs.subtract(ids) }
-        else { selectedIDs.formUnion(ids) }
+        selectedIDs.removeAll()
         render()
     }
 
     @objc private func removeSelectedTapped() {
         guard !roundRunning, !selectedIDs.isEmpty else { return }
+        managing = false
         session.remove(ids: selectedIDs)
         selectedIDs.removeAll()
         render()
     }
 
     @objc private func clearTapped() {
+        if managing { removeSelectedTapped(); return }
         guard !roundRunning, !session.tasks.isEmpty else { return }
         let alert = UIAlertController(title: String(localizationKey: "Backup_Task_Clear"),
                                       message: String(localizationKey: "Backup_Task_Clear_Message"),
@@ -830,19 +816,12 @@ final class BackupProgressAlert: SileoPanelViewController {
         }
         let retainedIDs = Set(session.tasks.map(\.id))
         taskRows = taskRows.filter { retainedIDs.contains($0.key) }
-        selectVisible.isHidden = !managing
-        removeSelected.isHidden = !managing
-        selectionRow?.isHidden = !managing
         manage.setTitle(String(localizationKey: managing ? "Done" : "Backup_Task_Manage"), for: .normal)
         let selectedCount = selectedIDs.count
-        let visibleIDs = Set(rows.map(\.id))
-        selectVisible.setTitle(String(localizationKey: !visibleIDs.isEmpty && visibleIDs.isSubset(of: selectedIDs) ? "Backup_Task_Deselect_Visible" : "Backup_Task_Select_Visible"), for: .normal)
-        removeSelected.setTitle(String(format: String(localizationKey: "Backup_Task_Remove_Count"), selectedCount), for: .normal)
         let editingAllowed = !roundRunning && !session.hasActiveTasks
         manage.isEnabled = editingAllowed
-        clear.isEnabled = editingAllowed && !session.tasks.isEmpty
-        selectVisible.isEnabled = editingAllowed
-        removeSelected.isEnabled = editingAllowed && selectedCount > 0
+        clear.setTitle(String(localizationKey: managing ? "Backup_Task_Clear_Selected" : "Backup_Task_Clear"), for: .normal)
+        clear.isEnabled = editingAllowed && (managing ? selectedCount > 0 : !session.tasks.isEmpty)
         if !session.tasks.isEmpty {
             resultLabel.text = resultMessage ?? (roundRunning
                 ? String(localizationKey: cancelling ? "Backup_Task_Cancelling" : "Backup_Task_Running")
