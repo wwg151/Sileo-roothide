@@ -435,13 +435,38 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         #endif
     }
 
+    /// Both menu styles resolve the currently retained task panel at tap time.
+    private func showBackupTasks() {
+        guard let panel = DownloadManager.shared.backupTaskPanel else {
+            showBackupMessage(title: String(localizationKey: "Backup_Task_List"), message: String(localizationKey: "Backup_Task_Empty"))
+            return
+        }
+        panel.present(from: self)
+    }
+
+    private func canCreateBackupTask() -> Bool {
+        let manager = DownloadManager.shared
+        if let panel = manager.backupTaskPanel,
+           panel.hasUnfinishedTasks || panel.hasPendingCompletion {
+            panel.present(from: self)
+            return false
+        }
+        guard !manager.queueRunning, !manager.aptRunning, manager.operationCount() == 0,
+              manager.restoreBatch == nil else {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Restore_Isolation_Busy"))
+            return false
+        }
+        return true
+    }
+
     /// The backup and restore choices, for the card the button opens.
     private func backupMenuItems() -> [SileoActionMenuItem] {
         [
-            SileoActionMenuItem(title: String(localizationKey: "Backup_All_Packages"),
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Task_List"),
+                                imageName: "list.bullet") { [weak self] in self?.showBackupTasks() },
+            SileoActionMenuItem(title: String(localizationKey: "Backup_Packages"),
                                 imageName: "archivebox") { [weak self] in self?.backupAllPackages() },
-            SileoActionMenuItem(title: String(localizationKey: "Backup_Select_Packages"),
-                                imageName: "checkmark.circle") { [weak self] in self?.backupSelectedPackages() },
             SileoActionMenuItem(title: String(localizationKey: "Backup_Configuration"),
                                 imageName: "gearshape") { [weak self] in self?.backupConfiguration() },
             SileoActionMenuItem(title: String(localizationKey: "Backup_Sources"),
@@ -524,8 +549,8 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                                       message: nil,
                                       preferredStyle: .actionSheet)
         let entries: [(String, () -> Void)] = [
-            ("Backup_All_Packages", { [weak self] in self?.backupAllPackages() }),
-            ("Backup_Select_Packages", { [weak self] in self?.backupSelectedPackages() }),
+            ("Backup_Task_List", { [weak self] in self?.showBackupTasks() }),
+            ("Backup_Packages", { [weak self] in self?.backupAllPackages() }),
             ("Backup_Configuration", { [weak self] in self?.backupConfiguration() }),
             ("Backup_Sources", { [weak self] in self?.backupSources() }),
             ("Restore_All_Packages", { [weak self] in self?.restoreAllPackages() }),
@@ -554,51 +579,41 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
         let packages = BackupManager.shared.userInstalledPackages()
         guard !packages.isEmpty else {
-            showBackupMessage(title: String(localizationKey: "Backup_All_Packages"),
+            showBackupMessage(title: String(localizationKey: "Backup_Packages"),
                               message: String(localizationKey: "Backup_No_Packages"))
             return
         }
         startPackageBackup(packages)
     }
 
-    private func backupSelectedPackages() {
-        guard backupAvailable else {
-            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
-                              message: String(localizationKey: "Backup_Unavailable"))
+    private func startPackageBackup(_ packages: [Package], prepared: BackupProgressAlert? = nil) {
+        if prepared == nil {
+            guard canCreateBackupTask() else { return }
+            let panel = BackupProgressAlert(title: String(localizationKey: "Backup_Packages"), message: "", cancellable: true, onCancel: { BackupManager.shared.cancelCurrentOperation() })
+            panel.session.register(packages.map { ($0.package, $0.name ?? $0.package) })
+            panel.prepareStart { [weak self, weak panel] id in
+                guard let panel = panel else { return }
+                let waiting = Set(panel.session.tasks.filter { $0.outcome == nil }.map { $0.id })
+                self?.startPackageBackup(packages.filter { waiting.contains($0.package) && (id == nil || $0.package == id) }, prepared: panel)
+            }
+            panel.present(from: self)
             return
         }
-        let packages = BackupManager.shared.userInstalledPackages()
-        guard !packages.isEmpty else {
-            showBackupMessage(title: String(localizationKey: "Backup_Select_Packages"),
-                              message: String(localizationKey: "Backup_No_Packages"))
-            return
-        }
-        let picker = SileoBackupPickerPanel(packages: packages) { [weak self] chosen in
-            guard !chosen.isEmpty else { return }
-            self?.startPackageBackup(chosen)
-        }
-        picker.present(from: self)
-    }
-
-    private func startPackageBackup(_ packages: [Package]) {
         let folder: BackupManager.BackupFolder
         do {
-            folder = try BackupManager.shared.createBackupFolder(kind: .packages)
+            if let existing = prepared?.session.backupFolder { folder = existing }
+            else {
+                folder = try BackupManager.shared.createBackupFolder(kind: .packages)
+                prepared?.session.backupFolder = folder
+            }
         } catch {
-            showBackupMessage(title: String(localizationKey: "Backup_All_Packages"),
-                              message: error.localizedDescription)
+            prepared?.finish(message: error.localizedDescription)
             return
         }
-        let progress = BackupProgressAlert(
-            title: String(localizationKey: "Backup_All_Packages"),
-            message: String(localizationKey: "Backup_Starting"),
-            cancellable: true,
-            onCancel: { BackupManager.shared.cancelCurrentOperation() }
-        )
-        present(progress.alert, animated: true)
+        let progress = prepared!
         BackupManager.shared.backupPackages(packages, to: folder, progress: { fraction, message, detail in
             progress.update(fraction: fraction, message: message, detail: detail)
-        }, completion: { result in
+        }, taskSession: progress.session, completion: { result in
             switch result {
             case .success(let counts):
                 var text = String(format: String(localizationKey: "Backup_Result"), counts.0, counts.1.count)
@@ -622,12 +637,15 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 }
                 progress.finish(message: text + "\n\n" + folder.url.path)
             case .failure(let error):
-                progress.finish(message: error.localizedDescription)
+                let kept = progress.session.tasks.contains { $0.outcome == true } || !progress.session.removedResults.filter { $0.outcome == true }.isEmpty
+                let suffix = kept ? "\n\n" + String(format: String(localizationKey: "Backup_Task_Preserved"), folder.url.path) : "\n\n" + folder.url.path
+                progress.finish(message: error.localizedDescription + suffix)
             }
         })
     }
 
     private func restoreAllPackages() {
+        guard canCreateBackupTask() else { return }
         guard backupAvailable else {
             showBackupMessage(title: String(localizationKey: "Backup_Restore"),
                               message: String(localizationKey: "Backup_Unavailable"))
@@ -642,58 +660,89 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
     }
 
-    private func startPackageRestore(from folder: BackupManager.BackupFolder) {
-        let progress = BackupProgressAlert(
+    private func startPackageRestore(from folder: BackupManager.BackupFolder, prepared: BackupProgressAlert? = nil, selectedID: String? = nil, selectedPackage: Package? = nil) {
+        if prepared == nil {
+            guard canCreateBackupTask() else { return }
+            let panel = BackupProgressAlert(title: String(localizationKey: "Restore_All_Packages"), message: "", cancellable: true, onCancel: { BackupManager.shared.cancelCurrentOperation() })
+            panel.present(from: self)
+            BackupManager.shared.restorePackages(from: folder, progress: { _, _, _ in }, taskSession: panel.session, preview: { [weak self, weak panel] plan in
+                guard let panel = panel else { return }
+                panel.prepareStart { [weak self, weak panel] id in
+                    guard let panel = panel else { return }
+                    if DownloadManager.shared.restoreBatch?.taskSession === panel.session {
+                        DownloadManager.shared.viewController.prepareNextRestoreRound()
+                    }
+                    self?.startPackageRestore(from: folder, prepared: panel, selectedID: id, selectedPackage: plan.packages.first { $0.package == id })
+                }
+            }, completion: { [weak panel] result in
+                if case .failure(let error) = result { panel?.finish(message: error.localizedDescription) }
+            })
+            return
+        }
+        let progress = prepared ?? BackupProgressAlert(
             title: String(localizationKey: "Restore_All_Packages"),
             message: String(localizationKey: "Backup_Starting"),
             cancellable: true,
             onCancel: { BackupManager.shared.cancelCurrentOperation() }
         )
-        present(progress.alert, animated: true)
         BackupManager.shared.restorePackages(from: folder, progress: { fraction, message, detail in
             progress.update(fraction: fraction, message: message, detail: detail)
-        }, completion: { result in
+        }, taskSession: progress.session, selectedID: selectedID, selectedPackage: selectedPackage, completion: { result in
             switch result {
-            case .success(let counts):
-                progress.finish(message: String(format: String(localizationKey: "Restore_Result"), counts.0, counts.1))
+            case .success:
+                progress.onFinishedClose = { [weak progress] in
+                    guard let session = progress?.session else { return }
+                    DownloadManager.shared.viewController.showBackupCompletion(session: session)
+                }
+                DownloadManager.shared.viewController.loadViewIfNeeded()
+                DownloadManager.shared.viewController.confirmQueued(nil)
             case .failure(let error):
                 progress.finish(message: error.localizedDescription)
             }
         })
     }
 
-    private func backupConfiguration() {
+    private func prepareArchiveTask(_ key: String, execute: @escaping (BackupProgressAlert) -> Void) {
+        guard canCreateBackupTask() else { return }
+        let panel = BackupProgressAlert(title: String(localizationKey: key), message: "", cancellable: true, onCancel: { BackupManager.shared.cancelCurrentOperation() })
+        panel.session.register([("archive", String(localizationKey: key))])
+        panel.prepareStart { [weak panel] _ in
+            guard let panel = panel else { return }
+            execute(panel)
+        }
+        panel.present(from: self)
+    }
+
+    private func backupConfiguration(prepared: BackupProgressAlert? = nil) {
+        guard let prepared = prepared else {
+            prepareArchiveTask("Backup_Configuration") { [weak self] in self?.backupConfiguration(prepared: $0) }
+            return
+        }
         guard backupAvailable else {
-            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
-                              message: String(localizationKey: "Backup_Unavailable"))
+            prepared.finish(message: String(localizationKey: "Backup_Unavailable"))
             return
         }
         let folder: BackupManager.BackupFolder
         do {
             folder = try BackupManager.shared.createBackupFolder(kind: .configuration)
         } catch {
-            showBackupMessage(title: String(localizationKey: "Backup_Configuration"),
-                              message: error.localizedDescription)
+            prepared.finish(message: error.localizedDescription)
             return
         }
-        let progress = BackupProgressAlert(
-            title: String(localizationKey: "Backup_Configuration"),
-            message: String(localizationKey: "Backup_Starting"),
-            cancellable: true,
-            onCancel: { BackupManager.shared.cancelCurrentOperation() }
-        )
-        present(progress.alert, animated: true)
+        let progress = prepared
+        progress.startSingleTask(name: String(localizationKey: "Backup_Configuration"))
         BackupManager.shared.backupConfiguration(to: folder, completion: { result in
             switch result {
             case .success:
-                progress.finish(message: String(localizationKey: "Backup_Configuration_Done") + "\n\n" + folder.url.path)
+                progress.finishSingleTask(message: String(localizationKey: "Backup_Configuration_Done") + "\n\n" + folder.url.path, success: true)
             case .failure(let error):
-                progress.finish(message: error.localizedDescription)
+                progress.finishSingleTask(message: error.localizedDescription, success: false)
             }
         })
     }
 
     private func restoreConfiguration() {
+        guard canCreateBackupTask() else { return }
         guard backupAvailable else {
             showBackupMessage(title: String(localizationKey: "Backup_Restore"),
                               message: String(localizationKey: "Backup_Unavailable"))
@@ -708,56 +757,52 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }
     }
 
-    private func startConfigurationRestore(from folder: BackupManager.BackupFolder) {
-        let progress = BackupProgressAlert(
-            title: String(localizationKey: "Restore_Configuration"),
-            message: String(localizationKey: "Backup_Starting"),
-            cancellable: true,
-            onCancel: { BackupManager.shared.cancelCurrentOperation() }
-        )
-        present(progress.alert, animated: true)
+    private func startConfigurationRestore(from folder: BackupManager.BackupFolder, prepared: BackupProgressAlert? = nil) {
+        guard let progress = prepared else {
+            prepareArchiveTask("Restore_Configuration") { [weak self] in self?.startConfigurationRestore(from: folder, prepared: $0) }
+            return
+        }
+        progress.startSingleTask(name: String(localizationKey: "Restore_Configuration"))
         BackupManager.shared.restoreConfiguration(from: folder, completion: { result in
             switch result {
             case .success:
-                progress.finish(message: String(localizationKey: "Restore_Configuration_Done"))
+                progress.finishSingleTask(message: String(localizationKey: "Restore_Configuration_Done"), success: true)
             case .failure(let error):
-                progress.finish(message: error.localizedDescription)
+                progress.finishSingleTask(message: error.localizedDescription, success: false)
             }
         })
     }
 
-    private func backupSources() {
+    private func backupSources(prepared: BackupProgressAlert? = nil) {
+        guard let prepared = prepared else {
+            prepareArchiveTask("Backup_Sources") { [weak self] in self?.backupSources(prepared: $0) }
+            return
+        }
         guard backupAvailable else {
-            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
-                              message: String(localizationKey: "Backup_Unavailable"))
+            prepared.finish(message: String(localizationKey: "Backup_Unavailable"))
             return
         }
         let folder: BackupManager.BackupFolder
         do {
             folder = try BackupManager.shared.createBackupFolder(kind: .sources)
         } catch {
-            showBackupMessage(title: String(localizationKey: "Backup_Sources"),
-                              message: error.localizedDescription)
+            prepared.finish(message: error.localizedDescription)
             return
         }
-        let progress = BackupProgressAlert(
-            title: String(localizationKey: "Backup_Sources"),
-            message: String(localizationKey: "Backup_Starting"),
-            cancellable: true,
-            onCancel: { BackupManager.shared.cancelCurrentOperation() }
-        )
-        present(progress.alert, animated: true)
+        let progress = prepared
+        progress.startSingleTask(name: String(localizationKey: "Backup_Sources"))
         BackupManager.shared.backupSources(to: folder, completion: { result in
             switch result {
             case .success:
-                progress.finish(message: String(localizationKey: "Backup_Sources_Done") + "\n\n" + folder.url.path)
+                progress.finishSingleTask(message: String(localizationKey: "Backup_Sources_Done") + "\n\n" + folder.url.path, success: true)
             case .failure(let error):
-                progress.finish(message: error.localizedDescription)
+                progress.finishSingleTask(message: error.localizedDescription, success: false)
             }
         })
     }
 
     private func restoreSources() {
+        guard canCreateBackupTask() else { return }
         guard backupAvailable else {
             showBackupMessage(title: String(localizationKey: "Backup_Restore"),
                               message: String(localizationKey: "Backup_Unavailable"))
@@ -767,21 +812,17 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             guard let self = self else { return }
             self.confirmRestore(title: String(localizationKey: "Restore_Sources"),
                                 message: String(localizationKey: "Restore_Confirm_Sources")) {
-                let progress = BackupProgressAlert(
-                    title: String(localizationKey: "Restore_Sources"),
-                    message: String(localizationKey: "Backup_Starting"),
-                    cancellable: true,
-                    onCancel: { BackupManager.shared.cancelCurrentOperation() }
-                )
-                self.present(progress.alert, animated: true)
+                self.prepareArchiveTask("Restore_Sources") { progress in
+                progress.startSingleTask(name: String(localizationKey: "Restore_Sources"))
                 BackupManager.shared.restoreSources(from: folder, completion: { result in
                     switch result {
                     case .success:
-                        progress.finish(message: String(localizationKey: "Restore_Sources_Done"))
+                        progress.finishSingleTask(message: String(localizationKey: "Restore_Sources_Done"), success: true)
                     case .failure(let error):
-                        progress.finish(message: error.localizedDescription)
+                        progress.finishSingleTask(message: error.localizedDescription, success: false)
                     }
                 })
+                }
             }
         }
     }
@@ -910,7 +951,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                let entries = try? JSONDecoder().decode([BackupManager.ManifestEntry].self, from: data) {
                 return String(format: String(localizationKey: "Backup_Count_Packages"), entries.count)
             }
-            return String(localizationKey: "Backup_All_Packages")
+            return String(localizationKey: "Backup_Packages")
         case .sources:
             let count = sourceCount(in: folder.sourcesURL)
             return count > 0

@@ -8,6 +8,36 @@
  LOCALISATIONS
 */
 // Common Prompts
+"Backup_Task_List" = "任务列表";
+"Backup_Task_Complete_Action" = "查看安装完成操作";
+"Backup_Task_Running" = "正在按顺序执行任务…";
+"Backup_Packages" = "备份插件";
+"Backup_Task_Search" = "搜索名称或标识符";
+"Backup_Task_Manage" = "管理";
+"Backup_Task_Remove" = "移除任务";
+"Backup_Task_Remove_Count" = "移除所选 (%d)";
+"Backup_Task_Select_Visible" = "全选当前显示";
+"Backup_Task_Deselect_Visible" = "取消当前显示全选";
+"Backup_Task_Clear" = "清空列表";
+"Backup_Task_Clear_Message" = "仅移除列表中的全部任务（包括搜索或筛选隐藏的任务），不会删除已有备份，也不会卸载插件。已完成的操作不会撤销。";
+"Backup_Task_Empty" = "任务列表为空";
+"Backup_Task_No_Matches" = "没有匹配的任务";
+"Backup_Task_Dependency_Removed" = "无法满足依赖 %@：所需任务 %@ 已被移除。请重新进入恢复列表后保留该依赖再开始。";
+"Backup_Task_Preserved" = "已完成的备份已保留在：%@";
+"Backup_Task_Start_All" = "全部开始";
+"Backup_Task_Start" = "开始";
+"Backup_Task_Ready" = "已准备就绪。点击开始或全部开始，所需依赖会先执行。";
+"Backup_Task_Preparing" = "正在准备任务并检查依赖…";
+"Backup_Task_Dependency_Unavailable" = "依赖不可用：%@。现有源中没有可安全安装的兼容候选。";
+"Backup_Task_Waiting" = "等待执行";
+"Backup_Task_Not_Executed" = "未执行：操作已停止。";
+"Backup_Task_Archiving" = "正在生成插件包归档";
+"Backup_Task_Processing" = "正在处理归档";
+"Backup_Task_Downloading" = "正在下载归档";
+"Backup_Task_Cancelling" = "正在等待当前操作安全结束…";
+"Backup_Task_All" = "全部 (%d)";
+"Backup_Task_Success" = "成功 (%d)";
+"Backup_Task_Failure" = "失败 (%d)";
 "Deck_Title" = "任务中心";
 "Deck_Prepare" = "准备";
 "Task_Operation_Install_Stage" = "安装";
@@ -427,6 +457,20 @@
 "Backup_Choose_Folder" = "请选择备份";
 "Backup_No_Packages" = "没有可备份的第三方插件。";
 "Backup_Nothing_To_Restore" = "该备份中没有可恢复的内容。";
+"Restore_Isolation_Busy" = "请先完成或清空当前队列，再恢复插件包。";
+"Restore_Isolation_Unsupported" = "已跳过：循环依赖、无法识别的依赖约束、冲突、受保护插件包或已安装版本变更，无法安全恢复。";
+"Restore_Isolation_Summary" = "恢复结果汇总";
+"Restore_Isolation_Targets_Succeeded" = "目标插件包成功（%ld 个）：";
+"Restore_Isolation_Targets_Failed" = "目标插件包失败或跳过（%ld 个）：";
+"Restore_Isolation_Dependencies_Succeeded" = "依赖安装成功并保留（%ld 个）：";
+"Restore_Isolation_Dependencies_Failed" = "依赖失败或跳过（%ld 个）：";
+"Restore_Isolation_Dependency" = "已跳过，所需依赖未完整安装：";
+"Restore_Isolation_Unavailable" = "已跳过：插件包文件不可用或元数据不匹配。";
+"Restore_Isolation_Installing" = "正在恢复插件包";
+"Restore_Isolation_Failed" = "安装失败，已成功安装的依赖予以保留。具体原因请查看日志。";
+"Restore_Isolation_Global" = "检测到系统级故障或无法归类的 dpkg 错误，已停止恢复。已成功安装的插件包予以保留。";
+"Restore_Isolation_Cancelling" = "将在当前插件包安装结束后取消…";
+"Restore_Isolation_Cancelled" = "已取消恢复，已成功安装的插件包及依赖予以保留。";
 "Backup_Cancelled" = "已取消，已打包的文件已清除。";
 "Backup_Unavailable" = "当前构建不支持备份功能。";
 "Backup_No_File_List" = "无法读取该包的文件清单。";

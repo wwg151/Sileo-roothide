@@ -63,6 +63,9 @@ final class DownloadManager {
     public var aptRunning = false
     public var aptFinished = false
     public var queueRunning = false
+    // Reserved by backup restore until the user clears the completed batch.
+    var restoreBatch: BackupRestoreBatch?
+    var backupTaskPanel: BackupProgressAlert?
     public var totalProgress = CGFloat(0)
     
 //    private static let dataQueueContext = 50
@@ -131,6 +134,12 @@ final class DownloadManager {
     
     public func verifyComplete() -> Bool {
         let allRawDownloads = self.vars.upgrades.raw.union(self.vars.installations.raw).union(self.vars.installdeps.raw)
+        if let batch = restoreBatch {
+            return allRawDownloads.allSatisfy {
+                guard let download = self.vars.queuedDownloads[$0.package.package] else { return false }
+                return (download.success && download.progress == 1) || !(download.failureReason ?? "").isEmpty
+            } && !batch.preparing
+        }
         for dlPackage in allRawDownloads {
             guard let download = self.vars.queuedDownloads[dlPackage.package.package],
                   download.success else { return false }
@@ -192,6 +201,7 @@ final class DownloadManager {
         
         // See if theres an overriding web URL for downloading the package from
         self.overrideDownloadURL(package: package, repo: repo) { errorMessage, overrideURL in DownloadManager.aptQueue.async {
+            guard download.session == self.currentDownloadSession else { download.endBackgroundTask(); return }
             if overrideURL == nil && errorMessage != nil {
                 
                 download.endBackgroundTask()
@@ -220,6 +230,9 @@ final class DownloadManager {
                 download.progress = CGFloat(progress.fractionCompleted)
                 download.totalBytesWritten = progress.total
                 download.totalBytesExpectedToWrite = progress.expected
+                self.restoreBatch?.taskSession?.update(package.package,
+                    fraction: progress.expected > 0 ? progress.fractionCompleted * 0.5 : 0,
+                    detail: String(localizationKey: "Backup_Task_Downloading") + " · \(progress.total)/\(progress.expected > 0 ? String(progress.expected) : "?") B")
                 
                 self.viewController.updateDownloadStatus(download: download)
                 
@@ -404,7 +417,42 @@ final class DownloadManager {
         self.startMoreDownloads()
     }
     
+    // The restore worker calls this off-main, once per dependency-ready item.
+    // Existing verification/conversion callbacks still run on aptQueue.
+    func prepareRestoreDownload(_ package: Package) -> Download? {
+        var download: Download!
+        DownloadManager.aptQueue.sync {
+            if self.currentDownloadSession == 0 { self.currentDownloadSession = max(1, arc4random()) }
+            download = Download(package: package, session: self.currentDownloadSession)
+            download.queued = true
+            self.vars.queuedDownloads[package.package] = download
+            self.currentDownloads = 1
+            self.startPackageDownload(download: download)
+        }
+        while true {
+            var done = false
+            var cancelled = false
+            DownloadManager.aptQueue.sync {
+                cancelled = BackupManager.shared.isCancelled
+                if cancelled {
+                    download.task?.cancel()
+                    download.endBackgroundTask()
+                    self.currentDownloadSession = 0
+                    download.failureReason = String(localizationKey: "Restore_Isolation_Cancelled")
+                }
+                done = download.success || !(download.failureReason ?? "").isEmpty || self.currentDownloads == 0
+                if done && !download.success && (download.failureReason ?? "").isEmpty {
+                    download.failureReason = String(localizationKey: "Restore_Isolation_Unavailable")
+                }
+            }
+            if cancelled { return nil }
+            if done { return download }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+    }
+
     private func startMoreDownloads() {
+        guard restoreBatch == nil else { return }
         NSLog("SileoLog: startMoreDownloads")
 //        Thread.callStackSymbols.forEach{NSLog("SileoLog: callstack=\($0)")}
         DownloadManager.aptQueue.async { [self] in
@@ -464,6 +512,12 @@ final class DownloadManager {
         return encodedString
     }
     
+    func restoreArchive(for package: Package) -> String? {
+        let filename = "\(aptEncoded(string: package.package, isArch: false))_\(aptEncoded(string: package.version, isArch: false))_\(aptEncoded(string: package.architecture ?? "", isArch: true)).deb"
+        let path = package.local_deb ?? "\(CommandPath.prefix)/var/cache/apt/archives/\(filename)"
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
     private func verifyLocalPackage(package: Package) -> Bool {
         let packageID = aptEncoded(string: package.package, isArch: false)
         let version = aptEncoded(string: package.version, isArch: false)
@@ -474,11 +528,17 @@ final class DownloadManager {
         
         guard let local_deb = package.local_deb else { return false }
         
-        moveFileAsRoot(from: URL(fileURLWithPath: local_deb), to: URL(fileURLWithPath: destFileName))
+        if restoreBatch != nil && local_deb != destFileName {
+            // Backups are reusable; never move their only archive into apt's cache.
+            let (status, _, _) = spawnAsRoot(args: [CommandPath.cp, rootfs(local_deb), rootfs(destFileName)])
+            guard status == 0 else { return false }
+        } else if local_deb != destFileName {
+            moveFileAsRoot(from: URL(fileURLWithPath: local_deb), to: URL(fileURLWithPath: destFileName))
+        }
         
         guard FileManager.default.fileExists(atPath: destFileName) else { return false }
         
-        self.vars.cachedDownloadFiles.append(URL(fileURLWithPath: local_deb))
+        self.vars.cachedDownloadFiles.append(URL(fileURLWithPath: restoreBatch == nil ? local_deb : destFileName))
         package.local_deb = destFileName
         
         return true
@@ -583,6 +643,7 @@ final class DownloadManager {
     //running in aptQueue
     private func recheckTotalOps() throws {
         NSLog("SileoLog: recheckTotalOps")
+        if restoreBatch != nil { return }
         if Thread.isMainThread {
             fatalError("This cannot be called from the main thread!")
         }
@@ -724,6 +785,7 @@ final class DownloadManager {
     
     private func checkInstalled()
     {
+        if restoreBatch != nil { return }
         var reinstallPackages = [Package]()
         var uninstallPackages = [Package]()
         
@@ -795,6 +857,7 @@ final class DownloadManager {
     
     public func removeAllItems() {
         NSLog("SileoLog: DownloadManager.removeAllItems")
+        restoreBatch = nil
         self.vars.upgrades.removeAll()
         self.vars.installdeps.removeAll()
         self.vars.installations.removeAll()
@@ -1115,6 +1178,7 @@ final class DownloadManager {
     }
     
     public func add(package: Package, queue: DownloadManagerQueue, approved: Bool = false, completion: (() -> Void)?=nil) {
+        guard restoreBatch == nil else { completion?(); return }
         NSLog("SileoLog: addPackage=\(package.name), queue=\(queue.rawValue), approved=\(approved) package=\(package.package), repo=\(package.sourceRepo?.url) depends=\(package.rawControl["depends"]) arch=\(package.architecture)")
 //        Thread.callStackSymbols.forEach{NSLog("SileoLog: callstack=\($0)")}
 
@@ -1213,6 +1277,7 @@ final class DownloadManager {
     
     public func upgradeAll(packages: Set<Package>, _ completion: @escaping () -> ()) {
         Self.aptQueue.async { [self] in
+            guard restoreBatch == nil else { completion(); return }
             
             if queueRunning {
                 completion()

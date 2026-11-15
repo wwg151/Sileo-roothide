@@ -286,6 +286,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     
     func presentPopupController(completion: (() -> Void)?) {
+        guard DownloadManager.shared.restoreBatch?.ownsTaskPresentation != true else { completion?(); return }
         NSLog("SileoLog: TabBarController.presentPopupController \(completion)")
 
         guard popupIsPresented else {

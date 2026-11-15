@@ -9,6 +9,36 @@
 */
 
 // Common Prompts
+"Backup_Task_List" = "Task List";
+"Backup_Task_Complete_Action" = "View Installation Completion Actions";
+"Backup_Task_Running" = "Running tasks in order…";
+"Backup_Packages" = "Back Up Packages";
+"Backup_Task_Search" = "Search name or identifier";
+"Backup_Task_Manage" = "Manage";
+"Backup_Task_Remove" = "Remove Task";
+"Backup_Task_Remove_Count" = "Remove Selected (%d)";
+"Backup_Task_Select_Visible" = "Select Visible";
+"Backup_Task_Deselect_Visible" = "Deselect Visible";
+"Backup_Task_Clear" = "Clear List";
+"Backup_Task_Clear_Message" = "Remove all tasks, including those hidden by search or filters. Existing backups will not be deleted and packages will not be uninstalled. Completed operations will not be undone.";
+"Backup_Task_Empty" = "The task list is empty";
+"Backup_Task_No_Matches" = "No matching tasks";
+"Backup_Task_Dependency_Removed" = "Cannot satisfy dependency %@: required task %@ was removed. Reopen the restore list and keep this dependency before starting.";
+"Backup_Task_Preserved" = "Completed backups have been kept at: %@";
+"Backup_Task_Start_All" = "Start All";
+"Backup_Task_Start" = "Start";
+"Backup_Task_Ready" = "Ready. Start a task or all tasks; dependencies run first.";
+"Backup_Task_Preparing" = "Preparing tasks and checking dependencies…";
+"Backup_Task_Dependency_Unavailable" = "Dependency unavailable: %@. No compatible candidate can be safely installed from the configured sources.";
+"Backup_Task_Waiting" = "Waiting";
+"Backup_Task_Not_Executed" = "Not executed: the operation stopped.";
+"Backup_Task_Archiving" = "Creating package archive";
+"Backup_Task_Processing" = "Processing archive";
+"Backup_Task_Downloading" = "Downloading archive";
+"Backup_Task_Cancelling" = "Waiting for the current operation to finish…";
+"Backup_Task_All" = "All (%d)";
+"Backup_Task_Success" = "Success (%d)";
+"Backup_Task_Failure" = "Failure (%d)";
 "Deck_Title" = "Task Center";
 "Deck_Prepare" = "Prepare";
 "Task_Operation_Install_Stage" = "Install";
@@ -421,6 +451,20 @@
 "Backup_Choose_Folder" = "Choose a backup";
 "Backup_No_Packages" = "There is no third-party package to back up.";
 "Backup_Nothing_To_Restore" = "This backup holds nothing to restore.";
+"Restore_Isolation_Busy" = "Finish or clear the current queue before restoring packages.";
+"Restore_Isolation_Unsupported" = "Skipped: dependency cycle, unsupported relationship, conflict, protected package, or installed version change cannot be restored safely.";
+"Restore_Isolation_Summary" = "Restore summary";
+"Restore_Isolation_Targets_Succeeded" = "Requested packages restored (%ld):";
+"Restore_Isolation_Targets_Failed" = "Requested packages failed or skipped (%ld):";
+"Restore_Isolation_Dependencies_Succeeded" = "Dependencies installed and retained (%ld):";
+"Restore_Isolation_Dependencies_Failed" = "Dependencies failed or skipped (%ld):";
+"Restore_Isolation_Dependency" = "Skipped: required dependencies are not fully installed:";
+"Restore_Isolation_Unavailable" = "Skipped: package archive is unavailable or its metadata does not match.";
+"Restore_Isolation_Installing" = "Restoring package";
+"Restore_Isolation_Failed" = "Installation failed; successfully installed dependencies were retained. See the log for details.";
+"Restore_Isolation_Global" = "Restore stopped because of a system-level or unclassified dpkg error. Successfully installed packages were retained.";
+"Restore_Isolation_Cancelling" = "Cancelling after the current package finishes…";
+"Restore_Isolation_Cancelled" = "Restore cancelled. Successfully installed packages and dependencies were retained.";
 "Backup_Cancelled" = "Cancelled; what was already packaged has been removed.";
 "Backup_Unavailable" = "Backup is not available in this build.";
 "Backup_No_File_List" = "The package's file list could not be read.";

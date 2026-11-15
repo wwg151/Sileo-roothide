@@ -180,12 +180,16 @@ class APTWrapper {
                                         installDeps: [DownloadPackage],
                                         progressCallback: @escaping (Double, Bool, String, String) -> Void,
                                         outputCallback: @escaping (String, Int) -> Void,
-                                        completionCallback: @escaping (Int, FINISH, Bool) -> Void) {
+                                        completionCallback: @escaping (Int, FINISH, Bool) -> Void,
+                                        restoreArchive: String? = nil,
+                                        restoreIconChanges: ((Set<String>) -> Void)? = nil) {
         #if targetEnvironment(simulator) || TARGET_SANDBOX
         return completionCallback(0, .back, true)
         #else
         
-        DependencyResolverAccelerator.shared.buildOperations(packages: (installs+installDeps).map({$0.package}))
+        if restoreArchive == nil {
+            DependencyResolverAccelerator.shared.buildOperations(packages: (installs+installDeps).map({$0.package}))
+        }
         
         var arguments = [CommandPath.aptget,
                          "install", "--reinstall",
@@ -212,6 +216,12 @@ class APTWrapper {
         for package in removals {
             let packageStr = package.package.package + "-"
             arguments.append(packageStr)
+        }
+        if let archive = restoreArchive {
+            // Explicit package only: never --configure -a or apt -f. dpkg retains
+            // normal Depends/Pre-Depends/Conflicts checks and its database lock.
+            arguments = [CommandPath.dpkg, "--force-confdef", "--force-confnew",
+                         "--install", rootfs(archive)]
         }
         // Capture before dpkg runs: removing Sileo can invalidate its installed metadata.
         let ownPackageID = FeaturedInfoFooterView.package?.package ?? {
@@ -278,12 +288,17 @@ class APTWrapper {
             pipe(&pipestatusfd)
             pipe(&pipesileo)
 
-            guard fcntl(pipestdout[0], F_SETFL, O_NONBLOCK) != -1,
+            let descriptors = [pipestdout, pipestderr, pipestatusfd, pipesileo]
+            guard descriptors.allSatisfy({ $0[0] > 0 && $0[1] > 0 }),
+                  fcntl(pipestdout[0], F_SETFL, O_NONBLOCK) != -1,
                   fcntl(pipestderr[0], F_SETFL, O_NONBLOCK) != -1,
                   fcntl(pipestatusfd[0], F_SETFL, O_NONBLOCK) != -1,
                   fcntl(pipesileo[0], F_SETFL, O_NONBLOCK) != -1
             else {
-                fatalError("Unable to set attributes on pipe")
+                descriptors.flatMap { $0 }.filter { $0 > 0 }.forEach { close($0) }
+                outputCallback(String(cString: strerror(errno)), Int(STDERR_FILENO))
+                completionCallback(-1, .back, false)
+                return
             }
 
             var fileActions: posix_spawn_file_actions_t?
@@ -346,6 +361,9 @@ class APTWrapper {
             NSLog("SileoLog: spawn2=\(arguments)")
             
             if spawnStatus != 0 {
+                descriptors.flatMap { $0 }.forEach { close($0) }
+                outputCallback(String(cString: strerror(spawnStatus)), Int(STDERR_FILENO))
+                completionCallback(-1, .back, false)
                 return
             }
 
@@ -515,7 +533,9 @@ class APTWrapper {
             }
 
             var status: Int32 = 0
-            waitpid(pid, &status, 0)
+            var waited: pid_t
+            repeat { waited = waitpid(pid, &status, 0) } while waited == -1 && errno == EINTR
+            if waited == -1 { status = -1 }
             // Explicitly cover installs, reinstalls, upgrades and removals even
             // when the app scan does not detect a change.
             var refreshSileo = status == 0 && changesSileo
@@ -535,12 +555,18 @@ class APTWrapper {
                 }
             }
             if !difference.isEmpty {
-                outputCallback(String(localizationKey: "Updating_Icon_Cache") + "\n", debugFD)
-                for appName in difference {
-                    if appName == Bundle.main.bundleURL.lastPathComponent {
-                        refreshSileo = true
-                    } else {
-                        spawn(command: "\(CommandPath.prefix)/usr/bin/uicache", args: ["uicache", "-p", URL(fileURLWithPath: "/Applications/").appendingPathComponent(appName).path])
+                if restoreArchive != nil {
+                    // Defer icon-cache work until the entire restore batch finishes.
+                    restoreIconChanges?(difference)
+                    refreshSileo = refreshSileo || difference.contains(Bundle.main.bundleURL.lastPathComponent)
+                } else {
+                    outputCallback(String(localizationKey: "Updating_Icon_Cache") + "\n", debugFD)
+                    for appName in difference {
+                        if appName == Bundle.main.bundleURL.lastPathComponent {
+                            refreshSileo = true
+                        } else {
+                            spawn(command: "\(CommandPath.prefix)/usr/bin/uicache", args: ["uicache", "-p", URL(fileURLWithPath: "/Applications/").appendingPathComponent(appName).path])
+                        }
                     }
                 }
             }
@@ -557,9 +583,11 @@ class APTWrapper {
             if status == 0 && refreshSileo && finish.rawValue < FINISH.restart.rawValue {
                 finish = .restart
             }
-            spawnAsRoot(args: [CommandPath.aptget, "clean"])
-            for file in DownloadManager.shared.vars.cachedDownloadFiles.raw {
-                deleteFileAsRoot(file)
+            if restoreArchive == nil {
+                spawnAsRoot(args: [CommandPath.aptget, "clean"])
+                for file in DownloadManager.shared.vars.cachedDownloadFiles.raw {
+                    deleteFileAsRoot(file)
+                }
             }
             completionCallback(Int(status), finish, refreshSileo)
         }

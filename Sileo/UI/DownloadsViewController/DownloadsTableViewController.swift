@@ -618,7 +618,8 @@ class DownloadsTableViewController: SileoViewController {
         clearButton?.isHidden = !waiting
         confirmButton?.isHidden = !waiting
         cancelDownload?.isHidden = !(isDownloading || isInstalling) || isFinishedInstalling
-        cancelDownload?.isEnabled = isDownloading && !isInstalling && !manager.aptRunning
+        cancelDownload?.isEnabled = (isDownloading && !isInstalling && !manager.aptRunning)
+            || (manager.restoreBatch != nil && isInstalling && !isFinishedInstalling)
         cancelDownload?.alpha = cancelDownload?.isEnabled == true ? 1 : 0.4
         completeButton?.isHidden = !isFinishedInstalling
         completeLaterButton?.isHidden = !isFinishedInstalling || completeLaterButton?.alpha == 0
@@ -700,6 +701,12 @@ class DownloadsTableViewController: SileoViewController {
             fatalError("Wtf are you doing")
         }
         
+        if DownloadManager.shared.restoreBatch != nil && isInstalling && !isFinishedInstalling {
+            BackupManager.shared.cancelCurrentOperation()
+            currentTaskStatus = String(localizationKey: "Restore_Isolation_Cancelling")
+            refreshTaskPresentation()
+            return
+        }
         guard isDownloading && !isInstalling && !isFinishedInstalling,
               !DownloadManager.shared.aptRunning else { return }
 
@@ -797,10 +804,15 @@ class DownloadsTableViewController: SileoViewController {
         NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
         
         NSLog("SileoLog: startMoreDownloads (confirmQueued)")
-        DownloadManager.shared.startDownloads()
-        TabBarController.singleton?.updatePopup()
-        self.reloadData()
-        self.checkReady()
+        if DownloadManager.shared.restoreBatch != nil {
+            self.reloadData()
+            self.transferToAction()
+        } else {
+            DownloadManager.shared.startDownloads()
+            TabBarController.singleton?.updatePopup()
+            self.reloadData()
+            self.checkReady()
+        }
         
         tableView?.setEditing(false, animated: true)
         for cell in tableView?.visibleCells ?? [] {
@@ -855,7 +867,7 @@ class DownloadsTableViewController: SileoViewController {
             tableView?.reloadData()
         }
         reloadControlsOnly()
-        if !earlyBreak {
+        if !earlyBreak || DownloadManager.shared.restoreBatch != nil {
             //always startInstall after UI update is complete
 //            DispatchQueue.main.async {
                 self.startAction()
@@ -918,6 +930,34 @@ class DownloadsTableViewController: SileoViewController {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
+    func showBackupCompletion(session: BackupTaskSession) {
+        guard !DownloadManager.shared.aptRunning else { return }
+        loadViewIfNeeded()
+        returnButtonAction = session.accumulatedFinish
+        refreshSileo = session.accumulatedRefresh
+        isInstalling = false
+        isFinishedInstalling = true
+        isFired = false
+        DownloadManager.shared.restoreBatch?.ownsTaskPresentation = false
+        updateCompleteButton()
+        completeButton?.isEnabled = true
+        completeLaterButton?.isEnabled = true
+        completeButton?.alpha = 1
+        completeLaterButton?.alpha = shouldShow(returnButtonAction) ? 1 : 0
+        reloadControlsOnly()
+        TabBarController.singleton?.presentPopupController()
+    }
+
+    func prepareNextRestoreRound() {
+        guard !DownloadManager.shared.aptRunning else { return }
+        isInstalling = false
+        isFinishedInstalling = false
+        isFired = false
+        actions.removeAll()
+        DownloadManager.shared.queueRunning = false
+        DownloadManager.aptQueue.sync { DownloadManager.shared.removeAllItems() }
+    }
+
     private func queueCompleted() {
         isInstalling = false
         isFinishedInstalling = false
@@ -1032,6 +1072,7 @@ class DownloadsTableViewController: SileoViewController {
     }
     
     private func startAction() {
+        if DownloadManager.shared.restoreBatch != nil { performInstallAction(); return }
         let packages = (installations + upgrades + installdeps).map { $0.package }
         guard UserDefaults.standard.bool(forKey: "AutoSavePackages"), !packages.isEmpty else {
             performInstallAction()
@@ -1073,7 +1114,20 @@ class DownloadsTableViewController: SileoViewController {
 
         let installedToRecord = (installations + upgrades + installdeps).map { $0.package }
         let removedToForget = (uninstallations + uninstalldeps).map { $0.package.package }
-        APTWrapper.performOperations(installs: installations + upgrades, removals: uninstallations + uninstalldeps, installDeps: installdeps, progressCallback: { progress, statusValid, statusReadable, package in
+        let restoreBatch = DownloadManager.shared.restoreBatch
+        func execute(progressCallback: @escaping (Double, Bool, String, String) -> Void,
+                     outputCallback: @escaping (String, Int) -> Void,
+                     completionCallback: @escaping (Int, APTWrapper.FINISH, Bool) -> Void) {
+            if let batch = restoreBatch {
+                batch.perform(progress: progressCallback, output: outputCallback, completion: completionCallback)
+            } else {
+                APTWrapper.performOperations(installs: installations + upgrades,
+                    removals: uninstallations + uninstalldeps, installDeps: installdeps,
+                    progressCallback: progressCallback, outputCallback: outputCallback,
+                    completionCallback: completionCallback)
+            }
+        }
+        execute(progressCallback: { progress, statusValid, statusReadable, package in
             NSLog("SileoLog: progressCallback \(statusValid) \(package) \(statusReadable)")
             if statusValid {
                 DispatchQueue.main.async {
@@ -1147,18 +1201,33 @@ class DownloadsTableViewController: SileoViewController {
                     $0.isActive = false
                     if status == 0 { $0.transactionProgress = 1 }
                     // A nonzero transaction exit cannot confirm each item's result.
-                    $0.status = String(localizationKey: status == 0
-                        ? $0.operationKey + "_Completed" : "Task_Result_Unconfirmed")
+                    if let batch = restoreBatch {
+                        let identifier = $0.package.package
+                        $0.status = batch.results[identifier] ?? String(localizationKey:
+                            batch.succeeded.contains(identifier) ? $0.operationKey + "_Completed" : "Task_Result_Unconfirmed")
+                        if batch.succeeded.contains(identifier) { $0.transactionProgress = 1 }
+                    } else {
+                        $0.status = String(localizationKey: status == 0
+                            ? $0.operationKey + "_Completed" : "Task_Result_Unconfirmed")
+                    }
                     $0.progressCounter = 7
                     $0.cell?.updateStatus()
                 }
                 self.tableView?.reloadData()
                 
-                self.returnButtonAction = finish
-                self.refreshSileo = refresh
+                if let session = restoreBatch?.taskSession {
+                    if finish.rawValue > session.accumulatedFinish.rawValue { session.accumulatedFinish = finish }
+                    session.accumulatedRefresh = session.accumulatedRefresh || refresh
+                    self.returnButtonAction = session.accumulatedFinish
+                    self.refreshSileo = session.accumulatedRefresh
+                } else {
+                    self.returnButtonAction = finish
+                    self.refreshSileo = refresh
+                }
                 self.updateCompleteButton()
+                restoreBatch?.taskSession?.finish(restoreBatch?.summary ?? "")
                 self.completeButton?.alpha = 1
-                self.completeLaterButton?.alpha = shouldShow(finish) ? 1 : 0
+                self.completeLaterButton?.alpha = shouldShow(self.returnButtonAction) ? 1 : 0
                 
                 self.reloadControlsOnly()
                 
@@ -1166,7 +1235,7 @@ class DownloadsTableViewController: SileoViewController {
                 
                 // Successful transactions respect the preference even if apt
                 // emitted warnings. Failed transactions must remain inspectable.
-                if UserDefaults.standard.bool(forKey: "AlwaysShowLog") || status != 0 {
+                if restoreBatch != nil || UserDefaults.standard.bool(forKey: "AlwaysShowLog") || status != 0 {
                     self.showDetails(nil)
                 } else if UserDefaults.standard.bool(forKey: "AutoComplete") {
                     self.completeButtonTapped(nil)

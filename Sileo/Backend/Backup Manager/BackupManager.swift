@@ -15,6 +15,377 @@
 
 import Foundation
 
+// A conservative restore planner, not an apt repair loop. Only explicit,
+// acyclic dependencies are scheduled; dpkg remains the final authority.
+final class BackupRestoreBatch {
+    var preparing = true
+    var ownsTaskPresentation = true
+    var taskSession: BackupTaskSession?
+    var packages: [Package] = []
+    var results: [String: String] = [:] {
+        didSet {
+            for (id, reason) in results {
+                taskSession?.update(id, fraction: 0, detail: reason, outcome: false)
+            }
+        }
+    }
+    private(set) var succeeded = Set<String>()
+    private var roots = Set<String>()
+    private var selected: [String: Package] = [:]
+
+    struct Relation {
+        let name: String
+        let op: String
+        let version: String
+
+        static func parse(_ text: String) -> Relation? {
+            let pattern = #"^\s*([a-z0-9][a-z0-9+.-]*)(?:\s*\(\s*(<<|<=|=|>=|>>)\s*([^\s()]+)\s*\))?\s*$"#
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
+            func field(_ index: Int) -> String {
+                guard let range = Range(match.range(at: index), in: text) else { return "" }
+                return String(text[range])
+            }
+            return Relation(name: field(1), op: field(2), version: field(3))
+        }
+
+        func accepts(_ value: String) -> Bool {
+            if op.isEmpty { return true }
+            // compareVersion returns zero on parse errors; reject malformed
+            // versions before asking it to compare an equality constraint.
+            let syntax = #"^(?:[0-9]+:)?[0-9][A-Za-z0-9.+:~\-]*$"#
+            guard value.range(of: syntax, options: .regularExpression) != nil,
+                  version.range(of: syntax, options: .regularExpression) != nil else { return false }
+            let comparison = compareVersion(value, Int32(value.utf8.count + 1), version, Int32(version.utf8.count + 1))
+            switch op {
+            case "=": return comparison == 0
+            case ">=": return comparison >= 0
+            case "<=": return comparison <= 0
+            case ">>": return comparison > 0
+            case "<<": return comparison < 0
+            default: return false
+            }
+        }
+
+        func matches(_ package: Package) -> Bool {
+            if package.package == name { return accepts(package.version) }
+            return (package.rawControl["provides"] ?? "").components(separatedBy: ",").contains {
+                guard let provided = Relation.parse($0), provided.name == name else { return false }
+                return op.isEmpty || (provided.op == "=" && accepts(provided.version))
+            }
+        }
+    }
+
+    static func groups(_ package: Package) -> [[Relation]]? {
+        var groups: [[Relation]] = []
+        for key in ["pre-depends", "depends"] {
+            guard let text = package.rawControl[key], !text.isEmpty else { continue }
+            for clause in text.components(separatedBy: ",") {
+                let alternatives = clause.components(separatedBy: "|")
+                let parsed = alternatives.compactMap { Relation.parse($0) }
+                guard parsed.count == alternatives.count else { return nil }
+                groups.append(parsed)
+            }
+        }
+        return groups
+    }
+
+    static func archivePackage(at url: URL) -> Package? {
+        guard let text = try? DpkgWrapper.rawFields(packageURL: url),
+              let fields = try? ControlFileParser.dictionary(controlFile: text, isReleaseFile: true),
+              let package = PackageListManager.package(packageEnum: fields) else { return nil }
+        package.local_deb = url.path
+        return package
+    }
+
+    static var hasPendingTriggers: Bool {
+        PackageListManager.shared.installedPackages.values.contains {
+            $0.status == .triggerspending || $0.status == .triggersawaited
+                || !(($0.rawControl["triggers-pending"] ?? "").isEmpty)
+                || !(($0.rawControl["triggers-awaited"] ?? "").isEmpty)
+        }
+    }
+
+    static func healthy(_ package: Package) -> Bool {
+        package.status == .installed && package.eFlag == .ok
+    }
+
+    var removedIDs = Set<String>()
+
+    func prepare(roots: [Package], local: [Package], excluding: Set<String> = []) {
+        // Resolution failures recorded before planning are requested packages too.
+        self.roots = Set(roots.map { $0.package }).union(results.keys)
+        var universe = roots + local
+        for repo in RepoManager.shared.repoList {
+            universe.append(contentsOf: repo.packageArray.flatMap { $0.allVersions() })
+        }
+        let installed = Array(PackageListManager.shared.installedPackages.values).filter { Self.healthy($0) && !excluding.contains($0.package) }
+        var visiting = Set<String>()
+        var missingReason: String?
+        var removedDependencyReason: String?
+        func visit(_ package: Package) -> Bool {
+            if let existing = selected[package.package] { return existing.version == package.version }
+            guard !removedIDs.contains(package.package), !excluding.contains(package.package), !visiting.contains(package.package),
+                  checkRootHide(package) || DownloadManager.needsConversion(package),
+                  package.essential != "yes", !package.commercial,
+                  PackageListManager.shared.installedPackages[package.package]?.wantInfo != .hold,
+                  !["conflicts", "breaks", "replaces"].contains(where: { !(package.rawControl[$0] ?? "").isEmpty }),
+                  // Changing an installed provider's version needs a full reverse-
+                  // dependency solver; skip it rather than break unrelated packages.
+                  !installed.contains(where: { $0.package == package.package && $0.version != package.version }),
+                  let groups = Self.groups(package) else { return false }
+            visiting.insert(package.package)
+            defer { visiting.remove(package.package) }
+            for alternatives in groups {
+                if installed.contains(where: { item in alternatives.contains { $0.matches(item) } }) { continue }
+                var found = false
+                for relation in alternatives {
+                    for candidate in universe where relation.matches(candidate) {
+                        // Roll back speculative choices when an alternative cannot be planned.
+                        let saved = selected
+                        if visit(candidate) { found = true; break }
+                        selected = saved
+                    }
+                    if found { break }
+                }
+                if !found {
+                    let clause = alternatives.map { $0.name + ($0.op.isEmpty ? "" : " (\($0.op) \($0.version))") }.joined(separator: " | ")
+                    let removedCandidates = Set(universe.filter { candidate in
+                        removedIDs.contains(candidate.package) && alternatives.contains { $0.matches(candidate) }
+                    }.map { $0.package })
+                    missingReason = removedCandidates.isEmpty
+                        ? String(format: String(localizationKey: "Backup_Task_Dependency_Unavailable"), clause)
+                        : String(format: String(localizationKey: "Backup_Task_Dependency_Removed"), clause, removedCandidates.sorted().joined(separator: ", "))
+                    if !removedCandidates.isEmpty { removedDependencyReason = missingReason }
+                    return false
+                }
+            }
+            selected[package.package] = package
+            return true
+        }
+        for root in roots.sorted(by: { $0.package < $1.package }) {
+            missingReason = nil
+            removedDependencyReason = nil
+            let saved = selected
+            if !visit(root) {
+                selected = saved
+                results[root.package] = removedDependencyReason ?? missingReason ?? String(localizationKey: "Restore_Isolation_Unsupported")
+            }
+        }
+        packages = selected.values.sorted { $0.package < $1.package }
+        preparing = false
+    }
+
+    var summary: String {
+        let failed = Set(results.keys)
+        func section(_ key: String, _ identifiers: Set<String>, failures: Bool) -> String {
+            let header = String(format: String(localizationKey: key), identifiers.count)
+            let lines = identifiers.sorted().map { identifier in
+                failures ? "\(identifier): \(results[identifier] ?? "")" : identifier
+            }
+            return ([header] + lines).joined(separator: "\n")
+        }
+        return [
+            String(localizationKey: "Restore_Isolation_Summary"),
+            section("Restore_Isolation_Targets_Succeeded", roots.intersection(succeeded), failures: false),
+            section("Restore_Isolation_Targets_Failed", roots.intersection(failed), failures: true),
+            section("Restore_Isolation_Dependencies_Succeeded", succeeded.subtracting(roots), failures: false),
+            section("Restore_Isolation_Dependencies_Failed", failed.subtracting(roots), failures: true)
+        ].joined(separator: "\n\n")
+    }
+
+    // Runs one dependency-ready download/verification/install cycle at a time.
+    func perform(progress: @escaping (Double, Bool, String, String) -> Void,
+                 output: @escaping (String, Int) -> Void,
+                 completion: @escaping (Int, APTWrapper.FINISH, Bool) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let manager = DownloadManager.shared
+            var pending = (manager.vars.installations.raw.union(manager.vars.upgrades.raw)
+                .union(manager.vars.installdeps.raw)).map { $0.package }.sorted { $0.package < $1.package }
+            var finish = APTWrapper.FINISH.back
+            var refresh = false
+            var changedApps = Set<String>()
+            var stopped: String?
+            let total = max(1, pending.count)
+            var completed = 0
+            PackageListManager.shared.reloadInstalled()
+            if DpkgWrapper.dpkgInterrupted() || Self.hasPendingTriggers {
+                stopped = String(localizationKey: "Restore_Isolation_Global")
+            }
+            while !pending.isEmpty && stopped == nil {
+                PackageListManager.shared.reloadInstalled()
+                if Self.hasPendingTriggers || DpkgWrapper.dpkgInterrupted() {
+                    stopped = String(localizationKey: "Restore_Isolation_Global")
+                    break
+                }
+                if BackupManager.shared.isCancelled {
+                    stopped = String(localizationKey: "Restore_Isolation_Cancelled")
+                    break
+                }
+                let installed = Array(PackageListManager.shared.installedPackages.values).filter {
+                    Self.healthy($0) && self.results[$0.package] == nil
+                }
+                // Remove failed downloads first; dependency consumers wait until their
+                // alternatives have either succeeded or become unavailable.
+                if let index = pending.firstIndex(where: {
+                    !(manager.queuedDownload(package: $0.package)?.failureReason ?? "").isEmpty
+                }) {
+                    let package = pending.remove(at: index)
+                    self.results[package.package] = manager.queuedDownload(package: package.package)?.failureReason
+                    completed += 1
+                    continue
+                }
+                guard let index = pending.firstIndex(where: { package in
+                    guard let groups = Self.groups(package) else { return false }
+                    return groups.allSatisfy { group in
+                        installed.contains { item in
+                            group.contains { $0.matches(item) }
+                                && !pending.contains { $0.package == item.package && $0.package != package.package }
+                        }
+                    }
+                }) else {
+                    // Re-resolve against current installed state and configured
+                    // sources: a dependency may have vanished since preparation.
+                    let replanned = BackupRestoreBatch()
+                    replanned.removedIDs = self.removedIDs
+                    replanned.prepare(roots: pending, local: self.packages, excluding: Set(self.results.keys))
+                    let known = Set(pending.map { $0.package }).union(self.results.keys).union(self.succeeded)
+                    let additions = replanned.packages.filter { !known.contains($0.package) }
+                    if !additions.isEmpty {
+                        self.packages.append(contentsOf: additions)
+                        pending.append(contentsOf: additions)
+                        self.taskSession?.register(additions.map { ($0.package, $0.name ?? $0.package) })
+                        DispatchQueue.main.async { self.taskSession?.activeIDs.formUnion(additions.map { $0.package }) }
+                        DownloadManager.aptQueue.sync {
+                            manager.vars.installations.setTo(manager.vars.installations.raw.union(Set(additions.map { DownloadPackage(package: $0) })))
+                        }
+                        continue
+                    }
+                    for package in pending {
+                        self.results[package.package] = replanned.results[package.package] ?? String(localizationKey: "Restore_Isolation_Dependency")
+                            + " " + [package.rawControl["pre-depends"], package.rawControl["depends"]].compactMap { $0 }.joined(separator: ", ")
+                    }
+                    pending.removeAll()
+                    break
+                }
+                let package = pending.remove(at: index)
+                completed += 1
+                if let current = installed.first(where: { $0.package == package.package }), current.version != package.version {
+                    self.results[package.package] = String(localizationKey: "Restore_Isolation_Unsupported")
+                    continue
+                }
+                // These relations can modify an installed provider or another root.
+                // A restoration never removes or replaces other packages implicitly.
+                if !checkRootHide(package) || ["conflicts", "breaks", "replaces"].contains(where: {
+                    !(package.rawControl[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }) {
+                    self.results[package.package] = String(localizationKey: "Restore_Isolation_Unsupported")
+                    continue
+                }
+                guard let download = manager.prepareRestoreDownload(package) else {
+                    self.results[package.package] = String(localizationKey: "Restore_Isolation_Cancelled")
+                    stopped = String(localizationKey: "Restore_Isolation_Cancelled")
+                    break
+                }
+                guard download.success else {
+                    self.results[package.package] = download.failureReason ?? String(localizationKey: "Restore_Isolation_Unavailable")
+                    continue
+                }
+                guard let archive = manager.restoreArchive(for: package),
+                      let actual = Self.archivePackage(at: URL(fileURLWithPath: archive)),
+                      actual.package == package.package, actual.version == package.version,
+                      actual.architecture == package.architecture,
+                      actual.rawControl["depends"] == package.rawControl["depends"],
+                      actual.rawControl["pre-depends"] == package.rawControl["pre-depends"],
+                      actual.rawControl["provides"] == package.rawControl["provides"],
+                      actual.essential != "yes",
+                      !["conflicts", "breaks", "replaces"].contains(where: { !(actual.rawControl[$0] ?? "").isEmpty }) else {
+                    self.results[package.package] = String(localizationKey: "Restore_Isolation_Unavailable")
+                    continue
+                }
+                if UserDefaults.standard.bool(forKey: "AutoSavePackages") {
+                    let saved = DispatchSemaphore(value: 0)
+                    manager.checkSavedPackages([package], progress: { output($0 + "\n", APTWrapper.debugFD) }, completion: { saved.signal() })
+                    saved.wait()
+                }
+                if BackupManager.shared.isCancelled {
+                    self.results[package.package] = String(localizationKey: "Restore_Isolation_Cancelled")
+                    stopped = String(localizationKey: "Restore_Isolation_Cancelled")
+                    break
+                }
+                self.taskSession?.update(package.package, fraction: 0.55, detail: String(localizationKey: "Restore_Isolation_Installing"))
+                progress(Double(completed - 1) / Double(total) * 100, true,
+                         String(localizationKey: "Restore_Isolation_Installing"), package.package)
+                let wait = DispatchSemaphore(value: 0)
+                let logLock = NSLock()
+                var diagnostics = ""
+                var exitStatus = -1
+                APTWrapper.performOperations(installs: [DownloadPackage(package: package)], removals: [], installDeps: [],
+                    progressCallback: { _, valid, stage, _ in
+                        guard valid else { return }
+                        let fraction: Double
+                        if stage.hasPrefix("Configuring") || stage.hasPrefix("Setting up") { fraction = 0.85 }
+                        else if stage.hasPrefix("Unpacking") { fraction = 0.7 }
+                        else { fraction = 0.55 }
+                        self.taskSession?.update(package.package, fraction: fraction, detail: APTLogTranslator.localize(stage))
+                    }, outputCallback: { text, pipe in
+                        logLock.lock(); diagnostics += text; logLock.unlock()
+                        output(text, pipe)
+                    }, completionCallback: { status, requestedFinish, needsRefresh in
+                        exitStatus = status
+                        if requestedFinish.rawValue > finish.rawValue { finish = requestedFinish }
+                        refresh = refresh || needsRefresh
+                        wait.signal()
+                    }, restoreArchive: archive, restoreIconChanges: { changedApps.formUnion($0) })
+                wait.wait()
+                PackageListManager.shared.reloadInstalled()
+                if Self.hasPendingTriggers {
+                    stopped = String(localizationKey: "Restore_Isolation_Global")
+                }
+                let state = PackageListManager.shared.installedPackages[package.package]
+                if exitStatus == 0, let state = state, Self.healthy(state), state.version == package.version {
+                    self.succeeded.insert(package.package)
+                    self.taskSession?.update(package.package, fraction: 1, detail: String(localizationKey: "Done"), outcome: true)
+                    InstalledSourceStore.record(package)
+                } else {
+                    self.results[package.package] = String(localizationKey: "Restore_Isolation_Failed")
+                    // Only dpkg's documented package processing exit (1), with a
+                    // positively identified maintainer-script failure, is local.
+                    // Unknown errors are global, never guessed from stderr alone.
+                    let scriptFailure = diagnostics.contains("subprocess returned error exit status")
+                        && diagnostics.contains(package.package)
+                    let globalError = ["No space left", "Read-only file system", "Input/output error",
+                        "lock", "database", "unable to access", "failed to write"].contains { diagnostics.contains($0) }
+                    if exitStatus != 256 || !scriptFailure || globalError || DpkgWrapper.dpkgInterrupted() {
+                        stopped = String(localizationKey: "Restore_Isolation_Global")
+                    }
+                }
+            }
+            // Refresh other applications independently of FINISH, so a restart
+            // request cannot discard their icon-cache updates. Refreshing Sileo
+            // itself may terminate this process; keep that in the existing finish flow.
+            let otherApps = changedApps.subtracting([Bundle.main.bundleURL.lastPathComponent])
+            if !otherApps.isEmpty {
+                output(String(localizationKey: "Updating_Icon_Cache") + "\n", APTWrapper.debugFD)
+                for app in otherApps.sorted() {
+                    let result = spawnAsRoot(args: [jbroot("/usr/bin/uicache"), "-p",
+                        rootfs(URL(fileURLWithPath: jbroot("/Applications")).appendingPathComponent(app).path)])
+                    if result.0 != 0 {
+                        stopped = String(localizationKey: "Restore_Isolation_Global")
+                        output(result.2 + "\n", Int(STDERR_FILENO))
+                    }
+                }
+            }
+            if let reason = stopped {
+                for package in pending { self.results[package.package] = reason }
+                output(reason + "\n", Int(STDERR_FILENO))
+            }
+            output(self.summary + "\n", APTWrapper.debugFD)
+            completion(self.results.isEmpty && stopped == nil ? 0 : 1, finish, refresh)
+        }
+    }
+}
+
 final class BackupManager {
 
     static let shared = BackupManager()
@@ -288,6 +659,7 @@ final class BackupManager {
         _ packages: [Package],
         to folder: BackupFolder,
         progress: @escaping ProgressHandler,
+        taskSession: BackupTaskSession? = nil,
         completion: @escaping (Result<(Int, [String]), Error>) -> Void
     ) {
         guard !packages.isEmpty else {
@@ -295,6 +667,7 @@ final class BackupManager {
             return
         }
         let directory = folder.packagesURL
+        taskSession?.register(packages.map { ($0.package, $0.name ?? $0.package) })
         let manifestURL = folder.manifestURL
         beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
@@ -308,17 +681,23 @@ final class BackupManager {
             }
 
             var entries: [ManifestEntry] = []
+            let previousEntries: [ManifestEntry]
+            do {
+                if fileManager.fileExists(atPath: manifestURL.path) {
+                    previousEntries = try JSONDecoder().decode([ManifestEntry].self, from: Data(contentsOf: manifestURL))
+                } else { previousEntries = [] }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
             var failures: [String] = []
             let total = Double(packages.count)
 
             for (index, package) in packages.enumerated() {
-                if self.isCancelled {
-                    self.discard(folder)
-                    DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
-                    return
-                }
+                if self.isCancelled { break }
                 let detail = "\(index + 1)/\(packages.count)"
                 func report(_ phase: Double) {
+                    taskSession?.update(package.package, fraction: phase, detail: String(localizationKey: "Backup_Task_Archiving"))
                     let value = (Double(index) + phase) / total
                     DispatchQueue.main.sync {
                         progress(value, package.name, detail)
@@ -350,6 +729,7 @@ final class BackupManager {
                 if BackupManager.copyCachedPackage(package: package, to: destination) {
                     entry.deb = fileName
                     entries.append(entry)
+                    taskSession?.update(package.package, fraction: 0.99, detail: String(localizationKey: "Backup_Task_Processing"))
                     report(1)
                     continue
                 }
@@ -360,32 +740,41 @@ final class BackupManager {
                     }
                     entry.deb = fileName
                     entries.append(entry)
+                    taskSession?.update(package.package, fraction: 0.99, detail: String(localizationKey: "Backup_Task_Processing"))
                 } catch {
+                    taskSession?.update(package.package, fraction: 0, detail: error.localizedDescription, outcome: false)
                     failures.append("\(package.name) (\(package.package)): \(error.localizedDescription)")
                     NSLog("SileoLog: backup failed \(package.package): \(error)")
                     try? fileManager.removeItem(at: destination)
                 }
             }
 
+            do {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                let updatedIDs = Set(entries.map { $0.package })
+                let merged = previousEntries.filter { !updatedIDs.contains($0.package) } + entries
+                try encoder.encode(merged).write(to: manifestURL, options: .atomic)
+            } catch {
+                for entry in entries {
+                    taskSession?.update(entry.package, fraction: 0.99, detail: error.localizedDescription, outcome: false)
+                }
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            for entry in entries {
+                taskSession?.update(entry.package, fraction: 1, detail: String(localizationKey: "Done"), outcome: true)
+            }
             if self.isCancelled {
-                self.discard(folder)
                 DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
                 return
             }
 
-            do {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                try encoder.encode(entries).write(to: manifestURL, options: .atomic)
-            } catch {
-                DispatchQueue.main.async { completion(.failure(error)) }
-                return
-            }
-
             if !failures.isEmpty {
-                let report = failures.joined(separator: "\n") + "\n"
+                let reportURL = folder.url.appendingPathComponent("失败记录.txt")
+                let report = ((try? String(contentsOf: reportURL, encoding: .utf8)) ?? "") + failures.joined(separator: "\n") + "\n"
                 try? report.write(
-                    to: folder.url.appendingPathComponent("失败记录.txt"),
+                    to: reportURL,
                     atomically: true,
                     encoding: .utf8
                 )
@@ -422,24 +811,46 @@ final class BackupManager {
     func restorePackages(
         from folder: BackupFolder,
         progress: @escaping ProgressHandler,
+        taskSession: BackupTaskSession? = nil,
+        preview: ((BackupRestoreBatch) -> Void)? = nil,
+        selectedID: String? = nil,
+        selectedPackage: Package? = nil,
         completion: @escaping (Result<(Int, Int), Error>) -> Void
     ) {
-        beginOperation()
+        let manager = DownloadManager.shared
+        guard !manager.queueRunning, !manager.aptRunning, manager.operationCount() == 0,
+              manager.restoreBatch == nil else {
+            completion(.failure(BackupError.failed(String(localizationKey: "Restore_Isolation_Busy"))))
+            return
+        }
+        let batch = BackupRestoreBatch()
+        let waitingIDs = taskSession.map { Set($0.tasks.filter { $0.outcome == nil }.map { $0.id }) }
+        batch.taskSession = taskSession
+        batch.removedIDs = taskSession?.removedIDs ?? []
+        guard taskSession?.closed != true else { completion(.failure(BackupError.cancelled)); return }
+        if preview == nil { manager.restoreBatch = batch; beginOperation() }
         DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
             let entries = BackupManager.manifestEntries(in: folder)
+            taskSession?.register(entries.map { ($0.package, $0.name) })
             guard !entries.isEmpty else {
-                DispatchQueue.main.async { completion(.failure(BackupError.nothingToRestore)) }
+                DispatchQueue.main.async {
+                    if preview == nil { manager.restoreBatch = nil }
+                    completion(.failure(BackupError.nothingToRestore))
+                }
                 return
             }
 
             var queued: [Package] = []
-            var skipped = 0
             let total = Double(entries.count)
 
             for (index, entry) in entries.enumerated() {
-                if self.isCancelled {
-                    DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
+                if preview == nil && (waitingIDs?.contains(entry.package) == false || (selectedID != nil && selectedID != entry.package)) { continue }
+                if preview == nil && self.isCancelled {
+                    DispatchQueue.main.async {
+                        manager.restoreBatch = nil
+                        completion(.failure(BackupError.cancelled))
+                    }
                     return
                 }
                 DispatchQueue.main.async {
@@ -448,30 +859,61 @@ final class BackupManager {
                 if let package = BackupManager.resolve(entry: entry, in: folder) {
                     queued.append(package)
                 } else {
-                    skipped += 1
+                    batch.results[entry.package] = String(localizationKey: "Restore_Isolation_Unavailable")
                     NSLog("SileoLog: restore skipped \(entry.package) \(entry.version)")
                 }
             }
 
+            // Include every local archive in the dependency universe, even if
+            // it is not a manifest root. No reliance on localPackages' last value.
+            let archives = (try? FileManager.default.contentsOfDirectory(at: folder.packagesURL,
+                includingPropertiesForKeys: nil)) ?? []
+            let locals = archives.filter { $0.pathExtension.lowercased() == "deb" }
+                .compactMap { BackupRestoreBatch.archivePackage(at: $0) }
+            var requested = queued.filter { preview != nil || waitingIDs?.contains($0.package) != false }
+            if preview == nil { batch.results = batch.results.filter { waitingIDs?.contains($0.key) != false } }
+            if let selectedID = selectedID {
+                if let selectedPackage = selectedPackage, selectedPackage.package == selectedID {
+                    requested = [selectedPackage]
+                } else {
+                    requested = Array(queued.filter { $0.package == selectedID }.prefix(1))
+                }
+                batch.results = batch.results.filter { $0.key == selectedID }
+                if requested.isEmpty { batch.results[selectedID] = String(localizationKey: "Restore_Isolation_Unavailable") }
+            }
+            batch.prepare(roots: requested, local: locals)
+            taskSession?.register(batch.packages.map { ($0.package, $0.name ?? $0.package) })
+            if preview == nil {
+                DispatchQueue.main.async { taskSession?.activeIDs.formUnion(batch.packages.map { $0.package }) }
+            }
+            taskSession?.order(batch.packages.map { $0.package })
+            for (id, reason) in batch.results { taskSession?.update(id, fraction: 0, detail: reason, outcome: false) }
             DispatchQueue.main.async {
+                if taskSession?.closed == true {
+                    if preview == nil && manager.restoreBatch === batch { manager.restoreBatch = nil }
+                    return
+                }
                 progress(1, "", "")
+                if let preview = preview { preview(batch); return }
                 if self.isCancelled {
+                    manager.restoreBatch = nil
                     completion(.failure(BackupError.cancelled))
                     return
                 }
-                guard !queued.isEmpty else {
-                    completion(.failure(BackupError.nothingToRestore))
+                guard !batch.packages.isEmpty else {
+                    manager.restoreBatch = nil
+                    completion(.failure(BackupError.failed(batch.summary)))
                     return
                 }
-                let manager = DownloadManager.shared
-                for package in queued {
-                    manager.add(package: package, queue: .installations)
+                guard manager.restoreBatch === batch else {
+                    completion(.failure(BackupError.cancelled))
+                    return
                 }
-                if !manager.queueRunning {
-                    manager.reloadData(recheckPackages: true)
-                }
+                manager.vars.errors.removeAll()
+                manager.vars.installations.setTo(Set(batch.packages.map { DownloadPackage(package: $0) }))
+                manager.reloadData(recheckPackages: true)
                 NotificationCenter.default.post(name: PackageQueueButton.actionPerformedNotification, object: nil)
-                completion(.success((queued.count, skipped)))
+                completion(.success((batch.packages.count, batch.results.count)))
             }
         }
     }
@@ -531,7 +973,7 @@ final class BackupManager {
         }
         if let deb = entry.deb {
             let url = folder.packagesURL.appendingPathComponent(deb)
-            if let package = PackageListManager.shared.package(url: url) {
+            if let package = BackupRestoreBatch.archivePackage(at: url) {
                 return package
             }
         }

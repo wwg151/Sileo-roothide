@@ -434,6 +434,9 @@ class SileoPanelViewController: UIViewController {
     // MARK: - Presentation
 
     func present(from host: UIViewController) {
+        guard presentingViewController == nil, host.presentedViewController == nil else { return }
+        hasAppeared = false
+        isClosing = false
         host.present(self, animated: false) { [weak self] in
             self?.animateIn()
         }
@@ -469,11 +472,14 @@ class SileoPanelViewController: UIViewController {
         }
     }
 
-    @objc private func closeTapped() {
+    @objc func closeTapped() {
         close()
     }
 
+    var allowsInteractiveDismissal: Bool { true }
+
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard allowsInteractiveDismissal else { return }
         let translation = max(0, gesture.translation(in: view).y)
         switch gesture.state {
         case .changed:
