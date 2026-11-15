@@ -441,6 +441,13 @@
 "Backup_View" = "View Backups";
 "Backup_View_No_Filza" = "Filza is not installed. The backups are in /var/mobile/Documents.";
 "Backup_Clear" = "Clear Backups";
+"Backup_Delete_Action" = "Delete";
+"Backup_Delete_Packages" = "Package Backup";
+"Backup_Delete_Configuration" = "Configuration Backup";
+"Backup_Delete_Sources" = "Source Backup";
+"Backup_Delete_Title" = "Permanently Delete Backups?";
+"Backup_Delete_Message" = "The %d selected backups and all files they contain will be permanently deleted. This cannot be undone, and deleted backups cannot be recovered. Installed packages and current settings will not be affected.";
+"Backup_Delete_Failed" = "Some backups could not be deleted. They remain selected in the list so you can try again.";
 "Clear_Packages" = "Clear Package Backups";
 "Clear_Configuration" = "Clear Configuration Backups";
 "Clear_Sources" = "Clear Source Backups";

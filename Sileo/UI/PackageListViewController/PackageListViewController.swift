@@ -839,24 +839,26 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
     }
 
     private func presentClearBackupsMenu() {
-        let panel = SileoPanelViewController()
-        let options: [(String, BackupManager.BackupKind?)] = [
-            ("Clear_Packages", .packages),
-            ("Clear_Configuration", .configuration),
-            ("Clear_Sources", .sources),
-            ("Clear_All", nil)
-        ]
-        var items: [SileoPanelTable.Item] = []
-        for (key, kind) in options {
-            items.append(SileoPanelTable.Item(SileoPanelViewController.row(title: String(localizationKey: key),
-                                                                            iconName: "trash",
-                                                                            destructive: true) { [weak self, weak panel] in
-                panel?.close {
-                    self?.confirmClearBackups(kind: kind, title: String(localizationKey: key))
-                }
-            }))
+        guard canCreateBackupTask() else { return }
+        let folders = BackupManager.shared.allBackupFolders()
+        guard !folders.isEmpty else {
+            showBackupMessage(title: String(localizationKey: "Backup_Clear"), message: String(localizationKey: "Clear_None"))
+            return
         }
-        panel.table.setItems(items)
+        let panel = BackupProgressAlert(title: String(localizationKey: "Backup_Clear"), message: "", cancellable: false, onCancel: nil)
+        panel.configureBackupDeletion(folders.map { folder in
+            let title: String
+            if folder.name.hasPrefix(BackupManager.BackupKind.packages.folderPrefix) {
+                title = String(localizationKey: "Backup_Delete_Packages")
+            } else if folder.name.hasPrefix(BackupManager.BackupKind.configuration.folderPrefix) {
+                title = String(localizationKey: "Backup_Delete_Configuration")
+            } else if folder.name.hasPrefix(BackupManager.BackupKind.sources.folderPrefix) {
+                title = String(localizationKey: "Backup_Delete_Sources")
+            } else {
+                title = folder.name.replacingOccurrences(of: "_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}$", with: "", options: .regularExpression)
+            }
+            return (folder: folder, title: title, date: Self.backupDateText(folder))
+        })
         panel.present(from: self)
     }
 

@@ -447,6 +447,13 @@
 "Backup_View" = "查看备份";
 "Backup_View_No_Filza" = "未安装 Filza，备份位于 /var/mobile/Documents。";
 "Backup_Clear" = "清除备份";
+"Backup_Delete_Action" = "删除";
+"Backup_Delete_Packages" = "插件备份";
+"Backup_Delete_Configuration" = "配置备份";
+"Backup_Delete_Sources" = "越狱源备份";
+"Backup_Delete_Title" = "永久删除备份？";
+"Backup_Delete_Message" = "将永久删除选中的 %d 项备份及其全部文件。此操作无法撤销，删除后无法恢复。已安装的插件和当前设置不受影响。";
+"Backup_Delete_Failed" = "部分备份删除失败，已保留在列表中并保持选中，可再次尝试。";
 "Clear_Packages" = "清除插件备份";
 "Clear_Configuration" = "清除配置备份";
 "Clear_Sources" = "清除越狱源备份";

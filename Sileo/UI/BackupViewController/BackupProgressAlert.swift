@@ -341,8 +341,17 @@ final class BackupProgressAlert: SileoPanelViewController {
     private var renderedRunning = false
     private var renderedReady = false
     private var taskRows: [String: BackupTaskRow] = [:]
-    var isRunning: Bool { roundRunning }
-    var hasUnfinishedTasks: Bool { roundRunning || (startHandler == nil && resultMessage == nil) || session.hasPendingTasks }
+    private var deletionEntries: [(folder: BackupManager.BackupFolder, title: String, date: String?)]?
+    private var deletingBackups = false
+
+    func configureBackupDeletion(_ entries: [(folder: BackupManager.BackupFolder, title: String, date: String?)]) {
+        deletionEntries = entries
+        resultMessage = ""
+        if isViewLoaded { render() }
+    }
+
+    var isRunning: Bool { roundRunning || deletingBackups }
+    var hasUnfinishedTasks: Bool { deletingBackups || roundRunning || (startHandler == nil && resultMessage == nil) || session.hasPendingTasks }
     var hasPendingCompletion: Bool { onFinishedClose != nil }
     private let manage = UIButton(type: .system)
     private let clear = UIButton(type: .system)
@@ -654,6 +663,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     private func toggleAllTasks() {
+        if deletionEntries != nil { confirmBackupDeletion(); return }
         if managing {
             selectedIDs = Set(session.tasks.map(\.id))
             render()
@@ -722,8 +732,65 @@ final class BackupProgressAlert: SileoPanelViewController {
         }
     }
 
+    private func renderBackupDeletion() {
+        guard let entries = deletionEntries else { return }
+        filters.isHidden = true
+        footer.isHidden = true
+        table.onRemoveRow = nil
+        startAllButton?.setTitle(String(localizationKey: "Backup_Delete_Action"), for: .normal)
+        startAllButton?.accessibilityLabel = String(localizationKey: "Backup_Delete_Action")
+        startAllButton?.setTitleColor(.systemRed, for: .normal)
+        startAllButton?.isHidden = false
+        startAllButton?.isEnabled = !deletingBackups && !selectedIDs.isEmpty
+        search.isEnabled = !deletingBackups
+        let query = (search.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let offset = table.contentOffset
+        table.setItems(entries.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || ($0.date ?? "").localizedCaseInsensitiveContains(query) }.map { entry in
+            let id = entry.folder.url.path
+            let row = Self.choiceRow(title: entry.title, detail: entry.date, selected: selectedIDs.contains(id)) { [weak self] in
+                guard let self = self, !self.deletingBackups else { return }
+                if !self.selectedIDs.insert(id).inserted { self.selectedIDs.remove(id) }
+                self.render()
+            }
+            row.isEnabled = !deletingBackups
+            return SileoPanelTable.Item(row)
+        })
+        table.contentOffset = offset
+    }
+
+    private func confirmBackupDeletion() {
+        guard !deletingBackups, let entries = deletionEntries else { return }
+        let chosen = entries.filter { selectedIDs.contains($0.folder.url.path) }.map { $0.folder }
+        guard !chosen.isEmpty else { return }
+        let confirmation = UIAlertController(title: String(localizationKey: "Backup_Delete_Title"),
+            message: String(format: String(localizationKey: "Backup_Delete_Message"), chosen.count), preferredStyle: .alert)
+        confirmation.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        confirmation.addAction(UIAlertAction(title: String(localizationKey: "Backup_Delete_Action"), style: .destructive) { [weak self] _ in
+            guard let self = self, !self.deletingBackups else { return }
+            self.deletingBackups = true
+            self.render()
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = BackupManager.shared.deleteBackups(folders: chosen)
+                let deleted = Set(chosen.filter { !FileManager.default.fileExists(atPath: $0.url.path) }.map { $0.url.path })
+                DispatchQueue.main.async {
+                    self.deletingBackups = false
+                    self.deletionEntries?.removeAll { deleted.contains($0.folder.url.path) }
+                    self.selectedIDs.subtract(deleted)
+                    self.render()
+                    if deleted.count != chosen.count {
+                        let error = UIAlertController(title: String(localizationKey: "Backup_Delete_Title"), message: String(localizationKey: "Backup_Delete_Failed"), preferredStyle: .alert)
+                        error.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default))
+                        self.present(error, animated: true)
+                    }
+                }
+            }
+        })
+        present(confirmation, animated: true)
+    }
+
     private func render() {
         guard isViewLoaded else { return }
+        if deletionEntries != nil { renderBackupDeletion(); return }
         let successCount = session.tasks.filter { $0.outcome == true }.count
         let failureCount = session.tasks.filter { $0.outcome == false }.count
         let total = session.tasks.count
