@@ -66,6 +66,8 @@ final class BackupTaskSession {
     }
     var closed = false
     var backupFolder: BackupManager.BackupFolder?
+    var completionTitle = ""
+    var completionPath: String?
     var accumulatedFinish: APTWrapper.FINISH = .back
     var accumulatedRefresh = false
     var onRoundFinished: (() -> Void)?
@@ -142,6 +144,12 @@ final class BackupTaskSession {
         }
         activeIDs.removeAll()
         lastSummary = [lastSummary ?? "", summary].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let succeeded = tasks.filter { $0.outcome == true }.count + removedResults.filter { $0.outcome }.count
+        let failed = tasks.filter { $0.outcome == false }.count + removedResults.filter { !$0.outcome }.count
+        let title = String(format: String(localizationKey: "Backup_Task_Completion_Title"), completionTitle)
+        let counts = String(format: String(localizationKey: "Backup_Task_Completion_Counts"), succeeded, failed)
+        let path = backupFolder?.url.path ?? completionPath
+        BackupCompletionToast.show([title, counts, path].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
         onRoundFinished?()
         onChange?()
     }
@@ -183,6 +191,59 @@ final class BackupTaskSession {
         guard Thread.isMainThread else { DispatchQueue.main.async { self.finishSingleTask(message: message, success: success) }; return }
         update("archive", fraction: success ? 1 : 0, detail: message, outcome: success)
         finish(message)
+    }
+}
+
+private enum BackupCompletionToast {
+    private static var overlay: UIWindow?
+    private static var dismissal: DispatchWorkItem?
+
+    private final class ToastWindow: UIWindow {
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+    }
+
+    static func show(_ message: String) {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else { return }
+        dismissal?.cancel()
+        overlay?.isHidden = true
+        let window = ToastWindow(windowScene: scene)
+        window.windowLevel = .alert + 1
+        window.backgroundColor = .clear
+        let controller = UIViewController()
+        controller.view.backgroundColor = .clear
+        window.rootViewController = controller
+        let card = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.layer.cornerRadius = 18
+        card.clipsToBounds = true
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = message
+        label.numberOfLines = 0
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.textAlignment = .center
+        card.contentView.addSubview(label)
+        controller.view.addSubview(card)
+        NSLayoutConstraint.activate([
+            card.centerXAnchor.constraint(equalTo: controller.view.centerXAnchor),
+            card.topAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            card.widthAnchor.constraint(equalTo: controller.view.widthAnchor, constant: -32),
+            label.leadingAnchor.constraint(equalTo: card.contentView.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: card.contentView.trailingAnchor, constant: -16),
+            label.topAnchor.constraint(equalTo: card.contentView.topAnchor, constant: 14),
+            label.bottomAnchor.constraint(equalTo: card.contentView.bottomAnchor, constant: -14)
+        ])
+        overlay = window
+        window.isHidden = false
+        UIAccessibility.post(notification: .announcement, argument: message)
+        let hide = DispatchWorkItem {
+            window.isHidden = true
+            if overlay === window { overlay = nil }
+            dismissal = nil
+        }
+        dismissal = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: hide)
     }
 }
 
@@ -302,6 +363,7 @@ final class BackupProgressAlert: SileoPanelViewController {
         self.cancellable = cancellable
         self.onCancel = onCancel
         super.init(title: title, subtitle: nil, icon: "archivebox")
+        session.completionTitle = title
         let listBody = UIStackView(arrangedSubviews: [search, filters, table])
         listBody.axis = .vertical
         listBody.spacing = 10
@@ -365,7 +427,7 @@ final class BackupProgressAlert: SileoPanelViewController {
         selection.axis = .horizontal
         selection.distribution = .fillEqually
         selectionRow = selection
-        footer = UIStackView(arrangedSubviews: [resultLabel, management, selection, action])
+        footer = UIStackView(arrangedSubviews: [management, selection, action])
         footer.axis = .vertical
         footer.spacing = 8
         setFooter(footer)

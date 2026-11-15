@@ -730,6 +730,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             return
         }
         let progress = prepared
+        progress.session.completionPath = folder.url.path
         progress.startSingleTask(name: String(localizationKey: "Backup_Configuration"))
         BackupManager.shared.backupConfiguration(to: folder, completion: { result in
             switch result {
@@ -762,6 +763,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             prepareArchiveTask("Restore_Configuration") { [weak self] in self?.startConfigurationRestore(from: folder, prepared: $0) }
             return
         }
+        progress.session.completionPath = folder.url.path
         progress.startSingleTask(name: String(localizationKey: "Restore_Configuration"))
         BackupManager.shared.restoreConfiguration(from: folder, completion: { result in
             switch result {
@@ -790,6 +792,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             return
         }
         let progress = prepared
+        progress.session.completionPath = folder.url.path
         progress.startSingleTask(name: String(localizationKey: "Backup_Sources"))
         BackupManager.shared.backupSources(to: folder, completion: { result in
             switch result {
@@ -813,6 +816,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             self.confirmRestore(title: String(localizationKey: "Restore_Sources"),
                                 message: String(localizationKey: "Restore_Confirm_Sources")) {
                 self.prepareArchiveTask("Restore_Sources") { progress in
+                progress.session.completionPath = folder.url.path
                 progress.startSingleTask(name: String(localizationKey: "Restore_Sources"))
                 BackupManager.shared.restoreSources(from: folder, completion: { result in
                     switch result {

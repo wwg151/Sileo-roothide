@@ -455,6 +455,8 @@
 "Backup_Nothing_To_Restore" = "This backup holds nothing to restore.";
 "Restore_Isolation_Busy" = "Finish or clear the current queue before restoring packages.";
 "Restore_Isolation_Unsupported" = "Skipped: dependency cycle, unsupported relationship, conflict, protected package, or installed version change cannot be restored safely.";
+"Backup_Task_Completion_Title" = "%@ completed";
+"Backup_Task_Completion_Counts" = "%ld succeeded, %ld failed";
 "Restore_Isolation_Summary" = "Restore summary";
 "Restore_Isolation_Targets_Succeeded" = "Requested packages restored (%ld):";
 "Restore_Isolation_Targets_Failed" = "Requested packages failed (%ld):";

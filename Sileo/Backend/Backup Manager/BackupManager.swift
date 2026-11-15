@@ -44,10 +44,78 @@ final class BackupRestoreBatch {
 
     var removedIDs = Set<String>()
 
+    private struct RestoreDependency {
+        let name: String
+        let op: String
+        let version: String
+
+        init?(_ text: String) {
+            let pattern = #"^\s*([a-z0-9][a-z0-9+.-]*)(?::(?:any|native|[a-z0-9-]+))?\s*(?:\(\s*(<<|<=|=|>=|>>)\s*([^\s()]+)\s*\))?\s*$"#
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
+            func field(_ index: Int) -> String {
+                guard let range = Range(match.range(at: index), in: text) else { return "" }
+                return String(text[range])
+            }
+            name = field(1); op = field(2); version = field(3)
+        }
+
+        func accepts(_ value: String) -> Bool {
+            if op.isEmpty { return true }
+            let comparison = compareVersion(value, Int32(value.utf8.count + 1), version, Int32(version.utf8.count + 1))
+            switch op {
+            case "=": return comparison == 0
+            case ">=": return comparison >= 0
+            case "<=": return comparison <= 0
+            case ">>": return comparison > 0
+            case "<<": return comparison < 0
+            default: return false
+            }
+        }
+
+        func matches(_ package: Package) -> Bool {
+            if package.package == name { return accepts(package.version) }
+            return (package.rawControl["provides"] ?? "").split(separator: ",").contains {
+                guard let provided = RestoreDependency(String($0)), provided.name == name else { return false }
+                return op.isEmpty || (provided.op == "=" && accepts(provided.version))
+            }
+        }
+    }
+
     func prepare(roots: [Package]) {
         self.roots = Set(roots.map { $0.package }).union(results.keys)
-        var seen = Set<String>()
-        packages = roots.filter { !removedIDs.contains($0.package) && seen.insert($0.package).inserted }
+        // Resolve only after Start. Missing dependencies never reject a root:
+        // available dependencies run first, and dpkg reports any remaining error.
+        PackageListManager.shared.reloadInstalled()
+        let installed = Array(PackageListManager.shared.installedPackages.values).filter { Self.healthy($0) }
+        let available = RepoManager.shared.repoList.flatMap { $0.packageArray.flatMap { $0.allVersions() } }
+        let candidates = (roots + available).filter { candidate in
+            !removedIDs.contains(candidate.package)
+                && (checkRootHide(candidate) || DownloadManager.needsConversion(candidate))
+        }
+        var visited = Set<String>()
+        var ordered: [Package] = []
+        func visit(_ package: Package) {
+            guard !removedIDs.contains(package.package), visited.insert(package.package).inserted else { return }
+            for key in ["pre-depends", "depends"] {
+                for clause in (package.rawControl[key] ?? "").split(separator: ",") {
+                    let alternatives = clause.split(separator: "|").compactMap { RestoreDependency(String($0)) }
+                    if installed.contains(where: { item in alternatives.contains { $0.matches(item) } }) { continue }
+                    for relation in alternatives {
+                        if let candidate = candidates.filter({ relation.matches($0) }).sorted(by: {
+                            compareVersion($0.version, Int32($0.version.utf8.count + 1),
+                                           $1.version, Int32($1.version.utf8.count + 1)) > 0
+                        }).first {
+                            visit(candidate)
+                            break
+                        }
+                    }
+                }
+            }
+            ordered.append(package)
+        }
+        roots.forEach { visit($0) }
+        packages = ordered
         preparing = false
     }
 
@@ -73,8 +141,7 @@ final class BackupRestoreBatch {
                  completion: @escaping (Int, APTWrapper.FINISH, Bool) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let manager = DownloadManager.shared
-            var pending = (manager.vars.installations.raw.union(manager.vars.upgrades.raw)
-                .union(manager.vars.installdeps.raw)).map { $0.package }.sorted { $0.package < $1.package }
+            var pending = self.packages
             var finish = APTWrapper.FINISH.back
             var refresh = false
             var changedApps = Set<String>()
@@ -652,6 +719,7 @@ final class BackupManager {
         let batch = BackupRestoreBatch()
         let waitingIDs = taskSession.map { Set($0.tasks.filter { $0.outcome == nil }.map { $0.id }) }
         batch.taskSession = taskSession
+        DispatchQueue.main.async { taskSession?.completionPath = folder.url.path }
         batch.removedIDs = taskSession?.removedIDs ?? []
         guard taskSession?.closed != true else { completion(.failure(BackupError.cancelled)); return }
         if preview == nil { manager.restoreBatch = batch; beginOperation() }
