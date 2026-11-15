@@ -88,7 +88,10 @@ final class BackupRestoreBatch {
         // available dependencies run first, and dpkg reports any remaining error.
         PackageListManager.shared.reloadInstalled()
         let installed = Array(PackageListManager.shared.installedPackages.values).filter { Self.healthy($0) }
+        // A dependency must not replace another requested backup with an online build.
+        let requestedIDs = Set(roots.map { $0.package })
         let available = RepoManager.shared.repoList.flatMap { $0.packageArray.flatMap { $0.allVersions() } }
+            .filter { !requestedIDs.contains($0.package) }
         let candidates = (roots + available).filter { candidate in
             !removedIDs.contains(candidate.package)
                 && (checkRootHide(candidate) || DownloadManager.needsConversion(candidate))
@@ -768,11 +771,7 @@ final class BackupManager {
             var requested = queued.filter { preview != nil || waitingIDs?.contains($0.package) != false }
             if preview == nil { batch.results = batch.results.filter { waitingIDs?.contains($0.key) != false } }
             if let selectedID = selectedID {
-                if let selectedPackage = selectedPackage, selectedPackage.package == selectedID {
-                    requested = [selectedPackage]
-                } else {
-                    requested = Array(queued.filter { $0.package == selectedID }.prefix(1))
-                }
+                requested = Array(queued.filter { $0.package == selectedID }.prefix(1))
                 batch.results = batch.results.filter { $0.key == selectedID }
                 if requested.isEmpty { batch.results[selectedID] = String(localizationKey: "Restore_Isolation_Unavailable") }
             }
@@ -849,30 +848,17 @@ final class BackupManager {
         return nil
     }
 
-    /// The package to install for a manifest entry: the exact version from the
-    /// recorded source, then the same version from any other source, then the
-    /// kept .deb, and only when none of those exist, whatever source is newest.
+    /// Restore targets come exclusively from the backup archive, never a repo.
+    /// Empty versions identify legacy folders without a manifest.
     private static func resolve(entry: ManifestEntry, in folder: BackupFolder) -> Package? {
-        if let repoURL = entry.repo,
-           let repo = RepoManager.shared.repoList.first(where: { $0.rawURL == repoURL }),
-           let package = package(in: repo, identifier: entry.package, version: entry.version) {
-            return package
+        guard let deb = entry.deb else { return nil }
+        let url = folder.packagesURL.appendingPathComponent(deb)
+        guard let package = BackupRestoreBatch.archivePackage(at: url) else { return nil }
+        if !entry.version.isEmpty {
+            guard package.package == entry.package, package.version == entry.version else { return nil }
+            if let architecture = entry.architecture, package.architecture != architecture { return nil }
         }
-        if !entry.version.isEmpty,
-           let package = package(offering: entry.package, version: entry.version) {
-            return package
-        }
-        if let deb = entry.deb {
-            let url = folder.packagesURL.appendingPathComponent(deb)
-            if let package = BackupRestoreBatch.archivePackage(at: url) {
-                return package
-            }
-        }
-        if let package = PackageListManager.shared.newestPackage(identifier: entry.package),
-           package.sourceRepo != nil {
-            return package
-        }
-        return nil
+        return package
     }
 
     // MARK: - Configuration
