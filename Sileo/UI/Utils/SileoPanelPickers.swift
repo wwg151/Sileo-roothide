@@ -67,7 +67,6 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
             items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(entry.title), height: 34))
             for (row, package) in entry.packages.enumerated() {
                 let selected = winner == IndexPath(row: row, section: section)
-                let compatible = PackageQueueButton.supportsSelectedPackage(package)
                 let size: String
                 if let bytes = Int64(package.size ?? ""), bytes >= 0 {
                     size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
@@ -75,18 +74,16 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                     size = String(localizationKey: "Package_Version_Size_Unknown")
                 }
                 let detail = (package.architecture ?? String(localizationKey: "Package_Version_Arch_Unknown")) + " · " + size
-                let title = package.version + (compatible ? "" : " · " + String(localizationKey: "Package_Version_Incompatible"))
-                let row = SileoPanelViewController.choiceRow(title: title,
+                // Selection is not installation: the queue owns compatibility
+                // checks and conversion, while export keeps the original archive.
+                let row = SileoPanelViewController.choiceRow(title: package.version,
                                                              detail: detail,
                                                              selected: selected) { [weak self] in
-                    guard compatible else { return }
                     self?.close { onPick(package) }
                 }
-                row.isEnabled = compatible
-                row.alpha = compatible ? 1 : 0.5
-                row.accessibilityLabel = [package.version, entry.title, detail, compatible ? "" : String(localizationKey: "Package_Version_Incompatible")].filter { !$0.isEmpty }.joined(separator: ", ")
+                row.accessibilityLabel = [package.version, entry.title, detail].joined(separator: ", ")
                 row.isAccessibilityElement = true
-                items.append(SileoPanelTable.Item(row, height: compatible ? 68 : 88))
+                items.append(SileoPanelTable.Item(row, height: 68))
             }
         }
         table.setItems(items)

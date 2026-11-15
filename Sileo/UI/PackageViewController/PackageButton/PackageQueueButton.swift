@@ -313,14 +313,6 @@ class PackageQueueButton: PackageButton {
         NotificationCenter.default.post(Notification(name: PackageListManager.prefsNotification))
     }
 
-    /// Mirrors the installation entry's architecture eligibility without
-    /// performing its conversion; download-only exports the original archive.
-    static func supportsSelectedPackage(_ package: Package) -> Bool {
-        checkRootHide(package) || DownloadManager.needsConversion(package)
-            || (Bootstrap.roothide && package.tags.contains(.roothide)
-                && FileManager.default.fileExists(atPath: jbroot("/usr/lib/libroot.dylib")))
-    }
-
     /// Exports precisely this Package. Status-only entries must first be selected
     /// from a source with selectPackageVersion; this never installs dependencies.
     func downloadDeb(_ package: Package) {
@@ -328,10 +320,6 @@ class PackageQueueButton: PackageButton {
         guard !(package.isProvisional ?? false),
               package.local_deb != nil || (!package.fromStatusFile && package.filename != nil && package.sourceRepo != nil) else {
             showDownloadMessage("Package_Download_Select_Source")
-            return
-        }
-        guard Self.supportsSelectedPackage(package) else {
-            showDownloadMessage("Package_Version_Incompatible")
             return
         }
         guard let repo = package.sourceRepo, package.local_deb == nil else {
@@ -764,10 +752,6 @@ class PackageQueueButton: PackageButton {
         guard !(package.isProvisional ?? false),
               package.local_deb != nil || (!package.fromStatusFile && package.sourceRepo != nil && package.filename != nil) else {
             showDownloadMessage("Package_Install_Select_Source", titleKey: "Package_Choose_Version")
-            return
-        }
-        guard Self.supportsSelectedPackage(package) else {
-            showDownloadMessage("Package_Version_Incompatible", titleKey: "Package_Choose_Version")
             return
         }
         if DownloadManager.shared.queueRunning || checkQueued(package: package) ||
