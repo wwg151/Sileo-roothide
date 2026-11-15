@@ -102,6 +102,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private let uninstallButton = UIButton(type: .system)
     private let actionDock = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
     private let versionButton = UIButton(type: .system)
+    private let versionStatusLabel = UILabel()
     private let downloadOnlyButton = UIButton(type: .system)
     private let showcaseTaskButton = UIButton(type: .system)
     private var showcaseTaskVisible = false
@@ -240,13 +241,27 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         versionButton.contentHorizontalAlignment = .leading
         versionButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
         versionButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        versionButton.titleLabel?.numberOfLines = 0
-        versionButton.setImage(UIImage(systemName: "chevron.up.chevron.down"), for: .normal)
+        versionButton.titleLabel?.numberOfLines = 2
+        versionButton.titleLabel?.lineBreakMode = .byTruncatingTail
+        versionButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        versionButton.semanticContentAttribute = .forceRightToLeft
+        versionButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
         versionButton.addTarget(self, action: #selector(selectShowcaseVersion), for: .touchUpInside)
         downloadOnlyButton.setImage(UIImage(systemName: "arrow.down.to.line"), for: .normal)
+        downloadOnlyButton.setTitle(" " + String(localizationKey: "Showcase_Download_Only"), for: .normal)
+        downloadOnlyButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+        downloadOnlyButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        downloadOnlyButton.titleLabel?.numberOfLines = 0
+        downloadOnlyButton.backgroundColor = .tertiarySystemFill
+        downloadOnlyButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         downloadOnlyButton.accessibilityLabel = String(localizationKey: "Showcase_Download_Only")
         downloadOnlyButton.isEnabled = true
         downloadOnlyButton.addTarget(self, action: #selector(downloadShowcasePackage), for: .touchUpInside)
+        versionStatusLabel.font = .preferredFont(forTextStyle: .caption1)
+        versionStatusLabel.adjustsFontForContentSizeCategory = true
+        versionStatusLabel.textColor = .secondaryLabel
+        versionStatusLabel.numberOfLines = 0
+        actionDock.contentView.addSubview(versionStatusLabel)
         actionDock.contentView.addSubview(versionButton)
         actionDock.contentView.addSubview(downloadOnlyButton)
         showcaseTaskButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
@@ -281,6 +296,11 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             return
         }
         guard showcaseReady, let package = package else { return }
+        if let installed = PackageListManager.shared.installedPackage(identifier: package.package) {
+            versionStatusLabel.text = String(localizationKey: "Installed_Heading") + " " + installed.version
+        } else {
+            versionStatusLabel.text = String(localizationKey: "Package_Choose_Version")
+        }
         let busy = DownloadManager.shared.queueRunning || DownloadManager.shared.find(package: package) != .none
         let provisional = package.isProvisional ?? false
         uninstallButton.isHidden = busy || PackageListManager.shared.installedPackage(identifier: package.package) == nil
@@ -1037,22 +1057,36 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         scrollView.contentSize = CGSize(width: width, height: y)
 
         let dockWidth = max(1, min(720, width - 24 - horizontalSafe * 2))
-        let actualVersionWidth = max(44, dockWidth - 84)
-        let actualVersionHeight = max(44, versionButton.sizeThatFits(CGSize(width: actualVersionWidth, height: .greatestFiniteMagnitude)).height)
-        let uninstallWidth = uninstallButton.isHidden ? 0 : min((dockWidth - 32) * 0.38, max(76, uninstallButton.intrinsicContentSize.width + 24))
-        let primaryWidth = dockWidth - 24 - (uninstallButton.isHidden ? 0 : uninstallWidth + 8)
+        let actualVersionWidth = max(44, dockWidth - 32)
+        let statusHeight = versionStatusLabel.sizeThatFits(CGSize(width: actualVersionWidth, height: .greatestFiniteMagnitude)).height
+        let versionRowHeight = max(44, versionButton.sizeThatFits(CGSize(width: actualVersionWidth, height: .greatestFiniteMagnitude)).height)
+        let actualVersionHeight = statusHeight + versionRowHeight
+        let availableWidth = dockWidth - 24
+        let stacked = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+        let uninstallWidth: CGFloat = uninstallButton.isHidden ? 0 : (stacked ? availableWidth : availableWidth * 0.21)
+        let exportWidth = stacked ? availableWidth : availableWidth * 0.29
+        let primaryWidth = stacked ? availableWidth : availableWidth - exportWidth - 8 - (uninstallButton.isHidden ? 0 : uninstallWidth + 8)
         let primaryHeight = max(50, max(downloadButton.sizeThatFits(CGSize(width: primaryWidth, height: .greatestFiniteMagnitude)).height + 12,
-                                       uninstallButton.isHidden ? 0 : uninstallButton.sizeThatFits(CGSize(width: uninstallWidth, height: .greatestFiniteMagnitude)).height + 12))
-        let dockHeight = actualVersionHeight + primaryHeight + 32
+                                       max(downloadOnlyButton.sizeThatFits(CGSize(width: exportWidth, height: .greatestFiniteMagnitude)).height + 12,
+                                           uninstallButton.isHidden ? 0 : uninstallButton.sizeThatFits(CGSize(width: uninstallWidth, height: .greatestFiniteMagnitude)).height + 12)))
+        let actionRows: CGFloat = stacked ? (uninstallButton.isHidden ? 2 : 3) : 1
+        let dockHeight = actualVersionHeight + primaryHeight * actionRows + 8 * (actionRows - 1) + 32
         let bottom = view.safeAreaInsets.bottom + max(0, showcaseBottomObstruction) + 8
         actionDock.frame = CGRect(x: (width - dockWidth) / 2,
                                   y: view.bounds.height - bottom - dockHeight,
                                   width: dockWidth, height: dockHeight)
-        versionButton.frame = CGRect(x: 16, y: 12, width: actualVersionWidth, height: actualVersionHeight)
-        downloadOnlyButton.frame = CGRect(x: dockWidth - 60, y: 12, width: 44, height: actualVersionHeight)
-        uninstallButton.frame = CGRect(x: 12, y: actualVersionHeight + 20, width: uninstallWidth, height: primaryHeight)
-        uninstallButton.layer.cornerRadius = min(22, primaryHeight / 2)
-        downloadButton.frame = CGRect(x: dockWidth - primaryWidth - 12, y: actualVersionHeight + 20, width: primaryWidth, height: primaryHeight)
+        versionStatusLabel.frame = CGRect(x: 20, y: 12, width: actualVersionWidth - 4, height: statusHeight)
+        versionButton.frame = CGRect(x: 16, y: 12 + statusHeight, width: actualVersionWidth, height: versionRowHeight)
+        let actionsY = actualVersionHeight + 20
+        let exportX: CGFloat = stacked || uninstallButton.isHidden ? 12 : 12 + uninstallWidth + 8
+        let exportY = actionsY + (stacked && !uninstallButton.isHidden ? primaryHeight + 8 : 0)
+        downloadOnlyButton.frame = CGRect(x: exportX, y: exportY, width: exportWidth, height: primaryHeight)
+        downloadOnlyButton.layer.cornerRadius = 18
+        uninstallButton.frame = CGRect(x: 12, y: actionsY, width: uninstallWidth, height: primaryHeight)
+        uninstallButton.layer.cornerRadius = 18
+        downloadButton.frame = CGRect(x: stacked ? 12 : dockWidth - primaryWidth - 12,
+                                      y: stacked ? exportY + primaryHeight + 8 : actionsY,
+                                      width: primaryWidth, height: primaryHeight)
         let taskHeight = showcaseTaskVisible
             ? max(44, showcaseTaskButton.sizeThatFits(CGSize(width: dockWidth, height: .greatestFiniteMagnitude)).height) : 0
         let taskSpace = showcaseTaskVisible ? taskHeight + 8 : 0
