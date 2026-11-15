@@ -384,6 +384,24 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             return
         }
         
+        func normalizedText(_ text: String) -> String {
+            text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
+        }
+        func containsSummary(_ value: Any, summary: String) -> Bool {
+            if let dictionary = value as? [String: Any] {
+                for key in ["markdown", "text", "title"] {
+                    if let text = dictionary[key] as? String, normalizedText(text).contains(summary) { return true }
+                }
+                return dictionary.values.contains { containsSummary($0, summary: summary) }
+            }
+            if let array = value as? [Any] {
+                return array.contains { containsSummary($0, summary: summary) }
+            }
+            return false
+        }
+        let summary = normalizedText(package?.description ?? "")
+        summaryCard.isHidden = summary.isEmpty || containsSummary(rawDepict, summary: summary)
         oldDepictView?.delegate = nil
         newDepictView.delegate = self
         
@@ -554,6 +572,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         depictionView?.delegate = nil
         depictionView?.removeFromSuperview()
         depictionView = nil
+        // The fallback detail already renders the package description.
+        summaryCard.isHidden = true
         
         if let package=package, let source=package.source, package.isProvisional ?? false {
             if let repo = RepoManager.shared.repo(with: source.uri, suite: source.suite, components: source.component?.components(separatedBy: .whitespaces) )
@@ -663,8 +683,15 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             self.depictionView = depictionView
         }
 
-        if !package.fromStatusFile,
-            let depiction = package.sileoDepiction {
+        // Resolve display metadata without changing the selected installation object.
+        let depictionPackage: Package
+        if package.fromStatusFile {
+            let origin = PackageListManager.shared.installedOrigin(of: package)
+            depictionPackage = !origin.ambiguous ? (origin.package ?? package) : package
+        } else {
+            depictionPackage = package
+        }
+        if let depiction = depictionPackage.sileoDepiction {
             let urlRequest = URLManager.urlRequest(depiction)
             EvanderNetworking.request(request: urlRequest, type: Data.self) { [weak self] success, _, _, data in
                 guard success,
@@ -1033,7 +1060,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         summaryHeading.frame = CGRect(x: 20, y: 20, width: textWidth, height: headingHeight)
         summaryLabel.frame = CGRect(x: 20, y: 32 + headingHeight, width: textWidth, height: summaryHeight)
         summaryCard.frame = CGRect(x: x, y: y, width: bodyWidth, height: 52 + headingHeight + summaryHeight)
-        y = summaryCard.frame.maxY + 24
+        if !summaryCard.isHidden { y = summaryCard.frame.maxY + 24 }
         // The native depiction owns its original tabs, changelog parser, links and actions.
         // Only its surrounding presentation changes here.
         depictionHeight = depictionView?.depictionHeight(width: bodyWidth) ?? 0
