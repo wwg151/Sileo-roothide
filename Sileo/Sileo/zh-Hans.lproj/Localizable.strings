@@ -463,6 +463,8 @@
 "Restore_Isolation_Busy" = "请先完成或清空当前队列，再恢复插件包。";
 "Restore_Isolation_Unsupported" = "已跳过：循环依赖、无法识别的依赖约束、冲突、受保护插件包或已安装版本变更，无法安全恢复。";
 "Backup_Task_Queued" = "已加入队列，等待执行";
+"Backup_Task_Select" = "选择任务";
+"Backup_Task_Deselect" = "取消选择任务";
 "Backup_Task_Completion_Title" = "%@完成";
 "Backup_Task_Completion_Counts" = "成功 %ld 个，失败 %ld 个";
 "Restore_Isolation_Summary" = "恢复结果汇总";

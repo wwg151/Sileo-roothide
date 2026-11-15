@@ -636,12 +636,44 @@ final class BackupProgressAlert: SileoPanelViewController {
                 controls.setContentHuggingPriority(.required, for: .horizontal)
                 controls.setContentCompressionResistancePriority(.required, for: .horizontal)
                 if managing {
-                    let select = Self.headerButton(title: selectedIDs.contains(task.id) ? "☑︎" : "☐") { [weak self] in
+                    let isSelected = selectedIDs.contains(task.id)
+                    let select = UIButton(type: .system)
+                    select.translatesAutoresizingMaskIntoConstraints = false
+                    select.accessibilityLabel = String(localizationKey: isSelected ? "Backup_Task_Deselect_Visible" : "Backup_Task_Select_Visible")
+                    select.addAction(UIAction { [weak self] _ in
                         guard let self = self, !self.roundRunning else { return }
                         if self.selectedIDs.contains(task.id) { self.selectedIDs.remove(task.id) }
                         else { self.selectedIDs.insert(task.id) }
                         self.render()
+                    }, for: .touchUpInside)
+                    select.widthAnchor.constraint(equalToConstant: 44).isActive = true
+                    select.heightAnchor.constraint(equalToConstant: 44).isActive = true
+                    let dot = UIView()
+                    dot.translatesAutoresizingMaskIntoConstraints = false
+                    dot.isUserInteractionEnabled = false
+                    dot.layer.cornerRadius = 12
+                    dot.layer.borderWidth = isSelected ? 0 : 2
+                    dot.layer.borderColor = UIColor.tertiaryLabel.cgColor
+                    dot.backgroundColor = isSelected ? .systemGreen : .clear
+                    if isSelected {
+                        let check = UIImageView(image: UIImage(systemName: "checkmark"))
+                        check.translatesAutoresizingMaskIntoConstraints = false
+                        check.tintColor = .white
+                        dot.addSubview(check)
+                        NSLayoutConstraint.activate([
+                            check.centerXAnchor.constraint(equalTo: dot.centerXAnchor),
+                            check.centerYAnchor.constraint(equalTo: dot.centerYAnchor),
+                            check.widthAnchor.constraint(equalToConstant: 12),
+                            check.heightAnchor.constraint(equalToConstant: 12)
+                        ])
                     }
+                    select.addSubview(dot)
+                    NSLayoutConstraint.activate([
+                        dot.centerXAnchor.constraint(equalTo: select.centerXAnchor),
+                        dot.centerYAnchor.constraint(equalTo: select.centerYAnchor),
+                        dot.widthAnchor.constraint(equalToConstant: 24),
+                        dot.heightAnchor.constraint(equalToConstant: 24)
+                    ])
                     controls.addArrangedSubview(select)
                 } else if task.outcome == nil, startHandler != nil {
                     let inRound = roundRunning && session.activeIDs.contains(task.id)
