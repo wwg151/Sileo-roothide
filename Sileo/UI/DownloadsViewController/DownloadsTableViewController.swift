@@ -146,7 +146,7 @@ class DownloadsTableViewController: SileoViewController {
                 detail: failures.first?.failureReason ?? String(localizationKey: "Task_Resolve_Dependencies"),
                 progress: nil, stage: 0, failed: true, rows: rows)
         }
-        if isDownloading {
+        if isDownloading && !entries.isEmpty {
             let converting = downloads.contains { $0.message == String(localizationKey: "Compat_Converting") }
             let ready = !entries.isEmpty && downloads.count == entries.count
                 && downloads.allSatisfy { $0.success && $0.progress == 1 }
@@ -172,8 +172,30 @@ class DownloadsTableViewController: SileoViewController {
                 detail: detail, progress: converting ? nil : ready ? 1 : fraction, stage: 0, failed: false, rows: rows)
         }
         return TaskPresentation(title: String(localizationKey: "Task_Ready"),
-            detail: String(format: String(localizationKey: "Task_Summary"), entries.count, uninstallations.count + uninstalldeps.count),
+            detail: taskOperationSummary,
             progress: nil, stage: 0, failed: false, rows: rows)
+    }
+
+    /// Preserve the operation captured before apt changes installed versions.
+    private var taskOperationKeys: [String] {
+        if !actions.isEmpty { return actions.map { $0.operationKey } }
+        return (installations + upgrades + installdeps).map { Action.operationKey(for: $0.package) }
+            + (uninstallations + uninstalldeps).map { _ in "Task_Operation_Remove" }
+    }
+
+    private var taskOperationSummary: String {
+        let keys = taskOperationKeys
+        return ["Install", "Update", "Reinstall", "Downgrade", "Remove"].compactMap { operation -> String? in
+            let key = "Task_Operation_" + operation
+            let count = keys.filter { $0 == key }.count
+            return count > 0 ? String(format: String(localizationKey: key), count) : nil
+        }.joined(separator: " · ")
+    }
+
+    private var taskExecutionLabel: String {
+        let keys = Set(taskOperationKeys)
+        guard keys.count == 1, let key = keys.first else { return String(localizationKey: "Deck_Execute") }
+        return String(localizationKey: key + "_Stage")
     }
 
     private var hasAPTProgress = false
@@ -370,8 +392,14 @@ class DownloadsTableViewController: SileoViewController {
         let color: UIColor = snapshot.failed ? .systemRed : (UINavigationBar.appearance().tintColor ?? .systemTeal)
         stageActivity.color = color
         taskTitle.text = String(localizationKey: "Deck_Title")
-        taskStage.text = String(localizationKey: snapshot.failed ? "Task_Attention"
-            : snapshot.stage == 2 ? "Done" : snapshot.stage == 1 ? "Deck_Execute" : "Deck_Download")
+        let hasDownloadTasks = !(installations + upgrades + installdeps).isEmpty
+        let preparationLabel = String(localizationKey: "Deck_Prepare")
+        stageLabels[0].text = String(localizationKey: hasDownloadTasks ? "Deck_Download" : "Deck_Prepare")
+        stageLabels[1].text = taskExecutionLabel
+        taskStage.text = snapshot.failed ? String(localizationKey: "Task_Attention")
+            : snapshot.stage == 2 ? String(localizationKey: "Done")
+            : snapshot.stage == 1 ? taskExecutionLabel
+            : isDownloading && hasDownloadTasks ? String(localizationKey: "Deck_Download") : preparationLabel
         taskHeadline.text = snapshot.title
         taskDetail.text = snapshot.detail
         overallProgress = snapshot.progress ?? 0
@@ -393,7 +421,7 @@ class DownloadsTableViewController: SileoViewController {
         collapseButton.isHidden = !isInstalling || isFinishedInstalling
         collapseButton.backgroundColor = accent
         collapseButton.setTitleColor(.white, for: .normal)
-        let downloadStage = isDownloading && !isInstalling && !isFinishedInstalling
+        let downloadStage = isDownloading && hasDownloadTasks && !isInstalling && !isFinishedInstalling
         taskPrimaryButton.isHidden = !downloadStage
         taskPrimaryButton.isEnabled = downloadStage && !failed.isEmpty
         taskPrimaryButton.setTitle(String(localizationKey: failed.isEmpty ? "Downloading_Package_Status" : "Task_Retry_Failed"), for: .normal)

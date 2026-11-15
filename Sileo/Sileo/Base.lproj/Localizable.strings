@@ -10,6 +10,12 @@
 
 // Common Prompts
 "Deck_Title" = "Task Center";
+"Deck_Prepare" = "Prepare";
+"Task_Operation_Install_Stage" = "Install";
+"Task_Operation_Update_Stage" = "Update";
+"Task_Operation_Reinstall_Stage" = "Reinstall";
+"Task_Operation_Downgrade_Stage" = "Downgrade";
+"Task_Operation_Remove_Stage" = "Remove";
 "Deck_Download" = "Download";
 "Deck_Execute" = "Apply";
 "Deck_Executing" = "Applying changes";

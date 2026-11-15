@@ -9,6 +9,12 @@
 */
 // Common Prompts
 "Deck_Title" = "任务中心";
+"Deck_Prepare" = "准备";
+"Task_Operation_Install_Stage" = "安装";
+"Task_Operation_Update_Stage" = "更新";
+"Task_Operation_Reinstall_Stage" = "重新安装";
+"Task_Operation_Downgrade_Stage" = "降级";
+"Task_Operation_Remove_Stage" = "卸载";
 "Deck_Download" = "下载";
 "Deck_Execute" = "执行";
 "Deck_Executing" = "正在执行更改";
