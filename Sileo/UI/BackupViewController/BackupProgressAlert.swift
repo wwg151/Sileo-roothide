@@ -355,6 +355,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     private var selectedIDs = Set<String>()
     private var resultMessage: String?
     private var roundRunning = false
+    private var queuedStarts: [String] = []
     private var cancelling = false
 
     init(title: String, message: String, cancellable: Bool, onCancel: (() -> Void)?) {
@@ -385,6 +386,19 @@ final class BackupProgressAlert: SileoPanelViewController {
             self?.cancelling = false
             self?.resultMessage = self?.session.lastSummary
             self?.render()
+            // Wait until the current completion callback has finished resetting
+            // download state before starting the next serial operation.
+            DispatchQueue.main.async { [weak self] in self?.startNextQueuedTask() }
+        }
+    }
+
+    private func startNextQueuedTask() {
+        guard !session.closed, !roundRunning, !cancelling else { return }
+        while !queuedStarts.isEmpty {
+            let id = queuedStarts.removeFirst()
+            guard !session.pendingIDs(matching: id).isEmpty else { continue }
+            startTask(id)
+            break
         }
     }
 
@@ -535,7 +549,17 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     private func startTask(_ id: String?) {
-        guard !session.closed, let handler = startHandler, !roundRunning else { return }
+        guard !session.closed, let handler = startHandler, !cancelling else { return }
+        if roundRunning {
+            for task in session.tasks where task.outcome == nil && (id == nil || task.id == id)
+                && !session.activeIDs.contains(task.id) && !queuedStarts.contains(task.id) {
+                queuedStarts.append(task.id)
+                session.update(task.id, fraction: task.fraction, detail: String(localizationKey: "Backup_Task_Queued"))
+            }
+            renderedReady = false
+            render()
+            return
+        }
         let manager = DownloadManager.shared
         let ownBatch = manager.restoreBatch?.taskSession === session
         guard !manager.aptRunning,
@@ -618,9 +642,10 @@ final class BackupProgressAlert: SileoPanelViewController {
                         }
                     }
                     control.setTitle(nil, for: .normal)
-                    control.setImage(UIImage(systemName: inRound && !paused ? "pause.fill" : "play.fill"), for: .normal)
-                    control.accessibilityLabel = String(localizationKey: key)
-                    control.isEnabled = !cancelling && (!roundRunning || (inRound && task.id != "archive"))
+                    let queued = queuedStarts.contains(task.id)
+                    control.setImage(UIImage(systemName: queued ? "clock" : (inRound && !paused ? "pause.fill" : "play.fill")), for: .normal)
+                    control.accessibilityLabel = String(localizationKey: queued ? "Backup_Task_Queued" : key)
+                    control.isEnabled = !cancelling && !queued && (!inRound || task.id != "archive")
                     control.widthAnchor.constraint(equalToConstant: 44).isActive = true
                     control.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
                     controls.addArrangedSubview(control)
@@ -689,6 +714,10 @@ final class BackupProgressAlert: SileoPanelViewController {
     @objc func cancelWorkTapped() {
         guard cancellable, roundRunning, !cancelling else { return }
         cancelling = true
+        for id in queuedStarts {
+            session.update(id, fraction: 0, detail: String(localizationKey: "Backup_Task_Waiting"))
+        }
+        queuedStarts.removeAll()
         renderedReady = false
         render()
         onCancel?()
