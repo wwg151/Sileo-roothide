@@ -316,6 +316,17 @@ final class DownloadManager {
         return RootlessConverter.isConvertible(package: package)
     }
     
+    // Display-only hint. Installation still uses the queue's full eligibility checks.
+    static func showsVersionArchitectureWarning(_ package: Package) -> Bool {
+        guard !checkRootHide(package),
+              !UserDefaults.standard.bool(forKey: compatModeKey, fallback: true) else { return false }
+        if Bootstrap.roothide && package.tags.contains(.roothide)
+            && FileManager.default.fileExists(atPath: jbroot("/usr/lib/libroot.dylib")) {
+            return false
+        }
+        return true
+    }
+
     // running in aptQueue; the download keeps its slot until the conversion has finished
     private func convertDownloaded(download: Download, fileURL: URL) {
         let package = download.package

@@ -76,14 +76,16 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                 let detail = (package.architecture ?? String(localizationKey: "Package_Version_Arch_Unknown")) + " · " + size
                 // Selection is not installation: the queue owns compatibility
                 // checks and conversion, while export keeps the original archive.
-                let row = SileoPanelViewController.choiceRow(title: package.version,
+                let showWarning = DownloadManager.showsVersionArchitectureWarning(package)
+                let title = package.version + (showWarning ? " · " + String(localizationKey: "Package_Version_Incompatible") : "")
+                let row = SileoPanelViewController.choiceRow(title: title,
                                                              detail: detail,
                                                              selected: selected) { [weak self] in
                     self?.close { onPick(package) }
                 }
-                row.accessibilityLabel = [package.version, entry.title, detail].joined(separator: ", ")
+                row.accessibilityLabel = [title, entry.title, detail].joined(separator: ", ")
                 row.isAccessibilityElement = true
-                items.append(SileoPanelTable.Item(row, height: 68))
+                items.append(SileoPanelTable.Item(row, height: showWarning ? 88 : 68))
             }
         }
         table.setItems(items)
