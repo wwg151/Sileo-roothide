@@ -1101,18 +1101,18 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
                                        max(downloadOnlyButton.sizeThatFits(CGSize(width: exportWidth, height: .greatestFiniteMagnitude)).height + 8,
                                            uninstallButton.isHidden ? 0 : uninstallButton.sizeThatFits(CGSize(width: uninstallWidth, height: .greatestFiniteMagnitude)).height + 8)))
         let actionRows: CGFloat = stacked ? (uninstallButton.isHidden ? 2 : 3) : 1
-        let dockHeight = actualVersionHeight + primaryHeight * actionRows + 8 * (actionRows - 1) + 32
+        let dockHeight = actualVersionHeight + primaryHeight * actionRows + 8 * (actionRows - 1) + 16
         let bottom = view.safeAreaInsets.bottom + max(0, showcaseBottomObstruction) + 8
         actionDock.frame = CGRect(x: (width - dockWidth) / 2,
                                   y: view.bounds.height - bottom - dockHeight,
                                   width: dockWidth, height: dockHeight)
-        versionHeadingButton.frame = CGRect(x: 20, y: 12, width: headingWidth, height: versionHeadingHeight)
+        versionHeadingButton.frame = CGRect(x: 20, y: 6, width: headingWidth, height: versionHeadingHeight)
         versionStatusLabel.textAlignment = wrapStatus ? .left : .right
         versionStatusLabel.frame = CGRect(x: wrapStatus ? 20 : 20 + headingWidth + 8,
-                                          y: wrapStatus ? 12 + versionHeadingHeight : 12,
+                                          y: wrapStatus ? 6 + versionHeadingHeight : 6,
                                           width: statusWidth, height: wrapStatus ? statusTextHeight : statusHeight)
-        versionButton.frame = CGRect(x: 16, y: 12 + statusHeight, width: actualVersionWidth, height: versionRowHeight)
-        let actionsY = actualVersionHeight + 20
+        versionButton.frame = CGRect(x: 16, y: 6 + statusHeight, width: actualVersionWidth, height: versionRowHeight)
+        let actionsY = actualVersionHeight + 10
         let exportX: CGFloat = stacked || uninstallButton.isHidden ? 12 : 12 + uninstallWidth + 8
         let exportY = actionsY + (stacked && !uninstallButton.isHidden ? primaryHeight + 8 : 0)
         downloadOnlyButton.frame = CGRect(x: exportX, y: exportY, width: exportWidth, height: primaryHeight)
