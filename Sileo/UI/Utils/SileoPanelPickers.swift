@@ -29,8 +29,7 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
         if let currentRepo = current.sourceRepo {
             for (section, entry) in sections.enumerated() {
                 for (row, package) in entry.packages.enumerated()
-                    where package.version == current.version && package.sourceRepo?.url == currentRepo.url
-                        && package.architecture == current.architecture {
+                    where package.version == current.version && package.sourceRepo?.url == currentRepo.url {
                     winner = IndexPath(row: row, section: section)
                     break
                 }
@@ -42,8 +41,7 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
                 let originSource = originPackage.sourceFile
                 for (section, entry) in sections.enumerated() {
                     for (row, package) in entry.packages.enumerated()
-                        where package.version == current.version && package.sourceFile == originSource
-                            && package.architecture == originPackage.architecture {
+                        where package.version == current.version && package.sourceFile == originSource {
                         winner = IndexPath(row: row, section: section)
                         break
                     }
@@ -63,29 +61,17 @@ final class SileoVersionPickerPanel: SileoPanelViewController {
             ))
         }
         for (section, entry) in sections.enumerated() {
-            // Always name the source, even when only one repository matches.
-            items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(entry.title), height: 34))
+            if sections.count > 1 {
+                items.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(entry.title), height: 34))
+            }
             for (row, package) in entry.packages.enumerated() {
                 let selected = winner == IndexPath(row: row, section: section)
-                let size: String
-                if let bytes = Int64(package.size ?? ""), bytes >= 0 {
-                    size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-                } else {
-                    size = String(localizationKey: "Package_Version_Size_Unknown")
-                }
-                let detail = (package.architecture ?? String(localizationKey: "Package_Version_Arch_Unknown")) + " · " + size
-                // Selection is not installation: the queue owns compatibility
-                // checks and conversion, while export keeps the original archive.
-                let showWarning = DownloadManager.showsVersionArchitectureWarning(package)
-                let title = package.version + (showWarning ? " · " + String(localizationKey: "Package_Version_Incompatible") : "")
-                let row = SileoPanelViewController.choiceRow(title: title,
-                                                             detail: detail,
+                let row = SileoPanelViewController.choiceRow(title: package.version,
+                                                             detail: nil,
                                                              selected: selected) { [weak self] in
                     self?.close { onPick(package) }
                 }
-                row.accessibilityLabel = [title, entry.title, detail].joined(separator: ", ")
-                row.isAccessibilityElement = true
-                items.append(SileoPanelTable.Item(row, height: showWarning ? 88 : 68))
+                items.append(SileoPanelTable.Item(row, height: 52))
             }
         }
         table.setItems(items)

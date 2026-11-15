@@ -73,18 +73,6 @@
 "Package_Download_Size" = "插件包大小";
 "Package_Installed_Size" = "安装占用";
 "About" = "关于";
-"Showcase_About" = "简介";
-"Showcase_Management" = "管理";
-"Showcase_Ignore_Hint" = "不再提示此插件包的可用更新。";
-"Showcase_Uninstall_Confirm" = "将 %@ 加入卸载队列？";
-"Showcase_All_Tasks" = "全部任务";
-"Showcase_Download_Only" = "下载";
-"Package_Install_Select_Source" = "请选择要安装的来源和版本。";
-"Package_Download_Select_Source" = "请选择要下载的来源和版本。";
-"Package_Download_Purchase_Required" = "请先在此来源购买插件包，再进行下载。";
-"Package_Version_Incompatible" = "架构不兼容";
-"Package_Version_Size_Unknown" = "大小未知";
-"Package_Version_Arch_Unknown" = "架构未知";
 "Close" = "关闭";
 "Double tap to open." = "双击以打开.";
 "Untitled_Repo" = "未命名的插件源";
@@ -139,7 +127,7 @@
 "Package_Developer_Find_Action" = "更多这位开发者的作品";
 "Package_Support_Action" = "支持";
 "Package_Hold_Enable_Action" = "屏蔽更新";
-"Package_Hold_Disable_Action" = "恢复更新";
+"Package_Hold_Disable_Action" = "取消屏蔽更新";
 "Package_Wishlist_Add" = "添加到愿望清单";
 "Package_Wishlist_Remove" = "从愿望清单中删除";
 "Wishlist" = "愿望清单";

@@ -30,10 +30,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     private func updatePackageSize(_ package: Package) {
         if packageSizeLabel.superview == nil, let stack = packageAuthor.superview as? UIStackView {
-            packageSizeLabel.font = .preferredFont(forTextStyle: .caption1)
+            packageSizeLabel.font = .systemFont(ofSize: 12)
             packageSizeLabel.textColor = .secondaryLabel
-            packageSizeLabel.numberOfLines = 0
-            packageSizeLabel.adjustsFontForContentSizeCategory = true
+            packageSizeLabel.adjustsFontSizeToFitWidth = true
+            packageSizeLabel.minimumScaleFactor = 0.85
             stack.addArrangedSubview(packageSizeLabel)
         }
         let bytes: Int64
@@ -85,293 +85,20 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     @IBOutlet private var contentViewWidth: NSLayoutConstraint!
 //    @IBOutlet private var downloadButtonWidth: NSLayoutConstraint!
 
-    // Each reload owns its asynchronous results, including same-ID versions from different repositories.
-    private var contentGeneration = UUID()
-    private var showcaseReady = false
-    private let summaryCard = UIView()
-    private let summaryLabel = UILabel()
-    private let summaryHeading = UILabel()
-    private let detailsCard = UIView()
-    private let managementCard = UIView()
-    private let controlsCard = UIView()
-    private let controlsHeading = UILabel()
-    private let ignoreLabel = UILabel()
-    private let ignoreHint = UILabel()
-    private let ignoreSwitch = UISwitch()
-    private let infoButton = UIButton(type: .system)
-    private let uninstallButton = UIButton(type: .system)
-    private let actionDock = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-    private let versionButton = UIButton(type: .system)
-    private let versionStatusLabel = UILabel()
-    private let versionHeadingButton = UIButton(type: .system)
-    private let downloadOnlyButton = UIButton(type: .system)
-    private let showcaseTaskButton = UIButton(type: .system)
-    private var showcaseTaskVisible = false
-
-    /// Called on each task update by the shared host, including when visibility is unchanged.
-    func updateShowcaseTaskVisibility(_ visible: Bool) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in self?.updateShowcaseTaskVisibility(visible) }
-            return
-        }
-        let previousVisible = showcaseTaskVisible
-        let previousTitle = showcaseTaskButton.title(for: .normal)
-        showcaseTaskVisible = visible
-        showcaseTaskButton.isHidden = !visible
-        if visible {
-            let task = DownloadManager.shared.viewController.taskPresentation
-            let title = String(localizationKey: "Showcase_All_Tasks")
-            let status = [task.title, task.detail].filter { !$0.isEmpty }.joined(separator: " · ")
-            showcaseTaskButton.setTitle(title + "\n" + status, for: .normal)
-            showcaseTaskButton.accessibilityLabel = title
-            showcaseTaskButton.accessibilityValue = status
-            showcaseTaskButton.setTitleColor(task.failed ? .systemRed : .label, for: .normal)
-        }
-        if isViewLoaded,
-           previousVisible != visible || previousTitle != showcaseTaskButton.title(for: .normal) {
-            view.setNeedsLayout()
-        }
-    }
-
-    @objc private func openShowcaseTasks() {
-        TabBarController.singleton?.presentPopupController()
-    }
-    private var headerObservation: NSKeyValueObservation?
-    private var positionedShowcaseAtTop = false
-
-    private var showcaseHeaderSize: CGSize {
-        let width = max(280, min(720, view.bounds.width - 40))
-        return CGSize(width: width, height: min(320, width * 0.68))
-    }
-
-    // Integration point for the shared queue/tab-bar host. This is additional obstruction
-    // above the controller's safe area, not the tab bar's full height.
-    var showcaseBottomObstruction: CGFloat = 0 {
-        didSet {
-            if oldValue != showcaseBottomObstruction, isViewLoaded { view.setNeedsLayout() }
-        }
-    }
-
-    private func configureShowcase() {
-        // Reuse the nib outlets, but remove its banner-first positioning constraints.
-        NSLayoutConstraint.deactivate(contentView.constraints.filter {
-            $0 !== contentViewHeight && $0 !== contentViewWidth
-        })
-        depictionHeaderImageViewHeight.isActive = false
-        packageInfoView.removeArrangedSubview(downloadButton)
-        actionDock.contentView.addSubview(downloadButton)
-        downloadButton.translatesAutoresizingMaskIntoConstraints = true
-        downloadButton.selectsVersionBeforeInstalling = true
-        downloadButton.onPackageSelectedForInstallation = { [weak self] selected in
-            self?.show(package: selected)
-        }
-        let actionButtonFont = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .systemFont(ofSize: 13))
-        downloadButton.titleLabel?.font = actionButtonFont
-        downloadButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        downloadButton.titleLabel?.numberOfLines = 0
-        packageInfoView.translatesAutoresizingMaskIntoConstraints = true
-        depictionHeaderView.translatesAutoresizingMaskIntoConstraints = true
-        depictionBackgroundView.translatesAutoresizingMaskIntoConstraints = true
-        depictionBackgroundShadow.isHidden = true
-        depictionBackgroundView.image = nil
-        depictionBackgroundView.contentMode = .scaleAspectFill
-        depictionHeaderView.clipsToBounds = true
-        depictionHeaderView.layer.cornerRadius = 24
-        packageInfoView.isLayoutMarginsRelativeArrangement = false
-        packageInfoView.spacing = 16
-        packageInfoView.alignment = .top
-        packageName.font = UIFontMetrics(forTextStyle: .title1).scaledFont(for: .systemFont(ofSize: 28, weight: .bold))
-        packageName.numberOfLines = 0
-        packageName.adjustsFontForContentSizeCategory = true
-        packageAuthor.font = .preferredFont(forTextStyle: .subheadline)
-        packageAuthor.numberOfLines = 0
-        packageAuthor.adjustsFontForContentSizeCategory = true
-        packageAuthor.textColor = .secondaryLabel
-        packageIconView.layer.cornerRadius = 18
-        packageIconView.backgroundColor = .clear
-        for constraint in packageIconView.constraints where constraint.firstAttribute == .height {
-            constraint.constant = 72
-        }
-        for card in [summaryCard, detailsCard, managementCard, controlsCard] {
-            card.backgroundColor = .secondarySystemGroupedBackground
-            card.layer.cornerRadius = 24
-            contentView.addSubview(card)
-        }
-        summaryHeading.text = String(localizationKey: "Showcase_About")
-        summaryHeading.font = .preferredFont(forTextStyle: .headline)
-        summaryLabel.font = .preferredFont(forTextStyle: .body)
-        for label in [summaryHeading, summaryLabel] {
-            label.numberOfLines = 0
-            label.adjustsFontForContentSizeCategory = true
-            label.textColor = .label
-            summaryCard.addSubview(label)
-        }
-        controlsHeading.text = String(localizationKey: "Showcase_Management")
-        ignoreLabel.text = String(localizationKey: "Package_Hold_Enable_Action")
-        ignoreHint.text = String(localizationKey: "Showcase_Ignore_Hint")
-        for label in [controlsHeading, ignoreLabel, ignoreHint] {
-            label.font = .preferredFont(forTextStyle: label === ignoreHint ? .caption1 : .headline)
-            label.numberOfLines = 0
-            label.adjustsFontForContentSizeCategory = true
-            label.textColor = label === ignoreHint ? .secondaryLabel : .label
-            controlsCard.addSubview(label)
-        }
-        ignoreSwitch.accessibilityLabel = ignoreLabel.text
-        ignoreSwitch.accessibilityHint = ignoreHint.text
-        ignoreSwitch.addTarget(self, action: #selector(changeShowcaseIgnore), for: .valueChanged)
-        controlsCard.addSubview(ignoreSwitch)
-        infoButton.setTitle(String(localizationKey: "Package_View_Info") + "  ›", for: .normal)
-        infoButton.contentHorizontalAlignment = .leading
-        infoButton.addTarget(self, action: #selector(openShowcaseInfo), for: .touchUpInside)
-        controlsCard.addSubview(infoButton)
-        uninstallButton.setTitle(String(localizationKey: "Package_Uninstall_Action"), for: .normal)
-        uninstallButton.setTitleColor(.systemRed, for: .normal)
-        uninstallButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.1)
-        uninstallButton.addTarget(self, action: #selector(uninstallShowcase), for: .touchUpInside)
-        actionDock.contentView.addSubview(uninstallButton)
-        for button in [infoButton, uninstallButton] {
-            button.titleLabel?.font = actionButtonFont
-            button.titleLabel?.adjustsFontForContentSizeCategory = true
-            button.titleLabel?.numberOfLines = 0
-        }
-        for name in [PackageListManager.stateChange, PackageListManager.prefsNotification, DownloadManager.lockStateChangeNotification, PackageQueueButton.actionPerformedNotification] {
-            NotificationCenter.default.addObserver(self, selector: #selector(refreshShowcaseControls), name: name, object: nil)
-        }
-        actionDock.layer.cornerRadius = 22
-        actionDock.clipsToBounds = true
-        view.addSubview(actionDock)
-        versionButton.contentHorizontalAlignment = .center
-        versionButton.titleLabel?.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold))
-        versionButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        versionButton.titleLabel?.numberOfLines = 0
-        versionButton.titleLabel?.textAlignment = .center
-        versionButton.titleLabel?.lineBreakMode = .byCharWrapping
-        versionButton.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-        versionButton.semanticContentAttribute = .forceRightToLeft
-        versionButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
-        versionButton.addTarget(self, action: #selector(selectShowcaseVersion), for: .touchUpInside)
-        downloadOnlyButton.setTitle(String(localizationKey: "Showcase_Download_Only"), for: .normal)
-        downloadOnlyButton.titleLabel?.font = actionButtonFont
-        downloadOnlyButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        downloadOnlyButton.titleLabel?.numberOfLines = 0
-        downloadOnlyButton.backgroundColor = .tertiarySystemFill
-        downloadOnlyButton.contentEdgeInsets = UIEdgeInsets(top: 4, left: 6, bottom: 4, right: 6)
-        downloadOnlyButton.accessibilityLabel = String(localizationKey: "Showcase_Download_Only")
-        downloadOnlyButton.isEnabled = true
-        downloadOnlyButton.addTarget(self, action: #selector(downloadShowcasePackage), for: .touchUpInside)
-        versionHeadingButton.setTitle(String(localizationKey: "Package_Choose_Version"), for: .normal)
-        versionHeadingButton.setTitleColor(.label, for: .normal)
-        versionHeadingButton.contentHorizontalAlignment = .leading
-        versionHeadingButton.titleLabel?.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .systemFont(ofSize: 15, weight: .medium))
-        versionHeadingButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        versionHeadingButton.titleLabel?.numberOfLines = 0
-        versionHeadingButton.addTarget(self, action: #selector(selectShowcaseVersion), for: .touchUpInside)
-        actionDock.contentView.addSubview(versionHeadingButton)
-        versionStatusLabel.font = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: .systemFont(ofSize: 11))
-        versionStatusLabel.isUserInteractionEnabled = true
-        versionStatusLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(selectShowcaseVersion)))
-        versionStatusLabel.textAlignment = .right
-        versionStatusLabel.adjustsFontForContentSizeCategory = true
-        versionStatusLabel.textColor = .secondaryLabel
-        versionStatusLabel.numberOfLines = 0
-        actionDock.contentView.addSubview(versionStatusLabel)
-        actionDock.contentView.addSubview(versionButton)
-        actionDock.contentView.addSubview(downloadOnlyButton)
-        showcaseTaskButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
-        showcaseTaskButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        showcaseTaskButton.titleLabel?.numberOfLines = 3
-        showcaseTaskButton.titleLabel?.lineBreakMode = .byTruncatingTail
-        showcaseTaskButton.contentHorizontalAlignment = .leading
-        showcaseTaskButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
-        showcaseTaskButton.backgroundColor = .secondarySystemGroupedBackground
-        showcaseTaskButton.layer.cornerRadius = 18
-        showcaseTaskButton.addTarget(self, action: #selector(openShowcaseTasks), for: .touchUpInside)
-        view.addSubview(showcaseTaskButton)
-        updateShowcaseTaskVisibility(showcaseTaskVisible)
-        headerObservation = depictionBackgroundView.observe(\.image, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.view.setNeedsLayout() }
-        }
-        showcaseReady = true
-        updateSileoColors()
-    }
-
-    @objc private func changeShowcaseIgnore() {
-        downloadButton.setShowcaseUpdatesIgnored(ignoreSwitch.isOn)
-        refreshShowcaseControls()
-    }
-
-    @objc private func openShowcaseInfo() { downloadButton.showShowcasePackageInfo() }
-    @objc private func uninstallShowcase() { downloadButton.uninstallShowcasePackage() }
-
-    @objc private func refreshShowcaseControls() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in self?.refreshShowcaseControls() }
-            return
-        }
-        guard showcaseReady, let package = package else { return }
-        if let installed = PackageListManager.shared.installedPackage(identifier: package.package) {
-            versionStatusLabel.text = String(localizationKey: "Installed_Heading") + " " + installed.version
-        } else {
-            versionStatusLabel.text = nil
-        }
-        let busy = DownloadManager.shared.queueRunning || DownloadManager.shared.find(package: package) != .none
-        let provisional = package.isProvisional ?? false
-        uninstallButton.isHidden = busy || PackageListManager.shared.installedPackage(identifier: package.package) == nil
-        ignoreSwitch.isOn = downloadButton.ignoresShowcaseUpdates
-        ignoreSwitch.isEnabled = !busy && !provisional
-        infoButton.isEnabled = !provisional
-        versionButton.isEnabled = !busy && !provisional
-        versionHeadingButton.isEnabled = versionButton.isEnabled
-        downloadOnlyButton.isEnabled = !provisional
-        downloadButton.updateInfo()
-        refreshShareMenu()
-        view.setNeedsLayout()
-    }
-
-    @objc private func selectShowcaseVersion() {
-        guard versionButton.isEnabled else { return }
-        downloadButton.selectPackageVersion { [weak self] selected in
-            self?.show(package: selected)
-        }
-    }
-
-    @objc private func downloadShowcasePackage() {
-        guard let package = package else { return }
-        if package.local_deb == nil && (package.fromStatusFile || package.filename == nil || package.sourceRepo == nil) {
-            downloadButton.selectPackageVersion { [weak self] selected in
-                guard let self = self else { return }
-                self.show(package: selected)
-                self.downloadButton.downloadDeb(selected)
-            }
-        } else {
-            downloadButton.downloadDeb(package)
-        }
-    }
-
-    private func updateShowcase(_ package: Package) {
-        summaryLabel.text = package.description ?? String(localizationKey: "Package_No_Description_Available")
-        let source = package.sourceRepo.map { RepoManager.shared.getUniqueName(repo: $0) }
-        versionButton.setTitle(package.version, for: .normal)
-        versionButton.accessibilityLabel = String(localizationKey: "Package_Choose_Version")
-        versionButton.accessibilityValue = [package.version, source].compactMap { $0 }.joined(separator: " · ")
-        view.setNeedsLayout()
-    }
-
     private var allowNavbarUpdates = false
     private var currentNavBarOpacity = CGFloat(0)
     
-    private func parseNativeDepiction(_ data: Data, host: String, generation: UUID, failureCallback: (() -> Void)?) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.parseNativeDepiction(data, host: host, generation: generation, failureCallback: failureCallback)
-            }
-            return
-        }
-        guard generation == contentGeneration else { return }
+    private func parseNativeDepiction(_ data: Data, host: String, failureCallback: (() -> Void)?) {
         guard let rawJSON = try? JSONSerialization.jsonObject(with: data, options: []),
               let rawDepict = rawJSON as? [String: Any]
         else {
             failureCallback?()
+            return
+        }
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.parseNativeDepiction(data, host: host, failureCallback: failureCallback)
+            }
             return
         }
         
@@ -388,31 +115,13 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             return
         }
         
-        func normalizedText(_ text: String) -> String {
-            text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                .components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
-        }
-        func containsSummary(_ value: Any, summary: String) -> Bool {
-            if let dictionary = value as? [String: Any] {
-                for key in ["markdown", "text", "title"] {
-                    if let text = dictionary[key] as? String, normalizedText(text).contains(summary) { return true }
-                }
-                return dictionary.values.contains { containsSummary($0, summary: summary) }
-            }
-            if let array = value as? [Any] {
-                return array.contains { containsSummary($0, summary: summary) }
-            }
-            return false
-        }
-        let summary = normalizedText(package?.description ?? "")
-        summaryCard.isHidden = summary.isEmpty || containsSummary(rawDepict, summary: summary)
         oldDepictView?.delegate = nil
         newDepictView.delegate = self
         
         if let imageURL = rawDepict["headerImage"] as? String {
             if imageURL != headerURL {
                 self.headerURL = imageURL
-                EvanderNetworking.image(url: imageURL, size: showcaseHeaderSize, condition: ({ [weak self] in self?.headerURL == imageURL && self?.contentGeneration == generation}), imageView: depictionBackgroundView)
+                EvanderNetworking.image(url: imageURL, condition: ({ [weak self] in self?.headerURL == imageURL}), imageView: depictionBackgroundView)
             }
         }
         
@@ -421,12 +130,11 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.contentView.addSubview(newDepictView)
         self.view.setNeedsLayout()
         
-        FRUIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.25, animations: {
+        FRUIView.animate(withDuration: 0.25, animations: {
             oldDepictView?.alpha = 0
             newDepictView.alpha = 1
-        }, completion: { [weak self] _ in
+        }, completion: { _ in
             oldDepictView?.removeFromSuperview()
-            guard let self = self, self.contentGeneration == generation else { return }
             if let minVersion = rawDepict["minVersion"] as? String,
                 minVersion.compare(StoreVersion) == .orderedDescending {
                 self.versionTooLow()
@@ -530,7 +238,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             navBarDownloadButton.NoAnimation = true
         }
 
-        configureShowcase()
         self.reloadData()
         
         if let package=self.package {
@@ -540,14 +247,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     @objc func updateSileoColors() {
         packageName.textColor = .sileoLabel
-        guard showcaseReady else { return }
-        view.backgroundColor = .systemGroupedBackground
-        contentView.backgroundColor = .systemGroupedBackground
-        for card in [summaryCard, detailsCard, managementCard, controlsCard] {
-            card.backgroundColor = .secondarySystemGroupedBackground
-        }
-        actionDock.layer.borderWidth = 0.5
-        actionDock.layer.borderColor = UIColor.separator.withAlphaComponent(0.25).cgColor
     }
     
     private var savedProvisional: Package?
@@ -565,19 +264,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             self.view.layoutIfNeeded()
         }
         
-        contentGeneration = UUID()
-        let generation = contentGeneration
-        headerURL = nil
-        depictionBackgroundView.image = nil
-        downloadButton.tintColor = view.tintColor
-        navBarDownloadButton?.tintColor = view.tintColor
-        downloadButton.updateStyle()
-        navBarDownloadButton?.updateStyle()
-        depictionView?.delegate = nil
         depictionView?.removeFromSuperview()
         depictionView = nil
-        // The fallback detail already renders the package description.
-        summaryCard.isHidden = true
         
         if let package=package, let source=package.source, package.isProvisional ?? false {
             if let repo = RepoManager.shared.repo(with: source.uri, suite: source.suite, components: source.component?.components(separatedBy: .whitespaces) )
@@ -611,10 +299,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         packageName.text = package.name
         packageAuthor.text = package.author?.name ?? ""
         updatePackageSize(package)
-        updateShowcase(package)
 
         downloadButton.package = package
-        refreshShowcaseControls()
         navBarDownloadButton?.package = package
         
         self.updatePaymentInfo()
@@ -622,13 +308,13 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         if let imageURL = package.rawControl["header"] {
             if imageURL != headerURL {
                 self.headerURL = imageURL
-                EvanderNetworking.image(url: imageURL, size: showcaseHeaderSize, condition: ({ [weak self] in self?.headerURL == imageURL && self?.contentGeneration == generation }), imageView: depictionBackgroundView)
+                EvanderNetworking.image(url: imageURL, size: CGSize(width: depictionBackgroundView.frame.width, height: 200), condition: ({ [weak self] in self?.headerURL == imageURL }), imageView: depictionBackgroundView)
             }
         }
         
         if package.hasIcon(),
             let rawIcon = package.icon {
-            EvanderNetworking.image(url: rawIcon, size: packageIconView.frame.size, condition: ({ [weak self] in self?.package?.icon == rawIcon && self?.contentGeneration == generation}), imageViews: [packageIconView, packageNavBarIconView], fallback: package.defaultIcon)
+            EvanderNetworking.image(url: rawIcon, size: packageIconView.frame.size, condition: ({ [weak self] in self?.package?.icon == rawIcon}), imageViews: [packageIconView, packageNavBarIconView], fallback: package.defaultIcon)
         } else {
             packageNavBarIconView?.image = package.defaultIcon
             packageIconView.image = package.defaultIcon
@@ -687,21 +373,14 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             self.depictionView = depictionView
         }
 
-        // Resolve display metadata without changing the selected installation object.
-        let depictionPackage: Package
-        if package.fromStatusFile {
-            let origin = PackageListManager.shared.installedOrigin(of: package)
-            depictionPackage = !origin.ambiguous ? (origin.package ?? package) : package
-        } else {
-            depictionPackage = package
-        }
-        if let depiction = depictionPackage.sileoDepiction {
+        if !package.fromStatusFile,
+            let depiction = package.sileoDepiction {
             let urlRequest = URLManager.urlRequest(depiction)
             EvanderNetworking.request(request: urlRequest, type: Data.self) { [weak self] success, _, _, data in
                 guard success,
                       let data = data,
                       let `self` = self else { return }
-                self.parseNativeDepiction(data, host: depiction.host ?? "", generation: generation, failureCallback: nil)
+                self.parseNativeDepiction(data, host: depiction.host ?? "", failureCallback: nil)
             }
         }
 
@@ -845,15 +524,22 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     }
 
-    // Source and version are part of content identity, not only the package identifier.
+    // Switching versions only refreshes what depends on the version, so the page does not flash like a full reload
     func show(package: Package) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in self?.show(package: package) }
+        guard let current = self.package, current.package == package.package, !(package.isProvisional ?? false) else {
+            self.package = package
+            reloadData()
             return
         }
         self.package = package
-        loadViewIfNeeded()
-        reloadData()
+        updatePackageSize(package)
+        installedPackage = PackageListManager.shared.installedPackage(identifier: package.package)
+        downloadButton.package = package
+        navBarDownloadButton?.package = package
+        updatePaymentInfo()
+        reloadFooter(package: package, installedPackage: installedPackage)
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
     }
 
     func versionTooLow() {
@@ -868,7 +554,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        TabBarController.singleton?.setShowcaseHost(self, active: true)
         
         self.statusBarStyle = .default
         
@@ -880,7 +565,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        TabBarController.singleton?.setShowcaseHost(self, active: false)
         
         let collapsed = splitViewController?.isCollapsed ?? false
         let navController = collapsed ? (splitViewController?.viewControllers[0] as? UINavigationController) : weakNavController
@@ -895,17 +579,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        if showcaseReady {
-            guard allowNavbarUpdates else { return }
-            navigationController?.setNavigationBarHidden(false, animated: false)
-            navigationController?.navigationBar._backgroundOpacity = 1
-            navigationController?.navigationBar.tintColor = view.tintColor
-            shareButton?.alpha = 1
-            packageNavBarIconView?.alpha = scrollView.contentOffset.y > 90 ? 1 : 0
-            if let item = navBarShareButtonItem { navigationItem.rightBarButtonItems = [item] }
-            statusBarStyle = .default
-            return
-        }
         // do header view scaling magic
         let headerBounds = depictionHeaderView.bounds
         var aspectRatio = headerBounds.width / headerBounds.height
@@ -1013,7 +686,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if showcaseReady { return }
         // for those wondering about the magic numbers and what's going on here:
         // This is the spring effect on scrolling (aka step to start or step to after header
         // 113 = header imageView height - nav bar height and 56 is simply for setitng the step boundary, aka halfway
@@ -1033,147 +705,11 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.view.layoutIfNeeded()
     }
 
-    private func layoutShowcase() {
-        let width = scrollView.bounds.width
-        guard width > 0 else { return }
-        let horizontalSafe = max(view.safeAreaInsets.left, view.safeAreaInsets.right)
-        let bodyWidth = max(1, min(720, width - 40 - horizontalSafe * 2))
-        let x = (width - bodyWidth) / 2
-        let accessible = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
-        packageInfoView.axis = accessible ? .vertical : .horizontal
-        packageInfoView.alignment = accessible ? .leading : .top
-        var y: CGFloat = 20
-        let identityHeight = packageInfoView.systemLayoutSizeFitting(
-            CGSize(width: bodyWidth, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
-        packageInfoView.frame = CGRect(x: x, y: y, width: bodyWidth, height: max(72, identityHeight))
-        y = packageInfoView.frame.maxY + 24
-        let hasHeader = depictionBackgroundView.image != nil
-        depictionHeaderView.isHidden = !hasHeader
-        if hasHeader {
-            depictionHeaderView.frame = CGRect(x: x, y: y, width: bodyWidth, height: min(320, bodyWidth * 0.68))
-            depictionBackgroundView.frame = depictionHeaderView.bounds
-            y = depictionHeaderView.frame.maxY + 24
-        }
-        let textWidth = max(1, bodyWidth - 40)
-        let headingHeight = summaryHeading.sizeThatFits(CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height
-        let summaryHeight = summaryLabel.sizeThatFits(CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height
-        summaryHeading.frame = CGRect(x: 20, y: 20, width: textWidth, height: headingHeight)
-        summaryLabel.frame = CGRect(x: 20, y: 32 + headingHeight, width: textWidth, height: summaryHeight)
-        summaryCard.frame = CGRect(x: x, y: y, width: bodyWidth, height: 52 + headingHeight + summaryHeight)
-        if !summaryCard.isHidden { y = summaryCard.frame.maxY + 24 }
-        // The native depiction owns its original tabs, changelog parser, links and actions.
-        // Only its surrounding presentation changes here.
-        depictionHeight = depictionView?.depictionHeight(width: bodyWidth) ?? 0
-        detailsCard.frame = CGRect(x: x, y: y, width: bodyWidth, height: depictionHeight + 16)
-        detailsCard.isHidden = depictionView == nil
-        depictionView?.frame = CGRect(x: x, y: y + 8, width: bodyWidth, height: depictionHeight)
-        if let depictionView = depictionView { contentView.bringSubviewToFront(depictionView) }
-        y = detailsCard.frame.maxY + 24
-        let footerHeight = depictionFooterView?.depictionHeight(width: bodyWidth) ?? 0
-        managementCard.frame = CGRect(x: x, y: y, width: bodyWidth, height: footerHeight + 16)
-        managementCard.isHidden = depictionFooterView == nil
-        depictionFooterView?.frame = CGRect(x: x, y: y + 8, width: bodyWidth, height: footerHeight)
-        if let footer = depictionFooterView { contentView.bringSubviewToFront(footer) }
-        y = managementCard.frame.maxY + 24
-        // Package management actions now live in the navigation bar's menu.
-        controlsCard.isHidden = true
-        controlsCard.frame = .zero
-        contentViewWidth.constant = width
-        contentViewHeight.constant = y
-        scrollView.contentSize = CGSize(width: width, height: y)
-
-        let dockWidth = max(1, min(310, width - 48 - horizontalSafe * 2))
-        let actualVersionWidth = max(44, dockWidth - 24)
-        if let title = versionButton.title(for: .normal), let package = package {
-            let text = NSMutableAttributedString(string: title, attributes: [
-                .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17)),
-                .foregroundColor: UIColor.secondaryLabel
-            ])
-            if title.hasPrefix(package.version) {
-                text.addAttributes([
-                    .font: UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .semibold)),
-                    .foregroundColor: UIColor.label
-                ], range: NSRange(location: 0, length: (package.version as NSString).length))
-            }
-            versionButton.setAttributedTitle(text, for: .normal)
-        }
-        let hasStatus = !(versionStatusLabel.text ?? "").isEmpty
-        let naturalVersionWidth = versionButton.intrinsicContentSize.width
-        let naturalStatusWidth = hasStatus ? versionStatusLabel.intrinsicContentSize.width : 0
-        let statusGap: CGFloat = hasStatus ? 12 : 0
-        let wrapStatus = hasStatus && (traitCollection.preferredContentSizeCategory.isAccessibilityCategory || naturalVersionWidth + statusGap + naturalStatusWidth > actualVersionWidth)
-        let versionRowWidth = wrapStatus ? actualVersionWidth : min(actualVersionWidth, naturalVersionWidth)
-        let statusWidth = wrapStatus ? actualVersionWidth : naturalStatusWidth
-        let statusTextHeight = hasStatus ? versionStatusLabel.sizeThatFits(CGSize(width: statusWidth, height: .greatestFiniteMagnitude)).height : 0
-        let versionRowHeight = max(44, versionButton.sizeThatFits(CGSize(width: versionRowWidth, height: .greatestFiniteMagnitude)).height)
-        let actualVersionHeight = wrapStatus ? versionRowHeight + statusTextHeight + 4 : max(versionRowHeight, statusTextHeight)
-        let availableWidth = dockWidth - 24
-        let stacked = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
-        let columnCount: CGFloat = uninstallButton.isHidden ? 2 : 3
-        let columnWidth = stacked ? availableWidth : (availableWidth - 6 * (columnCount - 1)) / columnCount
-        let uninstallWidth: CGFloat = uninstallButton.isHidden ? 0 : columnWidth
-        let exportWidth = columnWidth
-        let primaryWidth = columnWidth
-        let primaryHeight = max(44, max(downloadButton.sizeThatFits(CGSize(width: primaryWidth, height: .greatestFiniteMagnitude)).height + 8,
-                                       max(downloadOnlyButton.sizeThatFits(CGSize(width: exportWidth, height: .greatestFiniteMagnitude)).height + 8,
-                                           uninstallButton.isHidden ? 0 : uninstallButton.sizeThatFits(CGSize(width: uninstallWidth, height: .greatestFiniteMagnitude)).height + 8)))
-        let actionRows: CGFloat = stacked ? (uninstallButton.isHidden ? 2 : 3) : 1
-        let dockHeight = actualVersionHeight + primaryHeight * actionRows + 8 * (actionRows - 1) + 12
-        let bottom = view.safeAreaInsets.bottom + max(0, showcaseBottomObstruction) + 8
-        actionDock.frame = CGRect(x: (width - dockWidth) / 2,
-                                  y: view.bounds.height - bottom - dockHeight,
-                                  width: dockWidth, height: dockHeight)
-        versionHeadingButton.isHidden = true
-        let groupWidth = versionRowWidth + statusGap + naturalStatusWidth
-        let groupX = (dockWidth - groupWidth) / 2
-        versionButton.frame = CGRect(x: wrapStatus ? 12 : groupX, y: 0, width: versionRowWidth, height: versionRowHeight)
-        versionStatusLabel.textAlignment = .center
-        versionStatusLabel.frame = CGRect(x: wrapStatus ? 12 : groupX + versionRowWidth + statusGap,
-                                          y: wrapStatus ? versionRowHeight + 4 : (actualVersionHeight - statusTextHeight) / 2,
-                                          width: statusWidth, height: statusTextHeight)
-        let actionsY = actualVersionHeight
-        let exportX: CGFloat = stacked || uninstallButton.isHidden ? 12 : 12 + uninstallWidth + 6
-        let exportY = actionsY + (stacked && !uninstallButton.isHidden ? primaryHeight + 8 : 0)
-        downloadOnlyButton.frame = CGRect(x: exportX, y: exportY, width: exportWidth, height: primaryHeight)
-        downloadOnlyButton.layer.cornerRadius = 14
-        uninstallButton.frame = CGRect(x: 12, y: actionsY, width: uninstallWidth, height: primaryHeight)
-        uninstallButton.layer.cornerRadius = 14
-        downloadButton.frame = CGRect(x: stacked ? 12 : dockWidth - primaryWidth - 12,
-                                      y: stacked ? exportY + primaryHeight + 8 : actionsY,
-                                      width: primaryWidth, height: primaryHeight)
-        let taskHeight = showcaseTaskVisible
-            ? max(44, showcaseTaskButton.sizeThatFits(CGSize(width: dockWidth, height: .greatestFiniteMagnitude)).height) : 0
-        let taskSpace = showcaseTaskVisible ? taskHeight + 8 : 0
-        showcaseTaskButton.frame = CGRect(x: actionDock.frame.minX,
-                                          y: actionDock.frame.minY - taskSpace,
-                                          width: dockWidth, height: taskHeight)
-        scrollView.contentInset = UIEdgeInsets(top: view.safeAreaInsets.top, left: 0,
-                                              bottom: bottom + dockHeight + taskSpace + 20, right: 0)
-        scrollView.scrollIndicatorInsets = scrollView.contentInset
-        if !positionedShowcaseAtTop, view.window != nil {
-            positionedShowcaseAtTop = true
-            scrollView.contentOffset = CGPoint(x: 0, y: -scrollView.contentInset.top)
-        }
-        view.bringSubviewToFront(actionDock)
-        view.bringSubviewToFront(showcaseTaskButton)
-        TabBarController.singleton?.refreshShowcaseObstruction()
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        if showcaseReady { updateSileoColors(); view.setNeedsLayout() }
-    }
-
     override func viewDidLayoutSubviews() {
         NSLog("SileoLog: PackageViewController.viewDidLayoutSubviews")
 //        Thread.callStackSymbols.forEach{NSLog("SileoLog: viewDidLayoutSubviews callstack=\($0)")}
         
         super.viewDidLayoutSubviews()
-        if showcaseReady {
-            layoutShowcase()
-            return
-        }
 
         depictionHeight = depictionView?.depictionHeight(width: self.view.bounds.width) ?? 0
 
@@ -1360,14 +896,12 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             })
         }
 
-        if !(package.isProvisional ?? false) {
-            let holding = downloadButton.ignoresShowcaseUpdates
-            let title = String(localizationKey: holding ? "Package_Hold_Disable_Action" : "Package_Hold_Enable_Action")
+        if let installedPackage = installedPackage {
+            let title = installedPackage.wantInfo == .hold ?
+                String(localizationKey: "Package_Hold_Disable_Action") : String(localizationKey: "Package_Hold_Enable_Action")
             actions.append(SileoActionMenuItem(title: title,
-                                               imageName: holding ? "play.circle" : "pause.circle") { [weak self] in
-                guard let self = self else { return }
-                self.downloadButton.setShowcaseUpdatesIgnored(!self.downloadButton.ignoresShowcaseUpdates)
-                self.refreshShowcaseControls()
+                                               imageName: "pause.circle") { [weak self] in
+                self?.toggleIgnoringUpdates()
             })
         }
 
@@ -1377,13 +911,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
                                            imageName: "heart") { [weak self] in
             self?.toggleWishList()
         })
-
-        if !(package.isProvisional ?? false) {
-            actions.append(SileoActionMenuItem(title: String(localizationKey: "Package_View_Info"),
-                                               imageName: "info.circle") { [weak self] in
-                self?.openShowcaseInfo()
-            })
-        }
 
         return actions
     }
@@ -1475,21 +1002,31 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.dismiss(animated: true, completion: nil)
     }
     
-    private func updatePaymentInfo() {
-        let generation = contentGeneration
-        downloadButton.paymentInfo = nil
-        navBarDownloadButton?.paymentInfo = nil
-        guard let package = package, package.commercial, let repo = package.sourceRepo else { return }
-        PaymentManager.shared.getPaymentProvider(for: repo) { [weak self] error, provider in
-            guard error == nil, let provider = provider else { return }
-            provider.getPackageInfo(forIdentifier: package.package) { [weak self] error, info in
-                guard error == nil, let info = info, info.available else { return }
-                DispatchQueue.main.async {
-                    guard let self = self, self.contentGeneration == generation else { return }
-                    self.downloadButton.paymentInfo = info
-                    self.navBarDownloadButton?.paymentInfo = info
-                    self.view.setNeedsLayout()
-                }
+    private func updatePaymentInfo()
+    {
+        guard let package = self.package, package.commercial, let repo = package.sourceRepo else {
+            DispatchQueue.main.async {
+                self.downloadButton.paymentInfo = nil
+                self.navBarDownloadButton?.paymentInfo = nil
+            }
+            return
+        }
+
+        PaymentManager.shared.getPaymentProvider(for: repo) { error, provider in
+            guard error == nil, let provider = provider else {
+                return
+            }
+
+// we can always request price for packages even if the repo is not logged in
+//                guard provider.isAuthenticated else {
+//                    return //we have to re-verify its payment status if the repo is not logged in
+//                }
+
+            provider.getPackageInfo(forIdentifier: package.package) { error, info in
+                guard error == nil, let info=info, info.available else { return }
+
+                self.downloadButton.paymentInfo = info
+                self.navBarDownloadButton?.paymentInfo = info
             }
         }
     }
