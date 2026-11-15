@@ -705,10 +705,10 @@ class PackageQueueButton: PackageButton {
         }
         hapticResponse()
         selectPackageVersion { selected in
-            // Retain this button through the picker: show(package:) may replace
-            // the page's button, but installation must keep this exact choice.
+            // The button says "Choose Version" for an installed-only package.
+            // Picking a source updates the detail page; only the next explicit
+            // install/reinstall tap may enqueue it and check conversion support.
             self.onPackageSelectedForInstallation?(selected)
-            self.installSelectedPackage(selected)
         }
     }
 
