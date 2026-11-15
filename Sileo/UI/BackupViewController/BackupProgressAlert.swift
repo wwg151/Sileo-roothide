@@ -374,6 +374,7 @@ final class BackupProgressAlert: SileoPanelViewController {
         filters.heightAnchor.constraint(equalToConstant: 32).isActive = true
         setBody(listBody)
         let start = Self.headerButton(title: String(localizationKey: "Backup_Task_Start_All")) { [weak self] in self?.toggleAllTasks() }
+        styleTaskButton(start)
         start.accessibilityLabel = String(localizationKey: "Backup_Task_Start_All")
         start.widthAnchor.constraint(greaterThanOrEqualToConstant: 80).isActive = true
         start.heightAnchor.constraint(equalToConstant: 44).isActive = true
@@ -412,6 +413,14 @@ final class BackupProgressAlert: SileoPanelViewController {
         }
     }
 
+    private func styleTaskButton(_ button: UIButton) {
+        button.backgroundColor = .secondarySystemFill
+        button.layer.cornerRadius = 12
+        button.layer.cornerCurve = .continuous
+        button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+        button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         filters.selectedSegmentIndex = 0
@@ -430,8 +439,13 @@ final class BackupProgressAlert: SileoPanelViewController {
         manage.addTarget(self, action: #selector(manageTapped), for: .touchUpInside)
         clear.setTitle(String(localizationKey: "Backup_Task_Clear"), for: .normal)
         clear.addTarget(self, action: #selector(clearTapped), for: .touchUpInside)
+        for button in [manage, clear] {
+            styleTaskButton(button)
+            button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        }
         let management = UIStackView(arrangedSubviews: [manage, clear])
         management.axis = .horizontal
+        management.spacing = 12
         management.distribution = .fillEqually
         footer = UIStackView(arrangedSubviews: [management, action])
         footer.axis = .vertical
@@ -640,6 +654,11 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     private func toggleAllTasks() {
+        if managing {
+            selectedIDs = Set(session.tasks.map(\.id))
+            render()
+            return
+        }
         guard !cancelling else { return }
         if roundRunning && !allTasksPaused {
             allTasksPaused = true
@@ -830,11 +849,11 @@ final class BackupProgressAlert: SileoPanelViewController {
             resultLabel.text = resultMessage ?? String(localizationKey: "Backup_Task_Empty")
         }
         let ready = startHandler != nil && (roundRunning || session.hasPendingTasks)
-        let allKey = roundRunning && !allTasksPaused ? "Backup_Task_Pause_All" : "Backup_Task_Start_All"
+        let allKey = managing ? "Backup_Task_Select_All" : (roundRunning && !allTasksPaused ? "Backup_Task_Pause_All" : "Backup_Task_Start_All")
         startAllButton?.setTitle(String(localizationKey: allKey), for: .normal)
         startAllButton?.accessibilityLabel = String(localizationKey: allKey)
-        startAllButton?.isEnabled = ready && !cancelling
-        startAllButton?.isHidden = !ready
+        startAllButton?.isEnabled = managing ? (editingAllowed && !session.tasks.isEmpty) : (ready && !cancelling)
+        startAllButton?.isHidden = !managing && !ready
         action.isHidden = roundRunning ? !cancellable : onFinishedClose == nil
         action.isEnabled = !cancelling
         action.setTitle(String(localizationKey: roundRunning ? "Cancel" : (onFinishedClose != nil ? "Backup_Task_Complete_Action" : "Close")), for: .normal)

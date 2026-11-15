@@ -15,6 +15,7 @@
 "Backup_Task_Search" = "搜索名称或标识符";
 "Backup_Task_Manage" = "多选";
 "Backup_Task_Clear_Selected" = "清除选中";
+"Backup_Task_Select_All" = "全选";
 "Backup_Task_Remove" = "移除任务";
 "Backup_Task_Remove_Count" = "移除所选 (%d)";
 "Backup_Task_Select_Visible" = "全选当前显示";
