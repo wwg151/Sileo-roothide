@@ -452,6 +452,7 @@
 "Source_Bad_Hash" = "Hash for %@ from %@ is invalid!";
 "Source_Decompress_Failed" = "Could not decompress packages from %@ (%@): %@";
 
+"Log_Running_Dpkg" = "Running dpkg";
 "Log_Read_Lists" = "Reading package lists...";
 "Log_Build_Tree" = "Building dependency tree...";
 "Log_Read_State" = "Reading state information...";

@@ -1425,6 +1425,7 @@ enum APTLogTranslator {
     /// translated beside it.
     private static let rules: [(String, String)] = [
         // apt
+        ("(?m)^Running dpkg(?:\\.\\.\\.)?[ \\t]*\\r?$", "Log_Running_Dpkg"),
         ("(?m)^Reading package lists\\.\\.\\.( Done)?$", "Log_Read_Lists"),
         ("(?m)^Building dependency tree\\.\\.\\.( Done)?$", "Log_Build_Tree"),
         ("(?m)^Reading state information\\.\\.\\.( Done)?$", "Log_Read_State"),
