@@ -25,6 +25,7 @@
 "Backup_Task_Dependency_Removed" = "无法满足依赖 %@：所需任务 %@ 已被移除。请重新进入恢复列表后保留该依赖再开始。";
 "Backup_Task_Preserved" = "已完成的备份已保留在：%@";
 "Backup_Task_Start_All" = "全部开始";
+"Backup_Task_Pause_All" = "全部暂停";
 "Backup_Task_Start" = "开始";
 "Backup_Task_Pause" = "暂停";
 "Backup_Task_Pause_Requested" = "已请求暂停，将在安全节点等待；点开始继续。";

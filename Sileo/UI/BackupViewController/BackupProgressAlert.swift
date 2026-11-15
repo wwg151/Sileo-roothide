@@ -356,6 +356,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     private var resultMessage: String?
     private var roundRunning = false
     private var queuedStarts: [String] = []
+    private var allTasksPaused = false
     private var cancelling = false
 
     init(title: String, message: String, cancellable: Bool, onCancel: (() -> Void)?) {
@@ -373,11 +374,9 @@ final class BackupProgressAlert: SileoPanelViewController {
         search.heightAnchor.constraint(equalToConstant: 36).isActive = true
         filters.heightAnchor.constraint(equalToConstant: 32).isActive = true
         setBody(listBody)
-        let start = Self.headerButton(title: String(localizationKey: "Backup_Task_Start_All")) { [weak self] in self?.startTask(nil) }
-        start.setTitle(nil, for: .normal)
-        start.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        let start = Self.headerButton(title: String(localizationKey: "Backup_Task_Start_All")) { [weak self] in self?.toggleAllTasks() }
         start.accessibilityLabel = String(localizationKey: "Backup_Task_Start_All")
-        start.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        start.widthAnchor.constraint(greaterThanOrEqualToConstant: 80).isActive = true
         start.heightAnchor.constraint(equalToConstant: 44).isActive = true
         headerAccessory = start
         startAllButton = start
@@ -393,7 +392,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     private func startNextQueuedTask() {
-        guard !session.closed, !roundRunning, !cancelling else { return }
+        guard !session.closed, !roundRunning, !cancelling, !allTasksPaused else { return }
         while !queuedStarts.isEmpty {
             let id = queuedStarts.removeFirst()
             guard !session.pendingIDs(matching: id).isEmpty else { continue }
@@ -548,6 +547,21 @@ final class BackupProgressAlert: SileoPanelViewController {
         } else { close() }
     }
 
+    private func toggleAllTasks() {
+        guard !cancelling else { return }
+        if roundRunning && !allTasksPaused {
+            allTasksPaused = true
+            for id in session.activeIDs where !session.isPaused(id) { session.togglePause(id) }
+        } else {
+            allTasksPaused = false
+            for task in session.tasks where session.isPaused(task.id) { session.togglePause(task.id) }
+            if !roundRunning { queuedStarts.removeAll() }
+            startTask(nil)
+        }
+        renderedReady = false
+        render()
+    }
+
     private func startTask(_ id: String?) {
         guard !session.closed, let handler = startHandler, !cancelling else { return }
         if roundRunning {
@@ -698,9 +712,11 @@ final class BackupProgressAlert: SileoPanelViewController {
         } else {
             resultLabel.text = resultMessage ?? String(localizationKey: "Backup_Task_Empty")
         }
-        let ready = startHandler != nil && !roundRunning && session.hasPendingTasks
-        startAllButton?.isEnabled = ready
-        // Show the batch start control only while pending work can start.
+        let ready = startHandler != nil && (roundRunning || session.hasPendingTasks)
+        let allKey = roundRunning && !allTasksPaused ? "Backup_Task_Pause_All" : "Backup_Task_Start_All"
+        startAllButton?.setTitle(String(localizationKey: allKey), for: .normal)
+        startAllButton?.accessibilityLabel = String(localizationKey: allKey)
+        startAllButton?.isEnabled = ready && !cancelling
         startAllButton?.isHidden = !ready
         action.isHidden = roundRunning ? !cancellable : onFinishedClose == nil
         action.isEnabled = !cancelling

@@ -26,6 +26,7 @@
 "Backup_Task_Dependency_Removed" = "Cannot satisfy dependency %@: required task %@ was removed. Reopen the restore list and keep this dependency before starting.";
 "Backup_Task_Preserved" = "Completed backups have been kept at: %@";
 "Backup_Task_Start_All" = "Start All";
+"Backup_Task_Pause_All" = "Pause All";
 "Backup_Task_Start" = "Start";
 "Backup_Task_Pause" = "Pause";
 "Backup_Task_Pause_Requested" = "Pause requested; waiting at a safe boundary. Tap Start to resume.";
