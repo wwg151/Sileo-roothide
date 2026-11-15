@@ -147,6 +147,11 @@ final class DownloadManager {
         return true
     }
     
+    private func publishDownloadStatus(_ download: Download) {
+        guard restoreBatch == nil else { return }
+        viewController.updateDownloadStatus(download: download)
+    }
+
     private func startPackageDownload(download: Download) {
         NSLog("SileoLog: startPackageDownload \(download.package.package)")
         
@@ -168,7 +173,7 @@ final class DownloadManager {
                 download.failureReason = String(localizationKey: "Unknown", type: .error)
             }
             
-            self.viewController.updateDownloadStatus(download: download)
+            self.publishDownloadStatus(download)
             
             NSLog("SileoLog: startMoreDownloads (startPackageDownload) 1")
             self.currentDownloads -= 1
@@ -180,7 +185,7 @@ final class DownloadManager {
             
             download.failureReason = String(localizationKey: "Unknown", type: .error)
             
-            self.viewController.updateDownloadStatus(download: download)
+            self.publishDownloadStatus(download)
             
             NSLog("SileoLog: startMoreDownloads (startPackageDownload) 2")
             self.currentDownloads -= 1
@@ -197,7 +202,7 @@ final class DownloadManager {
         }
         
         download.started = true
-        self.viewController.updateDownloadStatus(download: download)
+        self.publishDownloadStatus(download)
         
         // See if theres an overriding web URL for downloading the package from
         self.overrideDownloadURL(package: package, repo: repo) { errorMessage, overrideURL in DownloadManager.aptQueue.async {
@@ -208,7 +213,7 @@ final class DownloadManager {
                 
                 download.failureReason = errorMessage
                 
-                self.viewController.updateDownloadStatus(download: download)
+                self.publishDownloadStatus(download)
                 
                 NSLog("SileoLog: startMoreDownloads (startPackageDownload) 3")
                 self.currentDownloads -= 1
@@ -234,7 +239,7 @@ final class DownloadManager {
                     fraction: progress.expected > 0 ? progress.fractionCompleted * 0.5 : 0,
                     detail: String(localizationKey: "Backup_Task_Downloading") + " · \(progress.total)/\(progress.expected > 0 ? String(progress.expected) : "?") B")
                 
-                self.viewController.updateDownloadStatus(download: download)
+                self.publishDownloadStatus(download)
                 
             }}, success: { task, status, fileURL in DownloadManager.aptQueue.async {
                 NSLog("SileoLog: download success \(task.task)")
@@ -278,7 +283,7 @@ final class DownloadManager {
 #endif
                 }
                 
-                self.viewController.updateDownloadStatus(download: download)
+                self.publishDownloadStatus(download)
                 
                 NSLog("SileoLog: startMoreDownloads (startPackageDownload) 4")
                 self.currentDownloads -= 1
@@ -296,7 +301,7 @@ final class DownloadManager {
                 download.failureReason = error?.localizedDescription ?? String(format: String(localizationKey: "Download_Failing_Status_Code", type: .error), statusCode)
                 download.message = nil
                 
-                self.viewController.updateDownloadStatus(download: download)
+                self.publishDownloadStatus(download)
                 
                 NSLog("SileoLog: startMoreDownloads (startPackageDownload) 5")
                 self.currentDownloads -= 1
@@ -310,7 +315,7 @@ final class DownloadManager {
                 }
                 
                 download.message = message
-                self.viewController.updateDownloadStatus(download: download)
+                self.publishDownloadStatus(download)
             }})
             
             download.task?.resume()
@@ -335,7 +340,7 @@ final class DownloadManager {
         download.success = false
         download.progress = 0.99
         download.message = String(localizationKey: "Compat_Converting")
-        self.viewController.updateDownloadStatus(download: download)
+        self.publishDownloadStatus(download)
         
         DispatchQueue.global(qos: .userInitiated).async {
             let output = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).deb")
@@ -373,7 +378,7 @@ final class DownloadManager {
             download.failureReason = reason
             download.success = false
             download.progress = 0
-            self.viewController.updateDownloadStatus(download: download)
+            self.publishDownloadStatus(download)
             self.currentDownloads -= 1
             self.startMoreDownloads()
         }
@@ -389,6 +394,14 @@ final class DownloadManager {
             return
         }
         
+        if restoreBatch != nil {
+            download.package = newPackage
+            download.success = true
+            download.progress = 1
+            self.currentDownloads -= 1
+            return
+        }
+
         // The converted package takes the place of the original one in the queue
         let originalEntry = DownloadPackage(package: original)
         let newEntry = DownloadPackage(package: newPackage)
@@ -412,7 +425,7 @@ final class DownloadManager {
         download.success = true
         download.progress = 1
         DispatchQueue.main.async { self.viewController.reloadData() }
-        self.viewController.updateDownloadStatus(download: download)
+        self.publishDownloadStatus(download)
         self.currentDownloads -= 1
         self.startMoreDownloads()
     }

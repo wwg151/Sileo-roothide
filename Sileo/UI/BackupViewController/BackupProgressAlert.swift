@@ -476,6 +476,111 @@ final class BackupProgressAlert: SileoPanelViewController {
         render()
     }
 
+    // This panel owns restore execution and completion; the ordinary install
+    // controller must never acquire restore rows or a completed transaction.
+    func runRestoreBatch() {
+        let manager = DownloadManager.shared
+        guard let batch = manager.restoreBatch, batch.taskSession === session,
+              !manager.aptRunning else { return }
+        manager.aptRunning = true
+        NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
+        batch.perform(progress: { _, _, _, _ in }, output: { text, _ in
+            NSLog("SileoLog: restore: %@", text)
+        }, completion: { _, finish, refresh in
+            DispatchQueue.main.async {
+                if finish.rawValue > self.session.accumulatedFinish.rawValue {
+                    self.session.accumulatedFinish = finish
+                }
+                self.session.accumulatedRefresh = self.session.accumulatedRefresh || refresh
+                if self.session.accumulatedRefresh {
+                    UserDefaults.standard.set(true, forKey: "uicacheRequired")
+                }
+                DownloadManager.aptQueue.sync { manager.cancelDownloads() }
+                manager.restoreBatch = nil
+                manager.aptRunning = false
+                NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
+                NotificationCenter.default.post(name: PackageListManager.stateChange, object: nil)
+                NotificationCenter.default.post(name: PackageListManager.installChange, object: nil)
+                UIApplication.shared.applicationIconBadgeNumber = PackageListManager.shared.availableUpdates()
+                    .filter { $0.1?.wantInfo != .hold }.count
+                self.onFinishedClose = (self.session.accumulatedFinish != .back || self.session.accumulatedRefresh)
+                    ? { [weak self] in self?.showRestoreCompletion() } : nil
+                // Release the restore lock before finish starts the next queued round.
+                self.session.finish(batch.summary)
+            }
+        })
+    }
+
+    private var finishingRestore = false
+
+    private func showRestoreCompletion() {
+        guard !roundRunning, !finishingRestore else { return }
+        let finish = session.accumulatedFinish
+        let refresh = session.accumulatedRefresh
+        let key: String
+        switch finish {
+        case .back: key = refresh ? "After_Install_Relaunch" : "Done"
+        case .uicache: key = "Refresh"
+        case .reopen: key = "After_Install_Relaunch"
+        case .reload, .restart: key = "After_Install_Respring"
+        case .reboot, .usreboot: key = "After_Install_Reboot"
+        }
+        let alert = UIAlertController(title: String(localizationKey: "Backup_Task_Complete_Action"),
+                                      message: session.lastSummary, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localizationKey: key), style: .default) { [weak self] _ in
+            self?.performRestoreCompletion(finish, refresh: refresh)
+        })
+        present(alert, animated: true)
+    }
+
+    private func performRestoreCompletion(_ finish: APTWrapper.FINISH, refresh: Bool) {
+        guard !finishingRestore, !roundRunning, !DownloadManager.shared.aptRunning,
+              !DownloadManager.shared.queueRunning else { return }
+        finishingRestore = true
+        let restart = finish == .reload || finish == .restart || finish == .reboot || finish == .usreboot
+        if restart && refresh {
+            UserDefaults.standard.set(false, forKey: "uicacheRequired")
+            UserDefaults.standard.synchronize()
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            var result: (Int, String, String) = (0, "", "")
+            switch finish {
+            case .uicache:
+                result = spawnAsRoot(args: [jbroot("/usr/bin/uicache"), "-a"])
+            case .reload, .restart:
+                result = spawnAsRoot(args: [jbroot("/usr/bin/sbreload")])
+            case .reboot, .usreboot:
+                spawnAsRoot(args: [jbroot("/usr/bin/sync")])
+                result = spawnAsRoot(args: [jbroot("/usr/bin/launchctl"), "reboot", "userspace"])
+            case .back, .reopen:
+                if refresh {
+                    result = spawnAsRoot(args: [jbroot("/usr/bin/uicache"), "-p", rootfs(Bundle.main.bundlePath)])
+                    if result.0 == 0 { UserDefaults.standard.set(false, forKey: "uicacheRequired") }
+                }
+                if result.0 == 0 && (finish == .reopen || refresh) { exit(0) }
+            }
+            let status = result.0
+            let error = result.2
+            DispatchQueue.main.asyncAfter(deadline: .now() + (status == 0 && restart ? 3 : 0)) {
+                self.finishingRestore = false
+                if restart && refresh { UserDefaults.standard.set(true, forKey: "uicacheRequired") }
+                if status == 0 && !restart {
+                    self.session.accumulatedFinish = .back
+                    self.session.accumulatedRefresh = false
+                    self.onFinishedClose = nil
+                    self.render()
+                } else {
+                    let alert = UIAlertController(title: String(localizationKey: "Task_Attention"),
+                        message: String(localizationKey: "Task_Finish_Action_Failed") + (error.isEmpty ? "" : "\n" + error),
+                        preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: String(localizationKey: "Done"), style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+        }
+    }
+
     func startSingleTask(name: String) {
         session.startSingleTask(name: name)
         roundRunning = true
@@ -544,8 +649,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     @objc private func actionTapped() {
         if roundRunning { cancelWorkTapped(); return }
         if let callback = onFinishedClose {
-            onFinishedClose = nil
-            close(completion: callback)
+            callback()
         } else { close() }
     }
 
@@ -565,7 +669,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     private func startTask(_ id: String?) {
-        guard !session.closed, let handler = startHandler, !cancelling else { return }
+        guard !session.closed, let handler = startHandler, !cancelling, !finishingRestore else { return }
         if roundRunning {
             for task in session.tasks where task.outcome == nil && (id == nil || task.id == id)
                 && !session.activeIDs.contains(task.id) && !queuedStarts.contains(task.id) {

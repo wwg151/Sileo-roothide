@@ -760,6 +760,7 @@ class DownloadsTableViewController: SileoViewController {
     }
     
     @IBAction public func confirmQueued(_ sender: Any?) {
+        guard DownloadManager.shared.restoreBatch == nil, !DownloadManager.shared.aptRunning else { return }
         NSLog("SileoLog: confirmQueued(\(sender))")
         if sender != nil {
             let actions = uninstallations + uninstalldeps
@@ -930,34 +931,6 @@ class DownloadsTableViewController: SileoViewController {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    func showBackupCompletion(session: BackupTaskSession) {
-        guard !DownloadManager.shared.aptRunning else { return }
-        loadViewIfNeeded()
-        returnButtonAction = session.accumulatedFinish
-        refreshSileo = session.accumulatedRefresh
-        isInstalling = false
-        isFinishedInstalling = true
-        isFired = false
-        DownloadManager.shared.restoreBatch?.ownsTaskPresentation = false
-        updateCompleteButton()
-        completeButton?.isEnabled = true
-        completeLaterButton?.isEnabled = true
-        completeButton?.alpha = 1
-        completeLaterButton?.alpha = shouldShow(returnButtonAction) ? 1 : 0
-        reloadControlsOnly()
-        TabBarController.singleton?.presentPopupController()
-    }
-
-    func prepareNextRestoreRound() {
-        guard !DownloadManager.shared.aptRunning else { return }
-        isInstalling = false
-        isFinishedInstalling = false
-        isFired = false
-        actions.removeAll()
-        DownloadManager.shared.queueRunning = false
-        DownloadManager.aptQueue.sync { DownloadManager.shared.removeAllItems() }
-    }
-
     private func queueCompleted() {
         isInstalling = false
         isFinishedInstalling = false

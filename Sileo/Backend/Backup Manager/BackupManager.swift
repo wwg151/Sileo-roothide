@@ -804,10 +804,6 @@ final class BackupManager {
                     completion(.failure(BackupError.cancelled))
                     return
                 }
-                manager.vars.errors.removeAll()
-                manager.vars.installations.setTo(Set(batch.packages.map { DownloadPackage(package: $0) }))
-                manager.reloadData(recheckPackages: true)
-                NotificationCenter.default.post(name: PackageQueueButton.actionPerformedNotification, object: nil)
                 completion(.success((batch.packages.count, batch.results.count)))
             }
         }

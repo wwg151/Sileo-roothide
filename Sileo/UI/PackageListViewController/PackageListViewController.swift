@@ -669,9 +669,6 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
                 guard let panel = panel else { return }
                 panel.prepareStart { [weak self, weak panel] id in
                     guard let panel = panel else { return }
-                    if DownloadManager.shared.restoreBatch?.taskSession === panel.session {
-                        DownloadManager.shared.viewController.prepareNextRestoreRound()
-                    }
                     self?.startPackageRestore(from: folder, prepared: panel, selectedID: id, selectedPackage: plan.packages.first { $0.package == id })
                 }
             }, completion: { [weak panel] result in
@@ -690,12 +687,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         }, taskSession: progress.session, selectedID: selectedID, selectedPackage: selectedPackage, completion: { result in
             switch result {
             case .success:
-                progress.onFinishedClose = { [weak progress] in
-                    guard let session = progress?.session else { return }
-                    DownloadManager.shared.viewController.showBackupCompletion(session: session)
-                }
-                DownloadManager.shared.viewController.loadViewIfNeeded()
-                DownloadManager.shared.viewController.confirmQueued(nil)
+                progress.runRestoreBatch()
             case .failure(let error):
                 progress.finish(message: error.localizedDescription)
             }
