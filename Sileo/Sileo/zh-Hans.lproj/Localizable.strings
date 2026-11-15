@@ -463,13 +463,13 @@
 "Restore_Isolation_Unsupported" = "已跳过：循环依赖、无法识别的依赖约束、冲突、受保护插件包或已安装版本变更，无法安全恢复。";
 "Restore_Isolation_Summary" = "恢复结果汇总";
 "Restore_Isolation_Targets_Succeeded" = "目标插件包成功（%ld 个）：";
-"Restore_Isolation_Targets_Failed" = "目标插件包失败或跳过（%ld 个）：";
+"Restore_Isolation_Targets_Failed" = "目标插件包失败（%ld 个）：";
 "Restore_Isolation_Dependencies_Succeeded" = "依赖安装成功并保留（%ld 个）：";
 "Restore_Isolation_Dependencies_Failed" = "依赖失败或跳过（%ld 个）：";
 "Restore_Isolation_Dependency" = "已跳过，所需依赖未完整安装：";
-"Restore_Isolation_Unavailable" = "已跳过：插件包文件不可用或元数据不匹配。";
+"Restore_Isolation_Unavailable" = "恢复失败：插件包文件不可用或元数据不匹配。";
 "Restore_Isolation_Installing" = "正在恢复插件包";
-"Restore_Isolation_Failed" = "安装失败，已成功安装的依赖予以保留。具体原因请查看日志。";
+"Restore_Isolation_Failed" = "安装失败，具体原因请查看日志。";
 "Restore_Isolation_Global" = "检测到系统级故障或无法归类的 dpkg 错误，已停止恢复。已成功安装的插件包予以保留。";
 "Restore_Isolation_Cancelling" = "将在当前插件包安装结束后取消…";
 "Restore_Isolation_Cancelled" = "已取消恢复，已成功安装的插件包及依赖予以保留。";
