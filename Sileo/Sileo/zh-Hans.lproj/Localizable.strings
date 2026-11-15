@@ -74,6 +74,9 @@
 "Package_Installed_Size" = "安装占用";
 "About" = "关于";
 "Showcase_About" = "简介";
+"Showcase_Management" = "管理";
+"Showcase_Ignore_Hint" = "不再提示此插件包的可用更新。";
+"Showcase_Uninstall_Confirm" = "将 %@ 加入卸载队列？";
 "Showcase_All_Tasks" = "全部任务";
 "Showcase_Download_Only" = "仅下载";
 "Package_Install_Select_Source" = "请选择要安装的来源和版本。";

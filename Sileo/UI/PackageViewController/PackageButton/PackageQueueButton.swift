@@ -42,7 +42,10 @@ class PackageQueueButton: PackageButton {
     
     /// Detail pages opt in; list buttons keep their existing behavior.
     var selectsVersionBeforeInstalling = false {
-        didSet { updateInfo() }
+        didSet {
+            updateLongPressInteraction()
+            updateInfo()
+        }
     }
 
     /// Called synchronously before installing the exact picked package.
@@ -67,12 +70,23 @@ class PackageQueueButton: PackageButton {
                                                name: DownloadManager.lockStateChangeNotification,
                                                object: nil)
         
+        updateLongPressInteraction()
+    }
+
+    private func updateLongPressInteraction() {
         if #available(iOS 13.0, *) {
-            // A long press on any package opens its actions: the system's menu
-            // beside the button, or Sileo's own card when hairlines are hidden.
-            let delegate = PackageQueueMenuDelegate(button: self)
-            contextMenuDelegate = delegate
-            addInteraction(UIContextMenuInteraction(delegate: delegate))
+            for interaction in interactions where interaction is UIContextMenuInteraction {
+                removeInteraction(interaction)
+            }
+            contextMenuDelegate = nil
+            if !selectsVersionBeforeInstalling {
+                let delegate = PackageQueueMenuDelegate(button: self)
+                contextMenuDelegate = delegate
+                addInteraction(UIContextMenuInteraction(delegate: delegate))
+            }
+        }
+        for gesture in gestureRecognizers ?? [] where gesture is UILongPressGestureRecognizer {
+            gesture.isEnabled = !selectsVersionBeforeInstalling
         }
     }
 
@@ -110,7 +124,7 @@ class PackageQueueButton: PackageButton {
     }
 
     @objc func longPressed(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
+        guard !selectsVersionBeforeInstalling, gesture.state == .began else { return }
         showLongPressMenu()
     }
 
@@ -233,6 +247,55 @@ class PackageQueueButton: PackageButton {
             return (package, false)
         }
         return PackageListManager.shared.installedOrigin(of: package)
+    }
+
+    var ignoresShowcaseUpdates: Bool {
+        guard let package = package else { return false }
+        let installed = PackageListManager.shared.installedPackage(identifier: package.package)
+        return installed?.wantInfo == .hold || (installed == nil && DpkgWrapper.isIgnoringUpdates(package: package.package))
+    }
+
+    func setShowcaseUpdatesIgnored(_ ignored: Bool) {
+        guard let package = package, !(package.isProvisional ?? false) else { return }
+        useVisiblePresenter()
+        let installed = PackageListManager.shared.installedPackage(identifier: package.package)
+        setIgnoreUpdates(ignored, package: installed ?? package)
+    }
+
+    func showShowcasePackageInfo() {
+        guard let package = package else { return }
+        useVisiblePresenter()
+        showPackageInfo(package)
+    }
+
+    func uninstallShowcasePackage() {
+        guard let package = package, !(package.isProvisional ?? false) else { return }
+        let manager = DownloadManager.shared
+        if manager.queueRunning || manager.find(package: package) != .none {
+            TabBarController.singleton?.presentPopupController()
+            return
+        }
+        guard PackageListManager.shared.installedPackage(identifier: package.package) != nil else { return }
+        useVisiblePresenter()
+        guard let presenter = viewControllerForPresentation else { return }
+        SileoPanelViewController.confirm(
+            title: String(localizationKey: "Package_Uninstall_Action"),
+            message: String(format: String(localizationKey: "Showcase_Uninstall_Confirm"), package.name),
+            confirmTitle: String(localizationKey: "Package_Uninstall_Action")
+        ) {
+            // The queue and installation may change while the confirmation is open.
+            if manager.queueRunning || manager.find(package: package) != .none {
+                TabBarController.singleton?.presentPopupController()
+                return
+            }
+            guard let installed = PackageListManager.shared.installedPackage(identifier: package.package) else { return }
+            self.hapticResponse()
+            self.requestQueuePackage(package: installed, queue: .uninstallations)
+        }.present(from: presenter)
+    }
+
+    private static func hasDownloadObject(_ package: Package) -> Bool {
+        package.local_deb != nil || (!package.fromStatusFile && package.sourceRepo != nil && package.filename != nil)
     }
 
     private func setIgnoreUpdates(_ ignore: Bool, package installed: Package) {
@@ -490,7 +553,7 @@ class PackageQueueButton: PackageButton {
         if package.isProvisional ?? false {
             self.updateButton(title: String(localizationKey: "Add_Source.Title"))
             return
-        } else if !package.fromStatusFile && package.sourceRepo==nil && package.local_deb==nil {
+        } else if !selectsVersionBeforeInstalling && !package.fromStatusFile && package.sourceRepo==nil && package.local_deb==nil {
             self.updateButton(title: String(localizationKey: "Package_Get_Action"))
             self.isEnabled = false
             return
@@ -506,8 +569,22 @@ class PackageQueueButton: PackageButton {
         } else if checkQueued(package: package) || (selectsVersionBeforeInstalling &&
                     (DownloadManager.shared.queueRunning || DownloadManager.shared.find(package: package) != .none)) {
             self.updateButton(title: String(localizationKey: "Package_Queue_Action"))
-        } else if selectsVersionBeforeInstalling && installedPackage != nil {
-            self.updateButton(title: String(localizationKey: "Package_Choose_Version"))
+        } else if selectsVersionBeforeInstalling {
+            let titleKey: String
+            if !Self.hasDownloadObject(package) {
+                titleKey = "Package_Choose_Version"
+            } else if let installed = installedPackage {
+                if DpkgWrapper.isVersion(package.version, greaterThan: installed.version) {
+                    titleKey = "Package_Upgrade_Action"
+                } else if DpkgWrapper.isVersion(installed.version, greaterThan: package.version) {
+                    titleKey = "Package_Downgrade_Action"
+                } else {
+                    titleKey = "Package_Reinstall_Action"
+                }
+            } else {
+                titleKey = "Package_Get_Action"
+            }
+            self.updateButton(title: String(localizationKey: titleKey))
         } else if installedPackage != nil {
             self.updateButton(title: String(localizationKey: "Package_Modify_Action"))
         } else if let price = paymentInfo?.price, package.commercial && !purchased {
@@ -630,9 +707,12 @@ class PackageQueueButton: PackageButton {
             handleButtonPress(package)
             return
         }
-        if package.local_deb != nil {
-            onPackageSelectedForInstallation?(package)
+        if Self.hasDownloadObject(package) {
             installSelectedPackage(package)
+            return
+        }
+        guard package.fromStatusFile else {
+            showDownloadMessage("Package_Install_Select_Source", titleKey: "Package_Choose_Version")
             return
         }
         hapticResponse()
@@ -690,7 +770,8 @@ class PackageQueueButton: PackageButton {
             showDownloadMessage("Package_Version_Incompatible", titleKey: "Package_Choose_Version")
             return
         }
-        if DownloadManager.shared.queueRunning || checkQueued(package: package) {
+        if DownloadManager.shared.queueRunning || checkQueued(package: package) ||
+            (selectsVersionBeforeInstalling && DownloadManager.shared.find(package: package) != .none) {
             TabBarController.singleton?.presentPopupController()
             return
         }
@@ -844,7 +925,8 @@ private final class PackageQueueMenuDelegate: NSObject, UIContextMenuInteraction
         _ interaction: UIContextMenuInteraction,
         configurationForMenuAtLocation location: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard let button = button, let package = button.package, !(package.isProvisional ?? false) else {
+        guard let button = button, !button.selectsVersionBeforeInstalling,
+              let package = button.package, !(package.isProvisional ?? false) else {
             return nil
         }
 
@@ -852,7 +934,8 @@ private final class PackageQueueMenuDelegate: NSObject, UIContextMenuInteraction
         // does not, and it carries the system's hairlines when the switch asks
         // for them. So the card is what a long press opens either way.
         DispatchQueue.main.async { [weak button] in
-            button?.presentActionCard()
+            guard let button = button, !button.selectsVersionBeforeInstalling else { return }
+            button.presentActionCard()
         }
         return nil
     }

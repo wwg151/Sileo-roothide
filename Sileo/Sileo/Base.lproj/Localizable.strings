@@ -74,6 +74,9 @@
 "Package_Installed_Size" = "Installed size";
 "About" = "About";
 "Showcase_About" = "About";
+"Showcase_Management" = "Management";
+"Showcase_Ignore_Hint" = "Hide this package from available updates.";
+"Showcase_Uninstall_Confirm" = "Add %@ to the uninstall queue?";
 "Showcase_All_Tasks" = "All Tasks";
 "Showcase_Download_Only" = "Download Only";
 "Package_Install_Select_Source" = "Choose a source and version to install.";

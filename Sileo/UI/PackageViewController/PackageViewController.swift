@@ -93,6 +93,13 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private let summaryHeading = UILabel()
     private let detailsCard = UIView()
     private let managementCard = UIView()
+    private let controlsCard = UIView()
+    private let controlsHeading = UILabel()
+    private let ignoreLabel = UILabel()
+    private let ignoreHint = UILabel()
+    private let ignoreSwitch = UISwitch()
+    private let infoButton = UIButton(type: .system)
+    private let uninstallButton = UIButton(type: .system)
     private let actionDock = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
     private let versionButton = UIButton(type: .system)
     private let downloadOnlyButton = UIButton(type: .system)
@@ -182,7 +189,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         for constraint in packageIconView.constraints where constraint.firstAttribute == .height {
             constraint.constant = 72
         }
-        for card in [summaryCard, detailsCard, managementCard] {
+        for card in [summaryCard, detailsCard, managementCard, controlsCard] {
             card.backgroundColor = .secondarySystemGroupedBackground
             card.layer.cornerRadius = 24
             contentView.addSubview(card)
@@ -195,6 +202,37 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             label.adjustsFontForContentSizeCategory = true
             label.textColor = .label
             summaryCard.addSubview(label)
+        }
+        controlsHeading.text = String(localizationKey: "Showcase_Management")
+        ignoreLabel.text = String(localizationKey: "Package_Hold_Enable_Action")
+        ignoreHint.text = String(localizationKey: "Showcase_Ignore_Hint")
+        for label in [controlsHeading, ignoreLabel, ignoreHint] {
+            label.font = .preferredFont(forTextStyle: label === ignoreHint ? .caption1 : .headline)
+            label.numberOfLines = 0
+            label.adjustsFontForContentSizeCategory = true
+            label.textColor = label === ignoreHint ? .secondaryLabel : .label
+            controlsCard.addSubview(label)
+        }
+        ignoreSwitch.accessibilityLabel = ignoreLabel.text
+        ignoreSwitch.accessibilityHint = ignoreHint.text
+        ignoreSwitch.addTarget(self, action: #selector(changeShowcaseIgnore), for: .valueChanged)
+        controlsCard.addSubview(ignoreSwitch)
+        infoButton.setTitle(String(localizationKey: "Package_View_Info") + "  ›", for: .normal)
+        infoButton.contentHorizontalAlignment = .leading
+        infoButton.addTarget(self, action: #selector(openShowcaseInfo), for: .touchUpInside)
+        controlsCard.addSubview(infoButton)
+        uninstallButton.setTitle(String(localizationKey: "Package_Uninstall_Action"), for: .normal)
+        uninstallButton.setTitleColor(.systemRed, for: .normal)
+        uninstallButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.1)
+        uninstallButton.addTarget(self, action: #selector(uninstallShowcase), for: .touchUpInside)
+        actionDock.contentView.addSubview(uninstallButton)
+        for button in [infoButton, uninstallButton] {
+            button.titleLabel?.font = .preferredFont(forTextStyle: .body)
+            button.titleLabel?.adjustsFontForContentSizeCategory = true
+            button.titleLabel?.numberOfLines = 0
+        }
+        for name in [PackageListManager.stateChange, PackageListManager.prefsNotification, DownloadManager.lockStateChangeNotification, PackageQueueButton.actionPerformedNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(refreshShowcaseControls), name: name, object: nil)
         }
         actionDock.layer.cornerRadius = 26
         actionDock.clipsToBounds = true
@@ -227,6 +265,32 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         }
         showcaseReady = true
         updateSileoColors()
+    }
+
+    @objc private func changeShowcaseIgnore() {
+        downloadButton.setShowcaseUpdatesIgnored(ignoreSwitch.isOn)
+        refreshShowcaseControls()
+    }
+
+    @objc private func openShowcaseInfo() { downloadButton.showShowcasePackageInfo() }
+    @objc private func uninstallShowcase() { downloadButton.uninstallShowcasePackage() }
+
+    @objc private func refreshShowcaseControls() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.refreshShowcaseControls() }
+            return
+        }
+        guard showcaseReady, let package = package else { return }
+        let busy = DownloadManager.shared.queueRunning || DownloadManager.shared.find(package: package) != .none
+        let provisional = package.isProvisional ?? false
+        uninstallButton.isHidden = busy || PackageListManager.shared.installedPackage(identifier: package.package) == nil
+        ignoreSwitch.isOn = downloadButton.ignoresShowcaseUpdates
+        ignoreSwitch.isEnabled = !busy && !provisional
+        infoButton.isEnabled = !provisional
+        versionButton.isEnabled = !busy && !provisional
+        downloadOnlyButton.isEnabled = !provisional
+        downloadButton.updateInfo()
+        view.setNeedsLayout()
     }
 
     @objc private func selectShowcaseVersion() {
@@ -425,7 +489,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         guard showcaseReady else { return }
         view.backgroundColor = .systemGroupedBackground
         contentView.backgroundColor = .systemGroupedBackground
-        for card in [summaryCard, detailsCard, managementCard] {
+        for card in [summaryCard, detailsCard, managementCard, controlsCard] {
             card.backgroundColor = .secondarySystemGroupedBackground
         }
         actionDock.layer.borderWidth = 0.5
@@ -494,6 +558,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         updateShowcase(package)
 
         downloadButton.package = package
+        refreshShowcaseControls()
         navBarDownloadButton?.package = package
         
         self.updatePaymentInfo()
@@ -951,29 +1016,43 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         depictionFooterView?.frame = CGRect(x: x, y: y + 8, width: bodyWidth, height: footerHeight)
         if let footer = depictionFooterView { contentView.bringSubviewToFront(footer) }
         y = managementCard.frame.maxY + 24
+        let controlsWidth = max(1, bodyWidth - 40)
+        let headingH = controlsHeading.sizeThatFits(CGSize(width: controlsWidth, height: .greatestFiniteMagnitude)).height
+        controlsHeading.frame = CGRect(x: 20, y: 20, width: controlsWidth, height: headingH)
+        let switchSize = ignoreSwitch.sizeThatFits(.zero)
+        let labelWidth = max(1, controlsWidth - switchSize.width - 16)
+        let ignoreH = ignoreLabel.sizeThatFits(CGSize(width: labelWidth, height: .greatestFiniteMagnitude)).height
+        let hintH = ignoreHint.sizeThatFits(CGSize(width: labelWidth, height: .greatestFiniteMagnitude)).height
+        let rowY = controlsHeading.frame.maxY + 16
+        ignoreLabel.frame = CGRect(x: 20, y: rowY, width: labelWidth, height: ignoreH)
+        ignoreHint.frame = CGRect(x: 20, y: ignoreLabel.frame.maxY + 6, width: labelWidth, height: hintH)
+        let rowH = max(44, ignoreH + 6 + hintH)
+        ignoreSwitch.frame = CGRect(x: bodyWidth - 20 - switchSize.width, y: rowY + (rowH - switchSize.height) / 2, width: switchSize.width, height: switchSize.height)
+        let infoH = max(52, infoButton.sizeThatFits(CGSize(width: controlsWidth, height: .greatestFiniteMagnitude)).height + 16)
+        infoButton.frame = CGRect(x: 20, y: rowY + rowH + 12, width: controlsWidth, height: infoH)
+        controlsCard.frame = CGRect(x: x, y: y, width: bodyWidth, height: infoButton.frame.maxY + 12)
+        y = controlsCard.frame.maxY + 24
         contentViewWidth.constant = width
         contentViewHeight.constant = y
         scrollView.contentSize = CGSize(width: width, height: y)
 
         let dockWidth = max(1, min(720, width - 24 - horizontalSafe * 2))
-        let primaryWidth = min(dockWidth - 24, max(112, downloadButton.intrinsicContentSize.width + 24))
-        let versionWidth = accessible ? dockWidth - 84 : max(44, dockWidth - primaryWidth - 84)
-        let versionHeight = max(44, versionButton.sizeThatFits(CGSize(width: versionWidth, height: .greatestFiniteMagnitude)).height)
-        let primaryHeight = max(50, downloadButton.intrinsicContentSize.height)
-        let stacked = accessible || dockWidth < 340 || primaryWidth > dockWidth * 0.48
-        let actualVersionWidth = stacked ? dockWidth - 84 : versionWidth
+        let actualVersionWidth = max(44, dockWidth - 84)
         let actualVersionHeight = max(44, versionButton.sizeThatFits(CGSize(width: actualVersionWidth, height: .greatestFiniteMagnitude)).height)
-        let dockHeight = stacked ? actualVersionHeight + primaryHeight + 32 : max(versionHeight, primaryHeight) + 24
+        let uninstallWidth = uninstallButton.isHidden ? 0 : min((dockWidth - 32) * 0.38, max(76, uninstallButton.intrinsicContentSize.width + 24))
+        let primaryWidth = dockWidth - 24 - (uninstallButton.isHidden ? 0 : uninstallWidth + 8)
+        let primaryHeight = max(50, max(downloadButton.sizeThatFits(CGSize(width: primaryWidth, height: .greatestFiniteMagnitude)).height + 12,
+                                       uninstallButton.isHidden ? 0 : uninstallButton.sizeThatFits(CGSize(width: uninstallWidth, height: .greatestFiniteMagnitude)).height + 12))
+        let dockHeight = actualVersionHeight + primaryHeight + 32
         let bottom = view.safeAreaInsets.bottom + max(0, showcaseBottomObstruction) + 8
         actionDock.frame = CGRect(x: (width - dockWidth) / 2,
                                   y: view.bounds.height - bottom - dockHeight,
                                   width: dockWidth, height: dockHeight)
         versionButton.frame = CGRect(x: 16, y: 12, width: actualVersionWidth, height: actualVersionHeight)
-        downloadOnlyButton.frame = CGRect(x: stacked ? dockWidth - 60 : actualVersionWidth + 20,
-                                          y: 12, width: 44, height: max(44, actualVersionHeight))
-        downloadButton.frame = stacked
-            ? CGRect(x: 12, y: actualVersionHeight + 20, width: dockWidth - 24, height: primaryHeight)
-            : CGRect(x: dockWidth - primaryWidth - 12, y: (dockHeight - primaryHeight) / 2, width: primaryWidth, height: primaryHeight)
+        downloadOnlyButton.frame = CGRect(x: dockWidth - 60, y: 12, width: 44, height: actualVersionHeight)
+        uninstallButton.frame = CGRect(x: 12, y: actualVersionHeight + 20, width: uninstallWidth, height: primaryHeight)
+        uninstallButton.layer.cornerRadius = min(22, primaryHeight / 2)
+        downloadButton.frame = CGRect(x: dockWidth - primaryWidth - 12, y: actualVersionHeight + 20, width: primaryWidth, height: primaryHeight)
         let taskHeight = showcaseTaskVisible
             ? max(44, showcaseTaskButton.sizeThatFits(CGSize(width: dockWidth, height: .greatestFiniteMagnitude)).height) : 0
         let taskSpace = showcaseTaskVisible ? taskHeight + 8 : 0
