@@ -382,6 +382,6 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         searchPackageVC.searchController.searchBar.text = keyword
         tabBarController.selectedViewController = searchPackageNVC
         searchPackageNVC.popToRootViewController(animated: true)
-        tabBarController.closePopup(animated: true)
+        tabBarController.dismissPopupController()
     }
 }

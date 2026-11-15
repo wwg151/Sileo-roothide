@@ -13,9 +13,56 @@ import ObjectiveC
 /// Key for the frame the queue bar's title had after we moved it.
 private var popupTitleShiftKey: UInt8 = 0
 
-class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupPresentationDelegate {
+class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupPresentationDelegate, UIAdaptivePresentationControllerDelegate {
     static var singleton: TabBarController?
     private var downloadsController: UINavigationController?
+    private var usesFixedQueue: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+    private let fixedQueue = UIButton(type: .custom)
+    private let fixedQueueTitle = UILabel()
+    private let fixedQueueDetail = UILabel()
+    private let fixedQueueRing = UIImageView()
+    private var fixedTaskClosing = false
+
+    private func layoutFixedQueue() {
+        guard usesFixedQueue else { return }
+        if fixedQueue.superview == nil {
+            fixedQueue.backgroundColor = .secondarySystemBackground
+            fixedQueue.layer.cornerRadius = 32
+            fixedQueue.layer.cornerCurve = .continuous
+            fixedQueueTitle.font = .systemFont(ofSize: 15, weight: .semibold)
+            fixedQueueDetail.font = .systemFont(ofSize: 12)
+            fixedQueueDetail.textColor = .secondaryLabel
+            for child in [fixedQueueTitle, fixedQueueDetail, fixedQueueRing] {
+                child.isUserInteractionEnabled = false
+                fixedQueue.addSubview(child)
+            }
+            fixedQueue.addTarget(self, action: #selector(openFixedTask), for: .touchUpInside)
+            view.addSubview(fixedQueue)
+        }
+        let bottom: CGFloat
+        if isFloatingEnabled, let capsule = floatingBackground, capsule.bounds.height > 0 {
+            bottom = capsule.convert(capsule.bounds, to: view).minY - 10
+        } else {
+            bottom = tabBar.frame.minY - 10
+        }
+        UIView.performWithoutAnimation {
+            fixedQueue.frame = CGRect(x: 10, y: bottom - 64, width: view.bounds.width - 20, height: 64)
+            fixedQueueRing.frame = CGRect(x: 14, y: 12, width: 40, height: 40)
+            fixedQueueTitle.frame = CGRect(x: 66, y: 11, width: fixedQueue.bounds.width - 82, height: 22)
+            fixedQueueDetail.frame = CGRect(x: 66, y: 35, width: fixedQueue.bounds.width - 82, height: 18)
+            fixedQueue.isHidden = !popupIsPresented || TabBarController.popupIsOpen || fixedTaskClosing
+        }
+        if taskPeek == nil { view.bringSubviewToFront(fixedQueue) }
+    }
+
+    @objc private func openFixedTask() { presentPopupController() }
+
+    private func finishFixedTaskClose() {
+        fixedTaskClosing = false
+        TabBarController.popupIsOpen = false
+        applyFloatingStyle()
+        layoutFixedQueue()
+    }
     private(set) public var popupIsPresented = false
     private var popupLock = DispatchSemaphore(value: 1)
     private var shouldSelectIndex = -1
@@ -56,7 +103,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                                                name: SileoThemeManager.sileoChangedThemeNotification,
                                                object: nil)
         updateSileoColors()
-        (self.tabBar as? TabBar)?.onLayout = { [weak self] in self?.applyFloatingStyle() }
+        (self.tabBar as? TabBar)?.onLayout = { [weak self] in
+            self?.applyFloatingStyle()
+            self?.layoutFixedQueue()
+        }
         // Install the saved item metrics before the first layout so the bar never has to resize on launch
         applyFloatingStyle()
         TabBarController.installPopupBarLayoutHook()
@@ -139,6 +189,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         
+        if usesFixedQueue {
+            popupIsPresented = true
+            layoutFixedQueue()
+            updateQueueSummary()
+            completion?()
+            return
+        }
         popupLock.wait()
         defer {
             popupLock.signal()
@@ -180,6 +237,26 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         
+        if usesFixedQueue {
+            popupIsPresented = false
+            dismissTaskPeek()
+            fixedQueue.isHidden = true
+            if fixedTaskClosing {
+                completion?()
+                return
+            }
+            if downloadsController?.presentingViewController != nil {
+                fixedTaskClosing = true
+                downloadsController?.dismiss(animated: animated) {
+                    self.finishFixedTaskClose()
+                    completion?()
+                }
+            } else {
+                finishFixedTaskClose()
+                completion?()
+            }
+            return
+        }
         popupLock.wait()
         defer {
             popupLock.signal()
@@ -218,6 +295,21 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         
+        if usesFixedQueue {
+            guard let controller = downloadsController, presentedViewController == nil,
+                  !fixedTaskClosing else { completion?(); return }
+            dismissTaskPeek()
+            TabBarController.popupIsOpen = true
+            fixedQueue.isHidden = true
+            controller.modalPresentationStyle = .pageSheet
+            if let sheet = controller.sheetPresentationController {
+                sheet.detents = [.large()]
+                sheet.prefersGrabberVisible = false
+            }
+            controller.presentationController?.delegate = self
+            present(controller, animated: true, completion: completion)
+            return
+        }
         popupLock.wait()
         defer {
             popupLock.signal()
@@ -258,6 +350,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         
+        if usesFixedQueue {
+            guard !fixedTaskClosing else { return }
+            guard downloadsController?.presentingViewController != nil else {
+                finishFixedTaskClose()
+                completion?()
+                return
+            }
+            fixedTaskClosing = true
+            downloadsController?.dismiss(animated: true) {
+                self.finishFixedTaskClose()
+                completion?()
+            }
+            return
+        }
         popupLock.wait()
         defer {
             popupLock.signal()
@@ -308,6 +414,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             item.image = image
             item.progress = 0
         }
+        if usesFixedQueue {
+            fixedQueueTitle.text = downloadsController?.popupItem.title
+            fixedQueueDetail.text = task.detail
+            fixedQueueRing.image = image
+            fixedQueueTitle.textColor = task.failed ? .systemRed : .label
+            fixedQueue.accessibilityLabel = [fixedQueueTitle.text ?? task.title, task.detail].joined(separator: ", ")
+        }
         taskPeek?.update(title: task.title, detail: task.detail,
                          rows: Array(task.rows.prefix(3)), image: image,
                          failed: task.failed, active: progress == nil && !task.failed && !finished
@@ -321,6 +434,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private func installTaskPeekGesture() {
         taskPeekGesture.minimumPressDuration = 0.45
         taskPeekGesture.allowableMovement = 10
+        if usesFixedQueue {
+            layoutFixedQueue()
+            fixedQueue.addGestureRecognizer(taskPeekGesture)
+            return
+        }
         popupBar.addGestureRecognizer(taskPeekGesture)
         // A short tap fails the long press immediately on release. A successful
         // hold consumes that touch, so releasing it cannot also open the window.
@@ -369,7 +487,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private func layoutTaskPeek() {
         guard let peek = taskPeek else { return }
         peek.frame = view.bounds
-        let queueFrame = popupBar.convert(popupBar.bounds, to: view)
+        let queueFrame = usesFixedQueue ? fixedQueue.frame : popupBar.convert(popupBar.bounds, to: view)
         peek.layoutCard(bottom: queueFrame.maxY, safeArea: view.safeAreaInsets)
         view.bringSubviewToFront(peek)
     }
@@ -715,6 +833,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     static var popupBarLiftSize: CGSize = .zero
 
     private func updateFloatingPopupOffset() {
+        guard !usesFixedQueue else { return }
         // The lift is a correction to where the bar sits, not a move to watch:
         // applied inside the framework's own animation it slid the bar up and
         // let the animation carry it back down, which is the bounce.
@@ -1163,11 +1282,11 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             return
         }
         floatingRetryCount = 0
-        container.isHidden = TabBarController.popupIsOpen
+        container.isHidden = !usesFixedQueue && TabBarController.popupIsOpen
         let itemMidY = rowMids.reduce(0, +) / CGFloat(rowMids.count)
         let frame = CGRect(x: floatingInset, y: itemMidY - barHeight / 2, width: self.tabBar.bounds.width - floatingInset * 2, height: barHeight)
         container.frame = frame
-        if popupIsPresented, self.popupBar.tabBarHeight != floatingPopupTabBarHeight {
+        if !usesFixedQueue, popupIsPresented, self.popupBar.tabBarHeight != floatingPopupTabBarHeight {
             self.popupBar.tabBarHeight = floatingPopupTabBarHeight
         }
         updateFloatingPopupOffset()
@@ -1332,7 +1451,13 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// top edge at the top of the screen, a closed one sits at the bottom. The
     /// queue bar and the tab bar step aside while it is open, and come back
     /// when it closes.
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard presentationController.presentedViewController === downloadsController else { return }
+        finishFixedTaskClose()
+    }
+
     private func updatePopupOpenState() {
+        guard !usesFixedQueue else { return }
         // Crossing half the screen is not a completed dismissal. Hiding the
         // gesture's view here cancels the interactive pan, leaving it stranded.
         let panState = popupContentView.popupInteractionGestureRecognizer.state
@@ -1366,7 +1491,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         self.tabBar.itemPositioning = .centered
         updatePopupOpenState()
         applyFloatingStyle()
-        applyFloatingPopupShape()
+        if !usesFixedQueue { applyFloatingPopupShape() }
+        layoutFixedQueue()
         layoutTaskPeek()
         if UIDevice.current.userInterfaceIdiom == .pad {
             self.updatePopup(animated: false)
