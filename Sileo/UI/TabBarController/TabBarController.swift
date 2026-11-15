@@ -265,6 +265,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         
         // The bar stays in place and only transparent while the window closes;
         // it is what the window lands on.
+        popupIsClosing = true
+        cancelPopupBarReveal()
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBar.alpha = 0
@@ -323,9 +325,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // A short tap fails the long press immediately on release. A successful
         // hold consumes that touch, so releasing it cannot also open the window.
         popupBar.popupOpenGestureRecognizer.require(toFail: taskPeekGesture)
-        // Drag wins as soon as the finger moves; a stationary hold wins instead.
-        // Do not replace LNPopupController's own recognizer delegates.
-        popupContentView.popupInteractionGestureRecognizer.require(toFail: taskPeekGesture)
+        // The framework moves this pan recognizer between the bar and content.
+        // Never make full-window dismissal wait on a recognizer on the hidden bar.
+        // Its own delegate arbitrates dragging against the bar-only long press.
     }
 
     @objc private func taskPeekPressed(_ gesture: UILongPressGestureRecognizer) {
@@ -791,6 +793,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
     private var floatingRetryCount = 0
     private var popupBarRevealWork: DispatchWorkItem?
+    private var popupIsClosing = false
 
     /// Gives the queue bar back once the window has landed. It stays transparent
     /// until then, and the pass that puts its height, lift and capsule in place
@@ -798,6 +801,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// earlier was laid out again by the framework while it could be seen, which
     /// is the bounce that used to happen as the window closed.
     private func revealPopupBarAfterClose() {
+        popupIsClosing = false
         popupBarRevealWork?.cancel()
         popupBar.isHidden = false
         popupBar.alpha = 0
@@ -1267,6 +1271,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // The capsule belongs to the collapsed bar; the open window must not
         // keep its inset frame or its rounding. The bar itself is hidden for
         // the duration, or it shows above the window as it is pushed up.
+        popupIsClosing = false
         dismissTaskPeek()
         cancelPopupBarReveal()
         TabBarController.popupIsOpen = true
@@ -1291,6 +1296,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         // The bar has to be there, in its own frame, for the window to land on
         // it — hidden, the window stops halfway and leaves its top behind. It
         // is kept transparent meanwhile so none of that landing is seen.
+        popupIsClosing = true
+        cancelPopupBarReveal()
         TabBarController.popupIsOpen = false
         popupBar.isHidden = false
         popupBar.alpha = 0
@@ -1314,6 +1321,10 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     /// queue bar and the tab bar step aside while it is open, and come back
     /// when it closes.
     private func updatePopupOpenState() {
+        // Crossing half the screen is not a completed dismissal. Hiding the
+        // gesture's view here cancels the interactive pan, leaving it stranded.
+        let panState = popupContentView.popupInteractionGestureRecognizer.state
+        guard !popupIsClosing, panState != .began, panState != .changed else { return }
         // The window's top edge, not its height: while it closes the content
         // view keeps its height for a moment, which made the bar believe the
         // window was still open and stripped its capsule.
