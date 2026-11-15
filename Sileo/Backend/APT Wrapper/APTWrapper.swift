@@ -273,6 +273,12 @@ class APTWrapper {
                 // wait for all tasks in the current apt queue to be completed
             }
             
+            // Explicit reinstalls can replace dpkg's hold selection with install.
+            // Read the persisted state, not the queued Package's cached wantInfo.
+            let removedIDs = Set(removals.map { $0.package.package })
+            let installIDs = Set((installs + installDeps).map { $0.package.package }).subtracting(removedIDs)
+            let heldInstallIDs = installIDs.filter { DpkgWrapper.isIgnoringUpdates(package: $0) }
+
             let oldApps = APTWrapper.dictionaryOfScannedApps()
             let oldTweaks = APTWrapper.dictionaryOfScannedTweaks()
 
@@ -536,6 +542,16 @@ class APTWrapper {
             var waited: pid_t
             repeat { waited = waitpid(pid, &status, 0) } while waited == -1 && errno == EINTR
             if waited == -1 { status = -1 }
+            // A failed transaction may still have unpacked packages and cleared hold.
+            // Restore before completion reloads installed metadata, and before uicache.
+            for identifier in heldInstallIDs.sorted() {
+                do {
+                    try DpkgWrapper.ignoreUpdates(true, package: identifier)
+                } catch {
+                    outputCallback(String(format: String(localizationKey: "Package_Hold_Restore_Error"), identifier, String(describing: error)) + "\n", Int(STDERR_FILENO))
+                    if status == 0 { status = -1 }
+                }
+            }
             // Explicitly cover installs, reinstalls, upgrades and removals even
             // when the app scan does not detect a change.
             var refreshSileo = status == 0 && changesSileo

@@ -162,6 +162,7 @@
 "Package_Developer_Find_Action" = "More by this Developer";
 "Package_Support_Action" = "Support";
 "Package_Hold_Enable_Action" = "Block Updates";
+"Package_Hold_Restore_Error" = "Failed to restore blocked updates for %@: %@";
 "Package_Hold_Disable_Action" = "Unblock Updates";
 "Package_Wishlist_Add" = "Add to Wishlist";
 "Package_Wishlist_Remove" = "Remove from Wishlist";
