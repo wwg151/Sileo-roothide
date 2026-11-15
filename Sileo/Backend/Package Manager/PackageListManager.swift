@@ -375,9 +375,16 @@ final class PackageListManager {
         } else if let prepend = packagePrepend {
             packageList = prepend
         } else {
-            // Expanded concepts and typo matches are not monotonic prefixes:
-            // always rank the full context, never a shorter query's candidates.
             packageList = repoContext?.packageArray ?? allPackagesArray
+            if var prefix = search?.lowercased(), let lookupTable = lookupTable {
+                while !prefix.isEmpty {
+                    if let cached = lookupTable[prefix] {
+                        packageList = cached
+                        break
+                    }
+                    prefix.removeLast()
+                }
+            }
         }
         
         if identifier=="--contextInstalled" {
@@ -399,10 +406,16 @@ final class PackageListManager {
             }
         }
         
-        if let query = search, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // Stable base ordering retains architecture/version preference for equal scores.
-            if sort { packageList = sortPackages(packages: packageList, search: query) }
-            return PackageSearchIndex.shared.ranked(packageList, query: query)
+        if let query = search, !query.isEmpty {
+            packageList.removeAll { package in
+                ![package.package, package.name, package.description].contains { field in
+                    guard let field = field, !field.isEmpty else { return false }
+                    return field.localizedStandardContains(query)
+                }
+            }
+            if query.lengthOfBytes(using: .utf8) < 2 && packageList.count > 1000 {
+                return packageList
+            }
         }
         
 //        for p in packageList {

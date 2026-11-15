@@ -190,7 +190,6 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         
         NotificationCenter.default.addObserver(self, selector: #selector(self.reloadData), name: PackageListManager.installChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.reloadData), name: PackageListManager.reloadNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(self.reloadData), name: PackageSearchIndex.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.reloadStates(_:)), name: PackageListManager.stateChange, object: nil)
         if self.showUpdates {
             NotificationCenter.default.addObserver(self, selector: #selector(self.reloadDataWithUpdates), name: PackageListManager.prefsNotification, object: nil)
@@ -1129,7 +1128,6 @@ extension PackageListViewController: UICollectionViewDataSource {
             fatalError("Shouldn't have gotten here!")
         }
         
-        cell.applySearch(searchController.searchBar.text ?? "")
         return cell
     }
     
