@@ -326,7 +326,7 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         }
         cardView.layer.maskedCorners = corners
         cardView.layer.cornerRadius = corners.isEmpty ? 0 : 16
-        iconView.frame = frame(20, compact ? (height - 44) / 2 : 14, 44, 44)
+        iconView.frame = frame(20, (height - 44) / 2, 44, 44)
         iconView.backgroundColor = .tertiarySystemFill
         let buttonVisible = !retryButton.isHidden || !findDepButton.isHidden
         let end: CGFloat = width - 20 - (buttonVisible ? 44 : 0)
@@ -374,6 +374,17 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         percentageLabel.textAlignment = .center
         percentageLabel.frame = CGRect(x: activityTrack.frame.minX + labelX,
                                        y: activityTrack.frame.minY - 18, width: labelWidth, height: 16)
+        // Center the visible text/progress block rather than leaving the
+        // hidden progress bar's space below waiting or completed tasks.
+        let contentViews: [UIView] = [nameLabel, versionLabel, statusLabel, activityTrack, percentageLabel]
+        let visibleContent = contentViews.filter { !$0.isHidden && $0.bounds.height > 0 }
+        if let top = visibleContent.map({ $0.frame.minY }).min(),
+           let bottom = visibleContent.map({ $0.frame.maxY }).max() {
+            let offset = (height - (bottom - top)) / 2 - top
+            for view in visibleContent {
+                view.frame = view.frame.offsetBy(dx: 0, dy: offset)
+            }
+        }
     }
 
     @objc public func retryDownload() {
