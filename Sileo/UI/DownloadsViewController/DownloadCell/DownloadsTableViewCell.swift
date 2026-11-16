@@ -366,7 +366,12 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 statusLabel.textAlignment = rtl ? .left : .right
             }
         }
-        activityTrack.frame = frame(textX, height - (compact ? 6 : 12), textWidth, 3)
+        let textViews: [UIView] = [nameLabel, versionLabel, statusLabel]
+        let visibleText = textViews.filter { !$0.isHidden && $0.bounds.height > 0 }
+        let textBottom = visibleText.map { $0.frame.maxY }.max() ?? 0
+        // Keep the percentage and bar attached to the text block, independent
+        // of row height; center the complete block below in either state.
+        activityTrack.frame = frame(textX, textBottom + 20, textWidth, 3)
         let fillWidth = activityTrack.bounds.width * activityProgress
         activityFill.frame = CGRect(x: 0, y: 0, width: fillWidth, height: 3)
         let labelWidth = min(textWidth, 38)
@@ -374,10 +379,11 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         percentageLabel.textAlignment = .center
         percentageLabel.frame = CGRect(x: activityTrack.frame.minX + labelX,
                                        y: activityTrack.frame.minY - 18, width: labelWidth, height: 16)
-        // Center the visible text/progress block rather than leaving the
-        // hidden progress bar's space below waiting or completed tasks.
-        let contentViews: [UIView] = [nameLabel, versionLabel, statusLabel, activityTrack, percentageLabel]
-        let visibleContent = contentViews.filter { !$0.isHidden && $0.bounds.height > 0 }
+        // Without progress, center only the text. With progress, center the
+        // text, percentage and track together as one complete content block.
+        let showsProgress = !activityTrack.isHidden
+        let progressViews: [UIView] = showsProgress ? [activityTrack, percentageLabel] : []
+        let visibleContent = visibleText + progressViews.filter { !$0.isHidden && $0.bounds.height > 0 }
         if let top = visibleContent.map({ $0.frame.minY }).min(),
            let bottom = visibleContent.map({ $0.frame.maxY }).max() {
             let offset = (height - (bottom - top)) / 2 - top
