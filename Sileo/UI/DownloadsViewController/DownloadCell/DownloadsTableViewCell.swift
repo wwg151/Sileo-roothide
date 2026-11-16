@@ -12,6 +12,7 @@ import Evander
 class DownloadsTableViewCell: BaseSubtitleTableViewCell {
     /// The controller uses 88pt for normal rows and recommendedHeight for errors.
     static let preferredRowHeight: CGFloat = 88
+    static let cardHorizontalInset: CGFloat = 20
 
     private let cardView = UIView()
     private let nameLabel = UILabel()
@@ -97,7 +98,8 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         cardView.isUserInteractionEnabled = false
         cardView.layer.cornerRadius = 16
         cardView.layer.cornerCurve = .continuous
-        contentView.insertSubview(cardView, at: 0)
+        // The group background spans the row independently of editing controls.
+        insertSubview(cardView, at: 0)
         iconView.layer.cornerCurve = .continuous
         iconView.clipsToBounds = true
 
@@ -302,9 +304,10 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         func frame(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
             CGRect(x: rtl ? width - x - w : x, y: y, width: max(0, w), height: max(0, h))
         }
-        // Adjacent backgrounds meet exactly; only the group's outer corners
-        // are rounded. Keep horizontal insets inside UIKit's editing bounds.
-        cardView.frame = CGRect(x: 8, y: 0, width: max(0, width - 16), height: max(0, height))
+        // Use the same outer edges as the overview, even while editing.
+        let cardInset = Self.cardHorizontalInset
+        cardView.frame = CGRect(x: bounds.minX + cardInset, y: 0,
+                                width: max(0, bounds.width - 2 * cardInset), height: max(0, height))
         var corners: CACornerMask = []
         if isFirstInGroup {
             corners.formUnion([.layerMinXMinYCorner, .layerMaxXMinYCorner])

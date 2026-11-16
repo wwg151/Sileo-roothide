@@ -313,7 +313,8 @@ class DownloadsTableViewController: SileoViewController {
         let titleWidth = max(0, width - 48)
         let titleHeight = max(38, ceil(taskTitle.sizeThatFits(CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height))
         taskTitle.frame = CGRect(x: 24, y: 8, width: titleWidth, height: titleHeight)
-        let cardWidth = max(0, width - 40)
+        let cardInset = DownloadsTableViewCell.cardHorizontalInset
+        let cardWidth = max(0, width - 2 * cardInset)
         let inner = max(0, cardWidth - 40)
         let stageHeight = max(20, ceil(taskStage.sizeThatFits(CGSize(width: max(0, inner - 28), height: .greatestFiniteMagnitude)).height))
         let headlineHeight = max(34, ceil(taskHeadline.sizeThatFits(CGSize(width: inner, height: .greatestFiniteMagnitude)).height))
@@ -332,7 +333,7 @@ class DownloadsTableViewController: SileoViewController {
             stageTracks[index].frame = CGRect(x: x, y: taskProgress.frame.minY, width: segmentWidth, height: 4)
             stageLabels[index].frame = CGRect(x: x, y: taskProgress.frame.maxY + 9, width: segmentWidth, height: 20)
         }
-        taskCard.frame = CGRect(x: 20, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 43)
+        taskCard.frame = CGRect(x: cardInset, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 43)
         let headerHeight = taskCard.frame.maxY + 14
         if taskHeader.frame.width != width || taskHeader.frame.height != headerHeight {
             taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: headerHeight)
@@ -352,9 +353,10 @@ class DownloadsTableViewController: SileoViewController {
         }
         let buttons = candidates.compactMap { $0 }.filter { !$0.isHidden }
         let gap: CGFloat = 8
-        let buttonWidth = max(0, (w - 32 - gap * CGFloat(max(0, buttons.count - 1))) / CGFloat(max(1, buttons.count)))
+        let buttonWidth = max(0, (w - 2 * cardInset - gap * CGFloat(max(0, buttons.count - 1))) / CGFloat(max(1, buttons.count)))
+        let buttonY = max(0, (footer.bounds.height - 50) / 2)
         for (index, button) in buttons.enumerated() {
-            button.frame = CGRect(x: 16 + CGFloat(index) * (buttonWidth + gap), y: 14, width: buttonWidth, height: 50)
+            button.frame = CGRect(x: cardInset + CGFloat(index) * (buttonWidth + gap), y: buttonY, width: buttonWidth, height: 50)
             button.contentHorizontalAlignment = .center
             button.layer.cornerRadius = 25
             button.titleLabel?.adjustsFontSizeToFitWidth = true
@@ -402,11 +404,11 @@ class DownloadsTableViewController: SileoViewController {
         collapseButton.backgroundColor = accent
         collapseButton.setTitleColor(.white, for: .normal)
         let downloadStage = isDownloading && hasDownloadTasks && !isInstalling && !isFinishedInstalling
-        taskPrimaryButton.isHidden = !downloadStage
+        taskPrimaryButton.isHidden = !downloadStage || failed.isEmpty
         taskPrimaryButton.isEnabled = downloadStage && !failed.isEmpty
-        taskPrimaryButton.setTitle(String(localizationKey: failed.isEmpty ? "Downloading_Package_Status" : "Task_Retry_Failed"), for: .normal)
-        taskPrimaryButton.backgroundColor = failed.isEmpty ? .tertiarySystemFill : color
-        taskPrimaryButton.setTitleColor(failed.isEmpty ? .secondaryLabel : .white, for: .normal)
+        taskPrimaryButton.setTitle(String(localizationKey: "Task_Retry_Failed"), for: .normal)
+        taskPrimaryButton.backgroundColor = color
+        taskPrimaryButton.setTitleColor(.white, for: .normal)
         showDetailsButton?.setTitle(String(localizationKey: "Task_View_Log"), for: .normal)
         refreshDownloadLog()
         view.setNeedsLayout()
