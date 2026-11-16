@@ -1405,13 +1405,29 @@ class DownloadsTableViewController: SileoViewController {
                 
                 TabBarController.singleton?.updatePopup()
                 
-                // Evaluate once at completion; reopening a finished task never
-                // replays the automatic action.
-                if restoreBatch != nil || UserDefaults.standard.bool(forKey: "AlwaysShowLog") || status != 0 {
+                // Decide only when the transaction completes. Opening a retained
+                // queue later must never replay an automatic restart.
+                if status != 0 || self.taskCancelled {
                     self.showDetails(nil)
-                } else if UserDefaults.standard.bool(forKey: "AutoComplete"),
-                          TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
-                    self.completeButtonTapped(nil)
+                } else {
+                    if UserDefaults.standard.bool(forKey: "AlwaysShowLog") {
+                        self.showDetails(nil)
+                    }
+                    switch self.returnButtonAction {
+                    case .back, .uicache:
+                        // Keep the existing icon-cache / Sileo refresh handling,
+                        // then clear the queue regardless of panel visibility.
+                        self.completeButtonTapped(nil)
+                    case .reload, .restart:
+                        if TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
+                            self.completeButtonTapped(nil)
+                        }
+                    case .reboot, .usreboot:
+                        // Userspace restart always requires an explicit tap.
+                        break
+                    case .reopen:
+                        self.completeButtonTapped(nil)
+                    }
                 }
                 NotificationCenter.default.post(name: NSNotification.Name("Sileo.CompleteInstall"), object: nil)
             }

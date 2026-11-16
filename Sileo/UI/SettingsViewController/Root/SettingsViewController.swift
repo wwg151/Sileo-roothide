@@ -99,7 +99,7 @@ extension SettingsViewController { // UITableViewDataSource
         case 1: // Themes
             return 5
         case 2:
-            return 15
+            return 14
         case 3: // About section
             return 5
         default:
@@ -195,42 +195,39 @@ extension SettingsViewController { // UITableViewDataSource
                 cell.fallback = true
                 cell.defaultKey = "AutoRefreshSources"
             case 5:
-                cell.amyPogLabel.text = String(localizationKey: "Auto_Complete_Queue")
-                cell.defaultKey = "AutoComplete"
-            case 6:
                 cell.amyPogLabel.text = String(localizationKey: "Show_Search_History")
                 cell.defaultKey = "ShowSearchHistory"
                 cell.fallback = true
-            case 7:
+            case 6:
                 cell.amyPogLabel.text = String(localizationKey: "Auto_Show_Queue")
                 cell.fallback = true
                 cell.defaultKey = "UpgradeAllAutoQueue"
-            case 8:
+            case 7:
                 cell.amyPogLabel.text = String(localizationKey: "Always_Show_Install_Log")
                 cell.defaultKey = "AlwaysShowLog"
-            case 9:
+            case 8:
                 cell.amyPogLabel.text = String(localizationKey: "Auto_Confirm_Upgrade_All_Shortcut")
                 cell.defaultKey = "AutoConfirmUpgradeAllShortcut"
-            case 10:
+            case 9:
                 cell.amyPogLabel.text = String(localizationKey: "Developer_Mode")
                 cell.fallback = false
                 cell.defaultKey = "DeveloperMode"
                 cell.viewControllerForPresentation = self
-            case 11:
+            case 10:
                 cell.amyPogLabel.text = String(localizationKey: "Compatibility_Mode_Update")
                 cell.fallback = true
                 cell.defaultKey = "CompatibilityMode"
-            case 12:
+            case 11:
                 cell.amyPogLabel.text = String(localizationKey: "Floating_Tab_Bar")
                 cell.fallback = false
                 cell.defaultKey = "FloatingTabBar"
-            case 13:
+            case 12:
                 // Rows between lists follow the same switch: the app's own card
                 // when they are hidden, the system's menu when they are shown.
                 cell.amyPogLabel.text = String(localizationKey: "Hide_Separators")
                 cell.fallback = true
                 cell.defaultKey = "HideSeparators"
-            case 14:
+            case 13:
                 cell.amyPogLabel.text = String(localizationKey: "Auto_Save_Packages")
                 cell.fallback = false
                 cell.defaultKey = "AutoSavePackages"
