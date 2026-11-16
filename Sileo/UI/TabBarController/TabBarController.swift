@@ -23,24 +23,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private let fixedQueueDetail = UILabel()
     private let fixedQueueNodes = UIStackView()
     private var fixedNodeViews: [UIStackView] = []
+    private var fixedQueueNodeLines: [UIView] = []
+    private var fixedQueueNodeSignature = ""
     private var fixedTaskClosing = false
-
-    /// Automatic completion is allowed only while the task center is visible.
-    /// Closing transitions already count as collapsed, including interactive drags.
-    var allowsAutomaticTaskCompletion: Bool {
-        guard UIApplication.shared.applicationState == .active,
-              popupIsPresented, TabBarController.popupIsOpen,
-              !fixedTaskClosing, !popupIsClosing,
-              let controller = downloadsController,
-              controller.viewIfLoaded?.window != nil,
-              !controller.isBeingDismissed,
-              controller.transitionCoordinator == nil else { return false }
-        if usesFixedQueue {
-            return controller.presentingViewController != nil
-        }
-        let gestureState = popupContentView.popupInteractionGestureRecognizer.state
-        return popupPresentationState == .open && gestureState != .began && gestureState != .changed
-    }
 
     private func layoutFixedQueue() {
         guard usesFixedQueue else { return }
@@ -466,7 +451,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     }
 
     private func updateFixedQueueNodes(_ items: [DownloadsTableViewController.TaskPresentation.Node]) {
-        fixedNodeViews.forEach { $0.removeFromSuperview() }
+        let signature = items.map { "\($0.title):\($0.state)" }.joined(separator: "|")
+            + ":\(UIAccessibility.isReduceMotionEnabled):\(traitCollection.userInterfaceStyle.rawValue)"
+            + ":\(fixedQueueNodes.effectiveUserInterfaceLayoutDirection.rawValue):\(String(describing: view.tintColor))"
+        guard signature != fixedQueueNodeSignature else { return }
+        fixedQueueNodeSignature = signature
+        fixedQueueNodes.arrangedSubviews.forEach { fixedQueueNodes.removeArrangedSubview($0); $0.removeFromSuperview() }
+        fixedQueueNodeLines.forEach { $0.removeFromSuperview() }
+        fixedQueueNodeLines = items.dropLast().map { _ in
+            let line = UIView()
+            line.isUserInteractionEnabled = false
+            line.translatesAutoresizingMaskIntoConstraints = false
+            fixedQueueNodes.insertSubview(line, at: 0)
+            return line
+        }
         fixedNodeViews = items.map { item in
             let column = UIStackView()
             column.isUserInteractionEnabled = false
@@ -493,10 +491,41 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             column.addArrangedSubview(marker)
             column.addArrangedSubview(label)
             column.accessibilityElements = [marker, label]
+            if item.state == "running" && !UIAccessibility.isReduceMotionEnabled {
+                let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+                spin.fromValue = 0
+                spin.toValue = CGFloat.pi * 2
+                spin.duration = 1.2
+                spin.repeatCount = .infinity
+                marker.layer.add(spin, forKey: "task.rotation")
+            }
             return column
         }
-        fixedQueueNodes.arrangedSubviews.forEach { fixedQueueNodes.removeArrangedSubview($0); $0.removeFromSuperview() }
         fixedNodeViews.forEach { fixedQueueNodes.addArrangedSubview($0) }
+        let rtl = fixedQueueNodes.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        for index in fixedQueueNodeLines.indices {
+            let line = fixedQueueNodeLines[index]
+            let first = fixedNodeViews[index].arrangedSubviews[0]
+            let second = fixedNodeViews[index + 1].arrangedSubviews[0]
+            NSLayoutConstraint.activate([
+                line.heightAnchor.constraint(equalToConstant: 2),
+                line.centerYAnchor.constraint(equalTo: first.centerYAnchor),
+                line.leftAnchor.constraint(equalTo: (rtl ? second : first).centerXAnchor, constant: 9),
+                line.rightAnchor.constraint(equalTo: (rtl ? first : second).centerXAnchor, constant: -9)
+            ])
+            let state = items[index].state
+            line.backgroundColor = state == "complete" || state == "running"
+                ? (view.tintColor ?? .systemTeal) : .tertiarySystemFill
+            if state == "running" && !UIAccessibility.isReduceMotionEnabled {
+                let pulse = CABasicAnimation(keyPath: "opacity")
+                pulse.fromValue = 0.25
+                pulse.toValue = 1
+                pulse.duration = 0.8
+                pulse.autoreverses = true
+                pulse.repeatCount = .infinity
+                line.layer.add(pulse, forKey: "task.line.pulse")
+            }
+        }
     }
 
     /// Queue, peek and full window share one main-thread snapshot. No delayed

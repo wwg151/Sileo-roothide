@@ -292,7 +292,9 @@ class DownloadsTableViewController: SileoViewController {
         if nodePlan.isEmpty || (!isDownloading && !isInstalling && !isFinishedInstalling && !taskCancelled) {
             nodeEntries = (installations + upgrades + installdeps).map { $0.package }
             plannedNetwork = Set(nodeEntries.filter { $0.local_deb == nil }.map { $0.package })
-            plannedConversion = Set(nodeEntries.filter { DownloadManager.needsConversion($0) }.map { $0.package })
+            plannedConversion = Set(nodeEntries.filter {
+                $0.architecture == DPKGArchitecture.Architecture.rootless.rawValue && DownloadManager.needsConversion($0)
+            }.map { $0.package })
             plannedExecutionLabel = taskExecutionLabel
             nodePlan = [.prepare]
             // Restore batches prepare and install each package in sequence.
@@ -421,12 +423,11 @@ class DownloadsTableViewController: SileoViewController {
         taskCard.layer.cornerRadius = 25
         taskCard.clipsToBounds = true
         taskCard.layer.borderWidth = 0.5
-        [taskStage, taskHeadline, taskDetail, taskProgress, taskPercentage, stageActivity].forEach { taskCard.contentView.addSubview($0) }
+        [taskStage, taskHeadline, taskDetail, taskProgress, taskPercentage, stageActivity, taskNodes].forEach { taskCard.contentView.addSubview($0) }
         taskTitle.font = .systemFont(ofSize: 29, weight: .bold)
         taskTitle.numberOfLines = 0
         taskTitle.textColor = .label
         taskTitle.text = String(localizationKey: "Deck_Title")
-        taskHeader.addSubview(taskNodes)
         collapseButton.setTitle(String(localizationKey: "Deck_Collapse"), for: .normal)
         collapseButton.addTarget(self, action: #selector(collapseTask), for: .touchUpInside)
         collapseButton.layer.cornerRadius = 25
@@ -511,8 +512,11 @@ class DownloadsTableViewController: SileoViewController {
         taskPercentage.frame = CGRect(x: max(20, cardWidth - 92), y: taskStage.frame.maxY + 8, width: percentageWidth, height: 36)
         taskHeadline.frame.size.width = max(0, inner - 80)
         taskProgress.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 14, width: inner, height: 4)
-        taskNodes.frame = CGRect(x: cardInset, y: taskTitle.frame.maxY + 18, width: cardWidth, height: taskNodes.preferredHeight)
-        taskCard.frame = CGRect(x: cardInset, y: taskNodes.frame.maxY + 14, width: cardWidth, height: taskProgress.frame.maxY + 20)
+        let taskNodesTop = taskProgress.frame.maxY + 14
+        let taskCardY = taskTitle.frame.maxY + 18
+        let taskNodesHeight = taskNodes.preferredHeight
+        taskCard.frame = CGRect(x: cardInset, y: taskCardY, width: cardWidth, height: taskNodesTop + taskNodesHeight + 14)
+        taskNodes.frame = CGRect(x: 18, y: taskNodesTop, width: cardWidth - 36, height: taskNodesHeight)
         let headerHeight = taskCard.frame.maxY + 14
         if taskHeader.frame.width != width || taskHeader.frame.height != headerHeight {
             taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: headerHeight)
@@ -819,7 +823,7 @@ class DownloadsTableViewController: SileoViewController {
                 self.footerView?.alpha = 0
             }
             transferToAction()
-            TabBarController.singleton?.presentPopupController()
+            TabBarController.singleton?.updatePopup()
         }
     }
     
@@ -1400,14 +1404,10 @@ class DownloadsTableViewController: SileoViewController {
                 
                 TabBarController.singleton?.updatePopup()
                 
-                // Decide only at completion: reopening a completed queue must
-                // never replay this action. Collapsed tasks keep their result
-                // and completion button until the user explicitly taps it.
+                // Keep the completed queue until the user explicitly chooses
+                // its completion action, including respring and relaunch.
                 if restoreBatch != nil || UserDefaults.standard.bool(forKey: "AlwaysShowLog") || status != 0 {
                     self.showDetails(nil)
-                } else if UserDefaults.standard.bool(forKey: "AutoComplete"),
-                          TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
-                    self.completeButtonTapped(nil)
                 }
                 NotificationCenter.default.post(name: NSNotification.Name("Sileo.CompleteInstall"), object: nil)
             }
@@ -1530,11 +1530,17 @@ private final class TaskNodeStrip: UIView {
     func update(items: [Item], accent: UIColor) {
         self.items = items
         self.accent = accent
+        if lines.count != max(0, items.count - 1) {
+            lines.forEach { $0.removeFromSuperview() }
+            lines = (0..<max(0, items.count - 1)).map { _ in
+                let line = UIView()
+                line.isUserInteractionEnabled = false
+                addSubview(line)
+                return line
+            }
+        }
         if nodes.count != items.count {
             nodes.forEach { $0.removeFromSuperview() }
-            lines.forEach { $0.removeFromSuperview() }
-            lines = (0..<max(0, items.count - 1)).map { _ in UIView() }
-            lines.forEach { addSubview($0) }
             nodes = items.map { _ in Node() }
             nodes.forEach { addSubview($0) }
             accessibilityElements = nodes
@@ -1562,12 +1568,29 @@ private final class TaskNodeStrip: UIView {
         let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
         for index in nodes.indices {
             let position = rtl ? nodes.count - 1 - index : index
-            nodes[index].frame = CGRect(x: CGFloat(position) * pitch, y: 0, width: pitch, height: bounds.height)
+            let item = items[index]
             if index < lines.count {
                 let nextPosition = rtl ? position - 1 : position + 1
-                let left = CGFloat(min(position, nextPosition)) * pitch + pitch / 2 + 16
-                lines[index].frame = CGRect(x: left, y: 13, width: max(0, pitch - 32), height: 2)
+                let lineX = CGFloat(min(position, nextPosition)) * pitch + pitch / 2 + 12
+                lines[index].frame = CGRect(x: lineX, y: 13, width: max(0, pitch - 24), height: 2)
+                let lineColor: UIColor = item.state == .complete || item.state == .running ? accent : .tertiarySystemFill
+                lines[index].backgroundColor = lineColor
+                if item.state == .running && window != nil && !UIAccessibility.isReduceMotionEnabled {
+                    if lines[index].layer.animation(forKey: "task.line.pulse") == nil {
+                        let animation = CABasicAnimation(keyPath: "opacity")
+                        animation.fromValue = 0.25
+                        animation.toValue = 0.9
+                        animation.duration = 0.8
+                        animation.autoreverses = true
+                        animation.repeatCount = .infinity
+                        lines[index].layer.add(animation, forKey: "task.line.pulse")
+                    }
+                } else {
+                    lines[index].layer.removeAnimation(forKey: "task.line.pulse")
+                }
             }
+            nodes[index].frame = CGRect(x: CGFloat(position) * pitch, y: 0, width: pitch, height: bounds.height)
+            nodes[index].update(item, accent: accent, animate: window != nil && !UIAccessibility.isReduceMotionEnabled)
         }
     }
     private final class Node: UIView {
