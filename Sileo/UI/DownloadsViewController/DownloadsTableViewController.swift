@@ -125,17 +125,35 @@ class DownloadsTableViewController: SileoViewController {
                 return (entry.package.name ?? entry.package.package) + " · " + status
             }
         }
+        if taskCancelled || (nodeSession != nil && manager.downloadsCancelled && !(manager.restoreBatch != nil && isInstalling && !isFinishedInstalling)) {
+            return TaskPresentation(title: String(localizationKey: "Task_Node_Cancelled"),
+                detail: currentTaskStatus ?? taskOperationSummary, progress: nil,
+                stage: isInstalling || isFinishedInstalling ? 1 : 0, failed: false, rows: rows)
+        }
         // Completion always wins over every running flag and cached message.
         if isFinishedInstalling {
             let failed = installExitStatus != 0
             return TaskPresentation(title: String(localizationKey: failed ? "Task_Install_Issue" : "Task_Completed"),
-                detail: String(localizationKey: failed ? "Task_Check_Log" : "Task_Finish_Hint"),
+                detail: failed ? String(localizationKey: "Task_Check_Log") : taskCompletionHint,
                 progress: failed ? (hasAPTProgress ? min(0.99, aptProgress) : nil) : 1,
                 stage: failed ? 1 : 2, failed: failed, rows: rows)
         }
+        if checkingSavedPackages && !isFinishedInstalling {
+            return TaskPresentation(title: String(localizationKey: "Auto_Save_Packages_Checking"),
+                detail: currentTaskStatus ?? String(localizationKey: "Task_Keep_Open"),
+                progress: nil, stage: 1, failed: false, rows: rows)
+        }
+        if restoreCancellationRequested && !isFinishedInstalling {
+            return TaskPresentation(title: String(localizationKey: "Restore_Isolation_Cancelling"),
+                detail: currentTaskStatus ?? taskOperationSummary,
+                progress: nil, stage: 1, failed: false, rows: rows)
+        }
         if isInstalling {
             return TaskPresentation(title: currentOperationTitle ?? String(localizationKey: "Deck_Executing"),
-                detail: currentTaskStatus ?? String(localizationKey: "Task_Keep_Open"),
+                detail: manager.restoreBatch != nil && !restoreCancellationRequested
+                    ? [String(localizationKey: "Task_Node_Restore_Sequence"), currentTaskStatus]
+                        .compactMap { $0 }.joined(separator: " · ")
+                    : currentTaskStatus ?? String(localizationKey: "Task_Keep_Open"),
                 progress: hasAPTProgress ? min(0.99, aptProgress) : nil, stage: 1, failed: false, rows: rows)
         }
         if blocked {
@@ -144,7 +162,8 @@ class DownloadsTableViewController: SileoViewController {
                 progress: nil, stage: 0, failed: true, rows: rows)
         }
         if isDownloading && !entries.isEmpty {
-            let converting = downloads.contains { $0.message == String(localizationKey: "Compat_Converting") }
+            let networkActive = downloads.contains { $0.phase == .downloading }
+            let converting = !networkActive && downloads.contains { $0.phase == .converting }
             let ready = !entries.isEmpty && downloads.count == entries.count
                 && downloads.allSatisfy { $0.success && $0.progress == 1 }
             let network = entries.filter { $0.package.local_deb == nil }
@@ -165,8 +184,11 @@ class DownloadsTableViewController: SileoViewController {
                     ByteCountFormatter.string(fromByteCount: Int64(min(written, Double(Int64.max / 2))), countStyle: .file),
                     ByteCountFormatter.string(fromByteCount: Int64(min(expected, Double(Int64.max / 2))), countStyle: .file))
                 : String(localizationKey: "Download_Starting")
+            let convertingCount = downloads.filter { $0.phase == .converting }.count
+            let conversionDetail = String(format: String(localizationKey: "Task_Node_Converting_Count"), convertingCount)
+            let summaryDetail = convertingCount > 0 ? (networkActive ? detail + " · " + conversionDetail : conversionDetail) : detail
             return TaskPresentation(title: String(localizationKey: ready ? "Ready_Status" : converting ? "Compat_Converting" : "Downloading_Package_Status"),
-                detail: detail, progress: converting ? nil : ready ? 1 : fraction, stage: 0, failed: false, rows: rows)
+                detail: summaryDetail, progress: converting ? nil : ready ? 1 : fraction, stage: 0, failed: false, rows: rows)
         }
         return TaskPresentation(title: String(localizationKey: "Task_Ready"),
             detail: taskOperationSummary,
@@ -189,15 +211,158 @@ class DownloadsTableViewController: SileoViewController {
         }.joined(separator: " · ")
     }
 
+    private var taskCompletionHint: String {
+        let key: String
+        switch returnButtonAction {
+        case .back: key = refreshSileo ? "After_Install_Relaunch" : "Task_Finish_Hint"
+        case .uicache: key = "Refresh"
+        case .reopen: key = "After_Install_Relaunch"
+        case .reload, .restart: key = "After_Install_Respring"
+        case .reboot, .usreboot: key = "After_Install_Reboot"
+        }
+        return String(localizationKey: key)
+    }
+
     private var taskExecutionLabel: String {
-        let keys = Set(taskOperationKeys)
-        guard keys.count == 1, let key = keys.first else { return String(localizationKey: "Deck_Execute") }
-        return String(localizationKey: key + "_Stage")
+        let hasRemoval = taskOperationKeys.contains("Task_Operation_Remove")
+        let hasInstall = taskOperationKeys.contains { $0 != "Task_Operation_Remove" }
+        return String(localizationKey: hasRemoval && hasInstall ? "Task_Node_Mixed"
+            : hasRemoval ? "Task_Operation_Remove_Stage" : "Task_Operation_Install_Stage")
     }
 
     private var hasAPTProgress = false
-    private let stageLabels = (0..<3).map { _ in UILabel() }
-    private let stageTracks = (0..<3).map { _ in UIProgressView(progressViewStyle: .bar) }
+    private let taskNodes = TaskNodeStrip()
+    private enum NodeKind: CaseIterable { case prepare, download, convert, execute, complete }
+    private var nodeSession: UInt32?
+    private var nodePlan: [NodeKind] = []
+    private var nodeEntries: [Package] = []
+    private var plannedNetwork = Set<String>()
+    private var plannedConversion = Set<String>()
+    private var plannedExecutionLabel = ""
+    private var preparationFinished = false
+    private var lastActiveNode: NodeKind = .prepare
+    private var readyPackages = Set<String>()
+    private var networkFinished = Set<String>()
+    private var conversionFinished = Set<String>()
+    private var taskCancelled = false
+    private var restoreCancellationRequested = false
+    private var checkingSavedPackages = false
+
+    private func resetNodePlan() {
+        nodeSession = nil
+        nodePlan = []
+        nodeEntries = []
+        plannedNetwork = []
+        plannedConversion = []
+        plannedExecutionLabel = ""
+        preparationFinished = false
+        lastActiveNode = .prepare
+        readyPackages = []
+        networkFinished = []
+        conversionFinished = []
+        taskCancelled = false
+        restoreCancellationRequested = false
+        checkingSavedPackages = false
+    }
+
+    /// A plan is captured once, before execution mutates installed metadata.
+    /// Optional stages never disappear during retries or cache hits.
+    private func refreshNodes(capturingPlan: Bool = false) {
+        let manager = DownloadManager.shared
+        let session = manager.currentDownloadSession
+        if !capturingPlan && (isDownloading || isInstalling || isFinishedInstalling) {
+            if session != 0, let previous = nodeSession, previous != session { resetNodePlan() }
+            if session != 0 { nodeSession = session }
+            if nodeSession != nil && manager.downloadsCancelled
+                && !(manager.restoreBatch != nil && isInstalling && !isFinishedInstalling) { taskCancelled = true }
+        }
+        if nodePlan.isEmpty || (!isDownloading && !isInstalling && !isFinishedInstalling && !taskCancelled) {
+            nodeEntries = (installations + upgrades + installdeps).map { $0.package }
+            plannedNetwork = Set(nodeEntries.filter { $0.local_deb == nil }.map { $0.package })
+            plannedConversion = Set(nodeEntries.filter { DownloadManager.needsConversion($0) }.map { $0.package })
+            plannedExecutionLabel = taskExecutionLabel
+            nodePlan = [.prepare]
+            // Restore batches prepare and install each package in sequence.
+            // Their per-package transfers are part of the overall execution node.
+            if manager.restoreBatch == nil {
+                if !plannedNetwork.isEmpty { nodePlan.append(.download) }
+                if !plannedConversion.isEmpty { nodePlan.append(.convert) }
+            }
+            nodePlan += [.execute, .complete]
+        }
+        let downloads = nodeEntries.compactMap { manager.queuedDownload(package: $0.package) }
+            .filter { !capturingPlan && $0.session == session }
+        for download in downloads {
+            let id = download.package.package
+            if download.phase == .ready { readyPackages.insert(id) }
+            if download.phase == .converting || download.phase == .ready { networkFinished.insert(id) }
+            if download.phase == .ready && download.needsConversion { conversionFinished.insert(id) }
+        }
+        let started = isDownloading || isInstalling || isFinishedInstalling
+        let executing = isInstalling || isFinishedInstalling
+        let succeeded = isFinishedInstalling && installExitStatus == 0 && !taskCancelled
+        let allReady = nodeEntries.allSatisfy { readyPackages.contains($0.package) }
+        let networkDone = executing || (!plannedNetwork.isEmpty && plannedNetwork.isSubset(of: networkFinished))
+        let conversionDone = executing || (!plannedConversion.isEmpty && plannedConversion.isSubset(of: conversionFinished.union(readyPackages)))
+        let convertingCount = downloads.filter { $0.phase == .converting }.count
+        let downloading = downloads.contains { $0.phase == .downloading }
+        let preparing = downloads.count < nodeEntries.count || downloads.contains { $0.phase == .preparing }
+        let failedKinds = Set(downloads.filter { $0.phase == .failed }.map { download -> NodeKind in
+            switch download.failedPhase {
+            case .converting: return .convert
+            case .downloading: return .download
+            case .preparing: return .prepare
+            default: return download.usedNetwork ? .download : .prepare
+            }
+        })
+        if started && (!preparing || executing || downloading || convertingCount > 0) { preparationFinished = true }
+        if !taskCancelled {
+            lastActiveNode = executing ? .execute : downloading ? .download
+                : convertingCount > 0 ? .convert : allReady && started ? .execute
+                : preparationFinished && nodePlan.contains(.download) ? .download : .prepare
+        }
+        let activeKind = lastActiveNode
+        let items = nodePlan.map { kind -> TaskNodeStrip.Item in
+            let title: String
+            switch kind {
+            case .prepare: title = String(localizationKey: "Deck_Prepare")
+            case .download: title = String(localizationKey: "Deck_Download")
+            case .convert: title = String(localizationKey: "Task_Node_Convert")
+            case .execute: title = checkingSavedPackages ? String(localizationKey: "Deck_Prepare") : plannedExecutionLabel
+            case .complete: title = String(localizationKey: "Done")
+            }
+            var state: TaskNodeStrip.State = .waiting
+            let done: Bool
+            switch kind {
+            case .prepare: done = preparationFinished
+            case .download: done = networkDone
+            case .convert: done = conversionDone
+            case .execute, .complete: done = succeeded
+            }
+            if done { state = .complete }
+            if started && !taskCancelled && !isFinishedInstalling && kind == activeKind && !done { state = .running }
+            if !taskCancelled && (failedKinds.contains(kind) || (kind == .prepare && !errors.isEmpty)
+                || (kind == .execute && isFinishedInstalling && installExitStatus != 0)) { state = .failed }
+            if taskCancelled && !done && kind == activeKind { state = .cancelled }
+            return TaskNodeStrip.Item(title: title, state: state)
+        }
+        taskNodes.update(items: items, accent: view.tintColor ?? .systemTeal)
+        if !taskCancelled && !isFinishedInstalling && errors.isEmpty && failedKinds.isEmpty {
+            taskStage.text = items[nodePlan.firstIndex(of: activeKind) ?? 0].title
+        }
+        if taskCancelled {
+            taskStage.text = String(localizationKey: "Task_Node_Cancelled")
+            taskHeadline.text = String(localizationKey: "Task_Node_Cancelled")
+            taskPercentage.isHidden = true
+        } else if checkingSavedPackages {
+            taskStage.text = String(localizationKey: "Deck_Prepare")
+            taskHeadline.text = String(localizationKey: "Auto_Save_Packages_Checking")
+            taskDetail.text = currentTaskStatus ?? String(localizationKey: "Auto_Save_Packages_Checking")
+            taskPercentage.isHidden = true
+        } else if !executing && convertingCount > 0 && failedKinds.isEmpty && errors.isEmpty {
+            taskStage.text = String(localizationKey: downloading ? "Deck_Download" : "Task_Node_Convert")
+        }
+    }
     private let collapseButton = UIButton(type: .system)
     private var overallProgress: Double = 0
     public private(set) var aptProgress: Double = 0
@@ -232,15 +397,7 @@ class DownloadsTableViewController: SileoViewController {
         taskTitle.numberOfLines = 0
         taskTitle.textColor = .label
         taskTitle.text = String(localizationKey: "Deck_Title")
-        for (index, label) in stageLabels.enumerated() {
-            label.text = String(localizationKey: ["Deck_Download", "Deck_Execute", "Done"][index])
-            label.font = .systemFont(ofSize: 12, weight: .medium)
-            taskCard.contentView.addSubview(label)
-            let track = stageTracks[index]
-            track.trackTintColor = .tertiarySystemFill
-            track.semanticContentAttribute = .forceLeftToRight
-            taskCard.contentView.addSubview(track)
-        }
+        taskHeader.addSubview(taskNodes)
         collapseButton.setTitle(String(localizationKey: "Deck_Collapse"), for: .normal)
         collapseButton.addTarget(self, action: #selector(collapseTask), for: .touchUpInside)
         collapseButton.layer.cornerRadius = 25
@@ -325,13 +482,8 @@ class DownloadsTableViewController: SileoViewController {
         taskPercentage.frame = CGRect(x: max(20, cardWidth - 92), y: taskStage.frame.maxY + 8, width: percentageWidth, height: 36)
         taskHeadline.frame.size.width = max(0, inner - 80)
         taskProgress.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 14, width: inner, height: 4)
-        let segmentWidth = max(0, (inner - 16) / 3)
-        for index in 0..<3 {
-            let x = 20 + CGFloat(index) * (segmentWidth + 8)
-            stageTracks[index].frame = CGRect(x: x, y: taskProgress.frame.minY, width: segmentWidth, height: 4)
-            stageLabels[index].frame = CGRect(x: x, y: taskProgress.frame.maxY + 9, width: segmentWidth, height: 20)
-        }
-        taskCard.frame = CGRect(x: cardInset, y: taskTitle.frame.maxY + 24, width: cardWidth, height: taskProgress.frame.maxY + 43)
+        taskNodes.frame = CGRect(x: cardInset, y: taskTitle.frame.maxY + 18, width: cardWidth, height: taskNodes.preferredHeight)
+        taskCard.frame = CGRect(x: cardInset, y: taskNodes.frame.maxY + 14, width: cardWidth, height: taskProgress.frame.maxY + 20)
         let headerHeight = taskCard.frame.maxY + 14
         if taskHeader.frame.width != width || taskHeader.frame.height != headerHeight {
             taskHeader.frame = CGRect(x: 0, y: 0, width: width, height: headerHeight)
@@ -366,15 +518,12 @@ class DownloadsTableViewController: SileoViewController {
         let manager = DownloadManager.shared
         let downloads = Array(manager.vars.queuedDownloads.raw.values).filter { $0.session == manager.currentDownloadSession }
         let failed = downloads.filter { !($0.failureReason ?? "").isEmpty }
-        let active = !isFinishedInstalling && (isInstalling || (isDownloading && failed.isEmpty))
         let snapshot = taskPresentation
         let color: UIColor = snapshot.failed ? .systemRed : (UINavigationBar.appearance().tintColor ?? .systemTeal)
         stageActivity.color = color
         taskTitle.text = String(localizationKey: "Deck_Title")
         let hasDownloadTasks = !(installations + upgrades + installdeps).isEmpty
         let preparationLabel = String(localizationKey: "Deck_Prepare")
-        stageLabels[0].text = String(localizationKey: hasDownloadTasks ? "Deck_Download" : "Deck_Prepare")
-        stageLabels[1].text = taskExecutionLabel
         taskStage.text = snapshot.failed ? String(localizationKey: "Task_Attention")
             : snapshot.stage == 2 ? String(localizationKey: "Done")
             : snapshot.stage == 1 ? taskExecutionLabel
@@ -390,13 +539,9 @@ class DownloadsTableViewController: SileoViewController {
         taskCard.contentView.backgroundColor = accent.withAlphaComponent(0.06)
         taskStage.textColor = accent
         taskPercentage.textColor = accent
-        for index in 0..<3 {
-            let value: Double = index < snapshot.stage ? 1 : index == snapshot.stage ? overallProgress : 0
-            stageTracks[index].setProgress(Float(value), animated: false)
-            stageTracks[index].progressTintColor = accent
-            stageLabels[index].textColor = index == snapshot.stage ? accent : .secondaryLabel
-        }
-        if active && !snapshot.failed { stageActivity.startAnimating() } else { stageActivity.stopAnimating() }
+        refreshNodes()
+        // The active node is the sole activity indicator.
+        stageActivity.stopAnimating()
         collapseButton.isHidden = !isInstalling || isFinishedInstalling
         collapseButton.backgroundColor = accent
         collapseButton.setTitleColor(.white, for: .normal)
@@ -701,6 +846,7 @@ class DownloadsTableViewController: SileoViewController {
         }
         
         if DownloadManager.shared.restoreBatch != nil && isInstalling && !isFinishedInstalling {
+            restoreCancellationRequested = true
             BackupManager.shared.cancelCurrentOperation()
             currentTaskStatus = String(localizationKey: "Restore_Isolation_Cancelling")
             refreshTaskPresentation()
@@ -713,6 +859,7 @@ class DownloadsTableViewController: SileoViewController {
             return //UIKit bug: https://stackoverflow.com/questions/37916952/ios-why-does-hidden-button-still-receive-tap-events/37918283#37918283
         }
         
+        taskCancelled = true
         isInstalling = false
         isDownloading = false
         isFinishedInstalling = false
@@ -734,6 +881,7 @@ class DownloadsTableViewController: SileoViewController {
     
     @IBAction private func cancelQueued(_ sender: Any?) {
         NSLog("SileoLog: cancelQueued")
+        taskCancelled = true
         isInstalling = false
         isDownloading = false
         isFinishedInstalling = false
@@ -789,6 +937,10 @@ class DownloadsTableViewController: SileoViewController {
         detailsView?.alpha = 0
         taskGrabberButton.isHidden = false
         statusBarStyle = UIDevice.current.userInterfaceIdiom == .pad ? .default : .lightContent
+        resetNodePlan()
+        isFinishedInstalling = false
+        isInstalling = false
+        actions.removeAll()
         isDownloading = true
         overallProgress = 0
         aptProgress = 0
@@ -796,6 +948,8 @@ class DownloadsTableViewController: SileoViewController {
         installExitStatus = nil
         currentTaskStatus = nil
         currentOperationTitle = nil
+        // Capture optional stages before a cache hit/conversion mutates Package.
+        refreshNodes(capturingPlan: true)
         
         DownloadManager.shared.aptRunning = false
         DownloadManager.shared.aptFinished = false
@@ -931,6 +1085,8 @@ class DownloadsTableViewController: SileoViewController {
     }
     
     private func queueCompleted() {
+        resetNodePlan()
+        isDownloading = false
         isInstalling = false
         isFinishedInstalling = false
         returnButtonAction = .back
@@ -1062,10 +1218,14 @@ class DownloadsTableViewController: SileoViewController {
                 self.reloadControlsOnly()
             }
         }
+        checkingSavedPackages = true
         showSaveProgress(String(localizationKey: "Auto_Save_Packages_Checking"))
         DownloadManager.shared.checkSavedPackages(packages, progress: showSaveProgress) {
-            self.currentTaskStatus = nil
-            self.performInstallAction()
+            DispatchQueue.main.async {
+                self.checkingSavedPackages = false
+                self.currentTaskStatus = nil
+                self.performInstallAction()
+            }
         }
     }
 
@@ -1149,6 +1309,7 @@ class DownloadsTableViewController: SileoViewController {
                 self.detailsTextView?.scrollRangeToVisible(NSRange(location: detailsAttributedString.string.count - 1, length: 1))
             }
         }, completionCallback: { status, finish, refresh in
+            let restoreWasCancelled = restoreBatch != nil && BackupManager.shared.isCancelled
             NSLog("SileoLog: apt completionCallback \(status) \(finish) \(refresh)")
             if status == 0 {
                 installedToRecord.forEach { InstalledSourceStore.record($0) }
@@ -1167,6 +1328,10 @@ class DownloadsTableViewController: SileoViewController {
                 UIApplication.shared.applicationIconBadgeNumber = updatesNotIgnored.count
                 
                 self.installExitStatus = Int32(status)
+                if restoreBatch != nil && (restoreWasCancelled || self.restoreCancellationRequested) {
+                    self.taskCancelled = true
+                    self.restoreCancellationRequested = false
+                }
                 self.isFinishedInstalling = true
                 self.currentTaskStatus = nil
                 self.currentOperationTitle = nil
@@ -1304,6 +1469,137 @@ class DownloadsTableViewController: SileoViewController {
         })
     }
 
+}
+
+/// Horizontal transaction timeline. Views survive refreshes, so an active ring
+/// keeps its animation phase. Accessibility follows logical order in RTL too.
+private final class TaskNodeStrip: UIView {
+    enum State: String { case waiting, running, complete, failed, cancelled }
+    struct Item { let title: String; let state: State }
+    private var items: [Item] = []
+    private var nodes: [Node] = []
+    private var lines: [UIView] = []
+    private var accent = UIColor.systemTeal
+    var preferredHeight: CGFloat { 38 + UIFont.preferredFont(forTextStyle: .caption1).lineHeight * 2 }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        NotificationCenter.default.addObserver(self, selector: #selector(accessibilityChanged),
+            name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(accessibilityChanged),
+            name: UIContentSizeCategory.didChangeNotification, object: nil)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func accessibilityChanged() {
+        update(items: items, accent: accent)
+        superview?.superview?.setNeedsLayout()
+    }
+    func update(items: [Item], accent: UIColor) {
+        self.items = items
+        self.accent = accent
+        if nodes.count != items.count {
+            nodes.forEach { $0.removeFromSuperview() }
+            lines.forEach { $0.removeFromSuperview() }
+            lines = (0..<max(0, items.count - 1)).map { _ in UIView() }
+            lines.forEach { addSubview($0) }
+            nodes = items.map { _ in Node() }
+            nodes.forEach { addSubview($0) }
+            accessibilityElements = nodes
+        }
+        for (index, item) in items.enumerated() {
+            nodes[index].update(item, accent: accent, animate: window != nil && !UIAccessibility.isReduceMotionEnabled)
+            if index < lines.count {
+                lines[index].backgroundColor = item.state == .complete ? accent : .tertiarySystemFill
+            }
+        }
+        setNeedsLayout()
+    }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        update(items: items, accent: accent)
+    }
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        update(items: items, accent: accent)
+    }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard !nodes.isEmpty else { return }
+        let pitch = bounds.width / CGFloat(nodes.count)
+        let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
+        for index in nodes.indices {
+            let position = rtl ? nodes.count - 1 - index : index
+            nodes[index].frame = CGRect(x: CGFloat(position) * pitch, y: 0, width: pitch, height: bounds.height)
+            if index < lines.count {
+                let nextPosition = rtl ? position - 1 : position + 1
+                let left = CGFloat(min(position, nextPosition)) * pitch + pitch / 2 + 16
+                lines[index].frame = CGRect(x: left, y: 13, width: max(0, pitch - 32), height: 2)
+            }
+        }
+    }
+    private final class Node: UIView {
+        private let ring = CAShapeLayer()
+        private let symbol = UIImageView()
+        private let label = UILabel()
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            layer.addSublayer(ring)
+            addSubview(symbol)
+            addSubview(label)
+            isAccessibilityElement = true
+            accessibilityTraits = .staticText
+            label.textAlignment = .center
+            label.numberOfLines = 2
+            label.adjustsFontForContentSizeCategory = true
+            symbol.contentMode = .scaleAspectFit
+            ring.fillColor = UIColor.clear.cgColor
+            ring.lineWidth = 2
+            ring.lineCap = .round
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        func update(_ item: Item, accent: UIColor, animate: Bool) {
+            let color: UIColor = item.state == .failed ? .systemRed
+                : item.state == .waiting || item.state == .cancelled ? .tertiaryLabel : accent
+            label.font = UIFont.preferredFont(forTextStyle: .caption1)
+            label.text = item.title
+            label.textColor = color
+            symbol.tintColor = color
+            symbol.image = item.state == .complete ? UIImage(systemName: "checkmark.circle.fill")
+                : item.state == .failed ? UIImage(systemName: "exclamationmark.circle.fill") : nil
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ring.strokeColor = color.cgColor
+            ring.isHidden = item.state == .complete || item.state == .failed
+            ring.strokeEnd = item.state == .running ? 0.75 : 1
+            CATransaction.commit()
+            if item.state == .running && animate {
+                if ring.animation(forKey: "task.rotation") == nil {
+                    let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+                    spin.fromValue = 0
+                    spin.toValue = CGFloat.pi * 2
+                    spin.duration = 1.2
+                    spin.repeatCount = .infinity
+                    ring.add(spin, forKey: "task.rotation")
+                }
+            } else { ring.removeAnimation(forKey: "task.rotation") }
+            accessibilityLabel = item.title
+            accessibilityValue = String(localizationKey: "Task_Node_State_" + item.state.rawValue)
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let circle = CGRect(x: (bounds.width - 24) / 2, y: 2, width: 24, height: 24)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ring.bounds = CGRect(x: 0, y: 0, width: 24, height: 24)
+            ring.position = CGPoint(x: circle.midX, y: circle.midY)
+            ring.path = UIBezierPath(ovalIn: CGRect(x: 2, y: 2, width: 20, height: 20)).cgPath
+            CATransaction.commit()
+            symbol.frame = circle
+            label.frame = CGRect(x: 2, y: 34, width: max(0, bounds.width - 4), height: max(0, bounds.height - 34))
+        }
+    }
 }
 
 extension DownloadsTableViewController: UITableViewDataSource {

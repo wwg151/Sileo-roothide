@@ -47,6 +47,16 @@
 "Backup_Task_Failure" = "Failure (%d)";
 "Deck_Title" = "Task Center";
 "Deck_Prepare" = "Prepare";
+"Task_Node_Convert" = "Convert";
+"Task_Node_Mixed" = "Apply";
+"Task_Node_Converting_Count" = "Converting %d packages";
+"Task_Node_Restore_Sequence" = "Preparing and installing packages one at a time";
+"Task_Node_Cancelled" = "Cancelled";
+"Task_Node_State_waiting" = "Waiting";
+"Task_Node_State_running" = "In progress";
+"Task_Node_State_complete" = "Completed";
+"Task_Node_State_failed" = "Failed";
+"Task_Node_State_cancelled" = "Cancelled";
 "Task_Operation_Install_Stage" = "Install";
 "Task_Operation_Update_Stage" = "Update";
 "Task_Operation_Reinstall_Stage" = "Reinstall";

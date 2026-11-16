@@ -10,7 +10,19 @@ import Foundation
 import Evander
 
 final class Download {
+    enum Phase {
+        case preparing
+        case downloading
+        case converting
+        case ready
+        case failed
+    }
+
     var package: Package
+    var phase: Phase = .preparing
+    var failedPhase: Phase?
+    var usedNetwork = false
+    var needsConversion = false
     var task: EvanderDownloader?
     var backgroundTask: UIBackgroundTaskIdentifier?
     var progress = CGFloat(0)
@@ -23,6 +35,11 @@ final class Download {
     var started = false
     var message: String?
     var session: UInt32
+
+    func markFailed() {
+        failedPhase = phase
+        phase = .failed
+    }
     
     init(package: Package, session: UInt32) {
         self.package = package

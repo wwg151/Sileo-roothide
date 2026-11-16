@@ -100,6 +100,7 @@ final class DownloadManager {
     public var currentDownloads = 0
     public var maxParallelDownloads = 5
     public var currentDownloadSession:UInt32 = 0
+    private(set) var downloadsCancelled = false
     
     public func installingPackages() -> Int {
         self.vars.upgrades.count + self.vars.installations.count + self.vars.installdeps.count
@@ -156,6 +157,19 @@ final class DownloadManager {
         NSLog("SileoLog: startPackageDownload \(download.package.package)")
         
         let package = download.package
+        download.session = self.currentDownloadSession
+        download.phase = .preparing
+        download.failedPhase = nil
+        download.usedNetwork = false
+        download.needsConversion = DownloadManager.needsConversion(package)
+        download.failureReason = nil
+        download.message = nil
+        download.progress = 0
+        download.totalBytesWritten = 0
+        download.totalBytesExpectedToWrite = 0
+        download.success = false
+        download.completed = false
+        download.started = false
         
         // If it's a local file we can verify it immediately
         if package.local_deb != nil {
@@ -163,14 +177,17 @@ final class DownloadManager {
                 if DownloadManager.needsConversion(package), let localDeb = package.local_deb {
                     // Converted here, inside the queue run, instead of with a
                     // download alert when the package was queued.
+                    download.phase = .converting
                     self.convertDownloaded(download: download, fileURL: URL(fileURLWithPath: localDeb))
                     return
                 }
                 download.progress = 1
                 download.success = true
                 download.completed = true
+                download.phase = .ready
             } else {
                 download.failureReason = String(localizationKey: "Unknown", type: .error)
+                download.markFailed()
             }
             
             self.publishDownloadStatus(download)
@@ -186,12 +203,14 @@ final class DownloadManager {
             do {
                 if try verifyRepoPackage(package: package, fileURL: savedCopy, moveToCache: !needsConversion) {
                     if needsConversion {
+                        download.phase = .converting
                         convertDownloaded(download: download, fileURL: savedCopy)
                         return
                     }
                     download.progress = 1
                     download.success = true
                     download.completed = true
+                    download.phase = .ready
                     download.message = String(localizationKey: "Auto_Save_Packages_Using_Local")
                     publishDownloadStatus(download)
                     currentDownloads -= 1
@@ -207,6 +226,7 @@ final class DownloadManager {
         guard let filename = package.filename, let repo = package.sourceRepo, let repoURL = URL(string: repo.rawURL) else {
             
             download.failureReason = String(localizationKey: "Unknown", type: .error)
+            download.markFailed()
             
             self.publishDownloadStatus(download)
             
@@ -229,12 +249,13 @@ final class DownloadManager {
         
         // See if theres an overriding web URL for downloading the package from
         self.overrideDownloadURL(package: package, repo: repo) { errorMessage, overrideURL in DownloadManager.aptQueue.async {
-            guard download.session == self.currentDownloadSession else { download.endBackgroundTask(); return }
+            guard download.session == self.currentDownloadSession, !self.downloadsCancelled else { download.endBackgroundTask(); return }
             if overrideURL == nil && errorMessage != nil {
                 
                 download.endBackgroundTask()
                 
                 download.failureReason = errorMessage
+                download.markFailed()
                 
                 self.publishDownloadStatus(download)
                 
@@ -250,7 +271,7 @@ final class DownloadManager {
             download.task = RepoManager.shared.queue(from: downloadURL, progress: { task, progress in DownloadManager.aptQueue.async {
                 NSLog("SileoLog: download progress \(task.task)")
                 
-                guard download.session == self.currentDownloadSession else {
+                guard download.session == self.currentDownloadSession, !self.downloadsCancelled else {
                     return
                 }
                 
@@ -269,7 +290,7 @@ final class DownloadManager {
                 
                 download.endBackgroundTask()
                 
-                guard download.session == self.currentDownloadSession else {
+                guard download.session == self.currentDownloadSession, !self.downloadsCancelled else {
                     try? FileManager.default.removeItem(at: fileURL)
                     return
                 }
@@ -284,6 +305,7 @@ final class DownloadManager {
                                                     package.size ?? "nil", fileSizeStr)
                     download.success = false
                     download.progress = 0
+                    download.markFailed()
                     
                 } else {
                     
@@ -291,7 +313,13 @@ final class DownloadManager {
                     do {
                         download.success = try self.verifyRepoPackage(package: package, fileURL: fileURL, moveToCache: !needsConversion)
                         download.progress = 1
+                        if download.success {
+                            download.phase = .ready
+                        } else {
+                            download.markFailed()
+                        }
                         if needsConversion && download.success {
+                            download.phase = .converting
                             self.convertDownloaded(download: download, fileURL: fileURL)
                             return
                         }
@@ -299,6 +327,7 @@ final class DownloadManager {
                         download.success = false
                         download.progress = 0
                         download.failureReason = error.localizedDescription
+                        download.markFailed()
                     }
                     
 #if TARGET_SANDBOX || targetEnvironment(simulator)
@@ -317,11 +346,12 @@ final class DownloadManager {
                 
                 download.endBackgroundTask()
                 
-                guard download.session == self.currentDownloadSession else {
+                guard download.session == self.currentDownloadSession, !self.downloadsCancelled else {
                     return
                 }
                 
                 download.failureReason = error?.localizedDescription ?? String(format: String(localizationKey: "Download_Failing_Status_Code", type: .error), statusCode)
+                download.markFailed()
                 download.message = nil
                 
                 self.publishDownloadStatus(download)
@@ -333,7 +363,7 @@ final class DownloadManager {
             }}, waiting: { task, message in DownloadManager.aptQueue.async {
                 NSLog("SileoLog: download waiting \(task.task)")
                 
-                guard download.session == self.currentDownloadSession else {
+                guard download.session == self.currentDownloadSession, !self.downloadsCancelled else {
                     return
                 }
                 
@@ -341,6 +371,8 @@ final class DownloadManager {
                 self.publishDownloadStatus(download)
             }})
             
+            download.phase = .downloading
+            download.usedNetwork = true
             download.task?.resume()
         }}
     }
@@ -361,6 +393,7 @@ final class DownloadManager {
     private func convertDownloaded(download: Download, fileURL: URL) {
         let package = download.package
         download.success = false
+        download.phase = .converting
         download.progress = 0.99
         download.message = String(localizationKey: "Compat_Converting")
         self.publishDownloadStatus(download)
@@ -390,17 +423,17 @@ final class DownloadManager {
     }
     
     private func finishConversion(download: Download, original: Package, converted: Package?, failure: String?, output: URL) {
-        download.message = nil
-        
-        guard download.session == self.currentDownloadSession else {
+        guard download.session == self.currentDownloadSession, !self.downloadsCancelled else {
             try? FileManager.default.removeItem(at: output)
             return
         }
+        download.message = nil
         
         func fail(_ reason: String) {
             download.failureReason = reason
             download.success = false
             download.progress = 0
+            download.markFailed()
             self.publishDownloadStatus(download)
             self.currentDownloads -= 1
             self.startMoreDownloads()
@@ -421,6 +454,7 @@ final class DownloadManager {
             download.package = newPackage
             download.success = true
             download.progress = 1
+            download.phase = .ready
             self.currentDownloads -= 1
             return
         }
@@ -447,6 +481,7 @@ final class DownloadManager {
         
         download.success = true
         download.progress = 1
+        download.phase = .ready
         DispatchQueue.main.async { self.viewController.reloadData() }
         self.publishDownloadStatus(download)
         self.currentDownloads -= 1
@@ -458,7 +493,10 @@ final class DownloadManager {
     func prepareRestoreDownload(_ package: Package) -> Download? {
         var download: Download!
         DownloadManager.aptQueue.sync {
-            if self.currentDownloadSession == 0 { self.currentDownloadSession = max(1, arc4random()) }
+            if self.currentDownloadSession == 0 {
+                self.downloadsCancelled = false
+                self.currentDownloadSession = max(1, arc4random())
+            }
             download = Download(package: package, session: self.currentDownloadSession)
             download.queued = true
             self.vars.queuedDownloads[package.package] = download
@@ -469,16 +507,24 @@ final class DownloadManager {
             var done = false
             var cancelled = false
             DownloadManager.aptQueue.sync {
-                cancelled = BackupManager.shared.isCancelled
+                let sessionExpired = download.session != self.currentDownloadSession
+                let managerCancelled = self.downloadsCancelled
+                let restoreCancelled = BackupManager.shared.isCancelled
+                cancelled = sessionExpired || managerCancelled || restoreCancelled
                 if cancelled {
                     download.task?.cancel()
                     download.endBackgroundTask()
-                    self.currentDownloadSession = 0
-                    download.failureReason = String(localizationKey: "Restore_Isolation_Cancelled")
+                    if !sessionExpired && !managerCancelled {
+                        self.currentDownloadSession = 0
+                        self.downloadsCancelled = true
+                        download.failureReason = String(localizationKey: "Restore_Isolation_Cancelled")
+                        download.markFailed()
+                    }
                 }
                 done = download.success || !(download.failureReason ?? "").isEmpty || self.currentDownloads == 0
-                if done && !download.success && (download.failureReason ?? "").isEmpty {
+                if !cancelled && done && !download.success && (download.failureReason ?? "").isEmpty {
                     download.failureReason = String(localizationKey: "Restore_Isolation_Unavailable")
+                    download.markFailed()
                 }
             }
             if cancelled { return nil }
@@ -523,7 +569,8 @@ final class DownloadManager {
     public func startDownloads() {
         DownloadManager.aptQueue.async {
             assert(self.currentDownloadSession == 0)
-            self.currentDownloadSession = arc4random()
+            self.downloadsCancelled = false
+            self.currentDownloadSession = max(1, arc4random())
             NSLog("SileoLog: startMoreDownloads (startDownloads)")
             self.startMoreDownloads()
         }
@@ -909,10 +956,12 @@ final class DownloadManager {
     
     public func cancelDownloads() {
         if DispatchQueue.getSpecific(key: DownloadManager.aptQueueKey) == DownloadManager.aptQueueContext {
-            DownloadManager.shared.currentDownloadSession = 0
+            self.currentDownloadSession = 0
+            self.downloadsCancelled = true
         } else {
             DownloadManager.aptQueue.sync {
-                DownloadManager.shared.currentDownloadSession = 0
+                self.currentDownloadSession = 0
+                self.downloadsCancelled = true
             }
         }
         
