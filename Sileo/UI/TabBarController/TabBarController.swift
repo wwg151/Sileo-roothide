@@ -18,6 +18,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private var downloadsController: UINavigationController?
     private var usesFixedQueue: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private let fixedQueue = UIButton(type: .custom)
+    private let fixedQueueRing = UIImageView()
     private let fixedQueueTitle = UILabel()
     private let fixedQueueDetail = UILabel()
     private let fixedQueueNodes = UIStackView()
@@ -28,7 +29,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         guard usesFixedQueue else { return }
         if fixedQueue.superview == nil {
             fixedQueue.backgroundColor = .secondarySystemBackground
-            fixedQueue.layer.cornerRadius = 32
+            fixedQueue.layer.cornerRadius = 38
             fixedQueue.layer.cornerCurve = .continuous
             fixedQueueTitle.font = .systemFont(ofSize: 13, weight: .semibold)
             fixedQueueTitle.lineBreakMode = .byTruncatingTail
@@ -42,7 +43,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             fixedQueueNodes.isUserInteractionEnabled = false
             fixedQueueNodes.semanticContentAttribute = .unspecified
             fixedQueue.isAccessibilityElement = true
-            for child in [fixedQueueTitle, fixedQueueDetail] as [UIView] {
+            for child in [fixedQueueRing, fixedQueueTitle, fixedQueueDetail] as [UIView] {
                 child.isUserInteractionEnabled = false
                 fixedQueue.addSubview(child)
             }
@@ -57,15 +58,18 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             bottom = tabBar.frame.minY - 10
         }
         UIView.performWithoutAnimation {
-            fixedQueue.frame = CGRect(x: 10, y: bottom - 64, width: view.bounds.width - 20, height: 64)
-            fixedQueueNodes.frame = CGRect(x: 14, y: 4, width: fixedQueue.bounds.width - 28, height: 34)
-            fixedQueueTitle.frame = CGRect(x: 14, y: 4, width: fixedQueue.bounds.width - 28, height: 24)
-            fixedQueueDetail.frame = CGRect(x: 14, y: 38, width: fixedQueue.bounds.width - 28, height: 18)
-            let compact = fixedQueue.bounds.width < 360 || UIFont.preferredFont(forTextStyle: .caption1).pointSize > 15
+            let height: CGFloat = 76
+            fixedQueue.frame = CGRect(x: 10, y: bottom - height, width: view.bounds.width - 20, height: height)
+            fixedQueueRing.frame = CGRect(x: 14, y: (height - 40) / 2, width: 40, height: 40)
+            let contentX: CGFloat = 66
+            let contentWidth = max(0, fixedQueue.bounds.width - contentX - 18)
+            fixedQueueNodes.frame = CGRect(x: contentX, y: 9, width: contentWidth, height: 34)
+            fixedQueueTitle.frame = CGRect(x: contentX, y: 24, width: contentWidth, height: 22)
+            fixedQueueDetail.frame = CGRect(x: contentX, y: 48, width: contentWidth, height: 18)
+            let compact = contentWidth < 250 || UIFont.preferredFont(forTextStyle: .caption1).pointSize > 15
             fixedQueueNodes.isHidden = false
             fixedQueueTitle.isHidden = !compact
             fixedQueueNodes.frame.size.height = compact ? 14 : 34
-            fixedQueueTitle.frame.origin.y = 18
             for column in fixedNodeViews { column.arrangedSubviews.last?.isHidden = compact }
             fixedQueue.isHidden = !popupIsPresented || TabBarController.popupIsOpen || fixedTaskClosing
         }
@@ -496,7 +500,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 : node.state == "cancelled" ? "×" : node.state == "running" ? "◌" : "○"
             return marker + " " + node.title
         }.joined(separator: "   ›   ")
-        let queueImage = task.nodes.isEmpty ? image : queueNodeImage(task.nodes, failed: task.failed)
+        let queueImage = image
         let percentage = task.progress.flatMap { value -> String? in
             guard value.isFinite, value < 1, !task.failed else { return nil }
             return "\(Int(max(0, min(1, value)) * 100))%"
@@ -510,6 +514,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             item.progress = 0
         }
         if usesFixedQueue {
+            fixedQueueRing.image = image
             fixedQueueTitle.text = task.title
             fixedQueueDetail.text = queueDetail
             fixedQueue.accessibilityLabel = [task.title, task.detail,
