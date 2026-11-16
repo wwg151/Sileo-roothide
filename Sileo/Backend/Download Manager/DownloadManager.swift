@@ -181,6 +181,29 @@ final class DownloadManager {
             return
         }
         
+        if let savedCopy = savedPackageCopy(for: package) {
+            let needsConversion = DownloadManager.needsConversion(package)
+            do {
+                if try verifyRepoPackage(package: package, fileURL: savedCopy, moveToCache: !needsConversion) {
+                    if needsConversion {
+                        convertDownloaded(download: download, fileURL: savedCopy)
+                        return
+                    }
+                    download.progress = 1
+                    download.success = true
+                    download.completed = true
+                    download.message = String(localizationKey: "Auto_Save_Packages_Using_Local")
+                    publishDownloadStatus(download)
+                    currentDownloads -= 1
+                    startMoreDownloads()
+                    return
+                }
+            } catch {
+                NSLog("SileoLog: saved archive rejected for %@: %@", package.package, error.localizedDescription)
+            }
+            try? FileManager.default.removeItem(at: savedCopy)
+        }
+
         guard let filename = package.filename, let repo = package.sourceRepo, let repoURL = URL(string: repo.rawURL) else {
             
             download.failureReason = String(localizationKey: "Unknown", type: .error)
@@ -557,6 +580,40 @@ final class DownloadManager {
         return true
     }
     
+    /// Only consult saved exports when explicitly enabled. Validate against the
+    /// selected repository, not just the filename, and never consume the export.
+    private func savedPackageCopy(for package: Package) -> URL? {
+        guard UserDefaults.standard.bool(forKey: "AutoSavePackages") else { return nil }
+        let manager = FileManager.default
+        let directory = URL(fileURLWithPath: "/var/mobile/Downloads", isDirectory: true)
+        guard let files = try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) else { return nil }
+        for file in files where file.pathExtension.lowercased() == "deb" {
+            guard (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true,
+                  let saved = PackageListManager.shared.package(url: file),
+                  saved.package == package.package, saved.version == package.version,
+                  saved.architecture == package.architecture else { continue }
+            let copy = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".deb")
+            do {
+                try manager.copyItem(at: file, to: copy)
+                let attributes = try manager.attributesOfItem(atPath: copy.path)
+                if let expectedSize = package.size {
+                    guard let size = attributes[.size] as? NSNumber, size.stringValue == expectedSize else {
+                        try? manager.removeItem(at: copy)
+                        continue
+                    }
+                }
+                guard try verifyRepoPackage(package: package, fileURL: copy, moveToCache: false) else {
+                    try? manager.removeItem(at: copy)
+                    continue
+                }
+                return copy
+            } catch {
+                try? manager.removeItem(at: copy)
+            }
+        }
+        return nil
+    }
+
     // Run after all downloads/conversions finish, before starting dpkg.
     func checkSavedPackages(_ packages: [Package], progress: @escaping (String) -> Void, completion: @escaping () -> Void) {
         DownloadManager.aptQueue.async {

@@ -516,6 +516,7 @@
 "Source_Decompress_Failed" = "Could not decompress packages from %@ (%@): %@";
 
 "Auto_Save_Packages_Checking" = "Checking saved packages…";
+"Auto_Save_Packages_Using_Local" = "Using saved package";
 "Auto_Save_Packages_Exists" = "Already saved, skipping: %@";
 "Auto_Save_Packages_Saving" = "Saving package: %@";
 "Auto_Save_Packages" = "Auto-Save Packages";

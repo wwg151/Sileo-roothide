@@ -522,6 +522,7 @@
 "Source_Decompress_Failed" = "无法解压 %@ 的插件包列表（%@）：%@";
 
 "Auto_Save_Packages_Checking" = "正在检查已保存的插件包…";
+"Auto_Save_Packages_Using_Local" = "正在使用本地保存的插件包";
 "Auto_Save_Packages_Exists" = "已保存，跳过：%@";
 "Auto_Save_Packages_Saving" = "正在保存插件包：%@";
 "Auto_Save_Packages" = "自动保存插件包";
