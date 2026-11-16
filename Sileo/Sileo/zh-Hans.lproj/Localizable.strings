@@ -538,6 +538,7 @@
 "Auto_Save_Packages_Exists" = "已保存，跳过：%@";
 "Auto_Save_Packages_Saving" = "正在保存插件包：%@";
 "Auto_Save_Packages" = "自动保存插件包";
+"Auto_Respring" = "自动注销";
 "Auto_Save_Packages_Failed" = "无法将插件包保存到 /var/mobile/Downloads/，安装将继续。";
 "Log_Running_Dpkg" = "正在运行 dpkg";
 "Log_Read_Lists" = "正在读取插件包列表...";

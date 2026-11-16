@@ -1413,6 +1413,21 @@ class DownloadsTableViewController: SileoViewController {
                 }
                 if status != 0 || self.taskCancelled || !self.errors.isEmpty || hasDownloadErrors {
                     self.showDetails(nil)
+                } else if UserDefaults.standard.bool(forKey: "AutoRespring") {
+                    if UserDefaults.standard.bool(forKey: "AlwaysShowLog") {
+                        self.showDetails(nil)
+                    }
+                    switch self.returnButtonAction {
+                    case .back, .uicache, .reopen:
+                        self.completeButtonTapped(nil)
+                    case .reload, .restart:
+                        if TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
+                            self.completeButtonTapped(nil)
+                        }
+                    case .reboot, .usreboot:
+                        // Preserve the original requirement for an explicit tap.
+                        break
+                    }
                 } else {
                     // Successful installs only dismiss the queue. Never run a
                     // finish command automatically, including Sileo's uicache

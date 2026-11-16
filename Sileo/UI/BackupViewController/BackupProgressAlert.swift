@@ -416,7 +416,8 @@ final class BackupProgressAlert: SileoPanelViewController {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.startNextQueuedTask()
-                guard !self.roundRunning, !self.session.hasPendingTasks,
+                guard !UserDefaults.standard.bool(forKey: "AutoRespring"),
+                      !self.roundRunning, !self.session.hasPendingTasks,
                       !self.restoreCompletionFailed,
                       !self.session.tasks.isEmpty,
                       self.session.tasks.allSatisfy({ $0.outcome == true }),

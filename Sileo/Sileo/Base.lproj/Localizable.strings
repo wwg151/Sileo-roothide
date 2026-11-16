@@ -532,6 +532,7 @@
 "Auto_Save_Packages_Exists" = "Already saved, skipping: %@";
 "Auto_Save_Packages_Saving" = "Saving package: %@";
 "Auto_Save_Packages" = "Auto-Save Packages";
+"Auto_Respring" = "Automatic Respring";
 "Auto_Save_Packages_Failed" = "Could not save a package to /var/mobile/Downloads/. Installation will continue.";
 "Log_Running_Dpkg" = "Running dpkg";
 "Log_Read_Lists" = "Reading package lists...";
