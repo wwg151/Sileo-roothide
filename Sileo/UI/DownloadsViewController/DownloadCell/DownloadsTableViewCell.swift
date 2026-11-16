@@ -304,10 +304,15 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         func frame(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
             CGRect(x: rtl ? width - x - w : x, y: y, width: max(0, w), height: max(0, h))
         }
-        // Use the same outer edges as the overview, even while editing.
+        // Leave UIKit's delete control outside the card. Once editing controls
+        // disappear, both edges return to the overview's horizontal inset.
         let cardInset = Self.cardHorizontalInset
-        cardView.frame = CGRect(x: bounds.minX + cardInset, y: 0,
-                                width: max(0, bounds.width - 2 * cardInset), height: max(0, height))
+        let contentRect = contentView.convert(contentView.bounds, to: self)
+        let leadingInset = max(0, contentRect.minX - bounds.minX)
+        let trailingInset = max(0, bounds.maxX - contentRect.maxX)
+        let left = bounds.minX + max(cardInset, leadingInset > 0 ? leadingInset + 8 : cardInset)
+        let right = bounds.maxX - max(cardInset, trailingInset > 0 ? trailingInset + 8 : cardInset)
+        cardView.frame = CGRect(x: left, y: 0, width: max(0, right - left), height: max(0, height))
         var corners: CACornerMask = []
         if isFirstInGroup {
             corners.formUnion([.layerMinXMinYCorner, .layerMaxXMinYCorner])

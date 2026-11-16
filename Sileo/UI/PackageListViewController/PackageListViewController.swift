@@ -163,7 +163,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             let exportBtn = UIBarButtonItem(title: String(localizationKey: "Export"), style: .plain, target: self, action: #selector(self.exportButtonClicked(_:)))
             self.navigationItem.leftBarButtonItem = exportBtn
 
-            let backupIcon = UIImage(systemName: "externaldrive") ?? UIImage(systemName: "archivebox")
+            let backupIcon = UIImage(systemName: "clock.arrow.circlepath") ?? UIImage(systemName: "arrow.counterclockwise")
             let backupButton = UIButton(type: .system)
             backupButton.setImage(backupIcon, for: .normal)
             backupButton.tintColor = UINavigationBar.appearance().tintColor ?? .label

@@ -92,7 +92,6 @@ class DownloadsTableViewController: SileoViewController {
     private let taskDetail = UILabel()
     private let taskProgress = UIProgressView(progressViewStyle: .bar)
     private let stageActivity = UIActivityIndicatorView(style: .medium)
-    private let footerMaterial = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
     private var installExitStatus: Int32?
     public private(set) var currentOperationTitle: String?
     private var currentTaskStatus: String?
@@ -274,10 +273,9 @@ class DownloadsTableViewController: SileoViewController {
                 button.layer.cornerRadius = 25
                 button.layer.cornerCurve = .continuous
             }
-            footer.insertSubview(footerMaterial, at: 0)
+            footer.backgroundColor = .clear
             footer.addSubview(taskPrimaryButton)
         }
-        footerMaterial.isUserInteractionEnabled = false
         detailsView?.backgroundColor = UIColor(red: 30.0/255.0, green: 32.0/255.0, blue: 40.0/255.0, alpha: 1)
         detailsTextView?.backgroundColor = .clear
         detailsTextView?.layer.cornerRadius = 20
@@ -341,7 +339,6 @@ class DownloadsTableViewController: SileoViewController {
         }
         taskCard.layer.borderColor = UIColor.separator.withAlphaComponent(0.12).cgColor
         guard let footer = footerView else { return }
-        footerMaterial.frame = footer.bounds
         let w = footer.bounds.width
         let candidates: [UIButton?]
         if isFinishedInstalling {
