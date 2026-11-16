@@ -132,7 +132,7 @@ class DownloadsTableViewController: SileoViewController {
                 return (entry.package.name ?? entry.package.package) + " · " + status
             }
         }
-        if taskCancelled || (nodeSession != nil && manager.downloadsCancelled && !(manager.restoreBatch != nil && isInstalling && !isFinishedInstalling)) {
+        if taskCancelled || ((isDownloading || isInstalling) && nodeSession != nil && manager.downloadsCancelled && !(manager.restoreBatch != nil && isInstalling && !isFinishedInstalling)) {
             return TaskPresentation(title: String(localizationKey: "Task_Node_Cancelled"),
                 detail: currentTaskStatus ?? taskOperationSummary, progress: nil,
                 stage: isInstalling || isFinishedInstalling ? 1 : 0, failed: false, rows: rows, nodes: nodes)
@@ -382,7 +382,8 @@ class DownloadsTableViewController: SileoViewController {
             taskStage.text = items[nodePlan.firstIndex(of: activeKind) ?? 0].title
         }
         if taskCancelled {
-            taskStage.text = String(localizationKey: "Task_Node_Cancelled")
+            // Keep the stage name; only the headline describes cancellation.
+            taskStage.text = items[nodePlan.firstIndex(of: activeKind) ?? 0].title
             taskHeadline.text = String(localizationKey: "Task_Node_Cancelled")
             taskPercentage.isHidden = true
         } else if checkingSavedPackages {
@@ -767,6 +768,20 @@ class DownloadsTableViewController: SileoViewController {
             let uninstalldeps = manager.vars.uninstalldeps.raw.sorted(by: { $0.package.name.lowercased() < $1.package.name.lowercased() })
             let errors = manager.vars.errors.raw
             
+            // A changed pending queue is a new preparation, not the cancelled
+            // transaction previously displayed by this reusable controller.
+            if !isDownloading && !isInstalling && !isFinishedInstalling {
+                func identities(_ entries: [DownloadPackage]) -> Set<String> {
+                    Set(entries.map { $0.package.package + "=" + $0.package.version })
+                }
+                if identities(Array(self.upgrades)) != identities(upgrades)
+                    || identities(Array(self.installations)) != identities(installations)
+                    || identities(Array(self.uninstallations)) != identities(uninstallations)
+                    || identities(Array(self.installdeps)) != identities(installdeps)
+                    || identities(Array(self.uninstalldeps)) != identities(uninstalldeps) {
+                    resetNodePlan()
+                }
+            }
             self.upgrades = upgrades
             self.installations = installations
             self.uninstallations = uninstallations
