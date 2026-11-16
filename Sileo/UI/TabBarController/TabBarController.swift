@@ -27,6 +27,20 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private var fixedQueueNodeSignature = ""
     private var fixedTaskClosing = false
 
+    /// Only completion while visibly open may run the automatic action.
+    var allowsAutomaticTaskCompletion: Bool {
+        guard UIApplication.shared.applicationState == .active,
+              popupIsPresented, TabBarController.popupIsOpen,
+              !fixedTaskClosing, !popupIsClosing,
+              let controller = downloadsController,
+              controller.viewIfLoaded?.window != nil,
+              !controller.isBeingDismissed,
+              controller.transitionCoordinator == nil else { return false }
+        if usesFixedQueue { return controller.presentingViewController != nil }
+        let gestureState = popupContentView.popupInteractionGestureRecognizer.state
+        return popupPresentationState == .open && gestureState != .began && gestureState != .changed
+    }
+
     private func layoutFixedQueue() {
         guard usesFixedQueue else { return }
         if fixedQueue.superview == nil {
@@ -476,7 +490,9 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             marker.font = .systemFont(ofSize: 12, weight: .semibold)
             marker.textAlignment = .center
             let color: UIColor = item.state == "failed" ? .systemRed
-                : item.state == "complete" || item.state == "running" ? (view.tintColor ?? .systemTeal) : .tertiaryLabel
+                : item.state == "complete" ? .systemGreen
+                : item.state == "running" ? .systemTeal
+                : item.state == "cancelled" ? .secondaryLabel : UIColor.systemTeal.withAlphaComponent(0.55)
             marker.textColor = color
             marker.text = item.state == "complete" ? "✓" : item.state == "failed" ? "!"
                 : item.state == "cancelled" ? "×" : item.state == "running" ? "◌" : "○"
@@ -514,8 +530,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
                 line.rightAnchor.constraint(equalTo: (rtl ? first : second).centerXAnchor, constant: -9)
             ])
             let state = items[index].state
-            line.backgroundColor = state == "complete" || state == "running"
-                ? (view.tintColor ?? .systemTeal) : .tertiarySystemFill
+            line.backgroundColor = state == "complete" ? .systemGreen
+                : state == "running" ? .systemTeal : UIColor.systemTeal.withAlphaComponent(0.25)
             if state == "running" && !UIAccessibility.isReduceMotionEnabled {
                 let pulse = CABasicAnimation(keyPath: "opacity")
                 pulse.fromValue = 0.25

@@ -512,7 +512,7 @@ class DownloadsTableViewController: SileoViewController {
         taskPercentage.frame = CGRect(x: max(20, cardWidth - 92), y: taskStage.frame.maxY + 8, width: percentageWidth, height: 36)
         taskHeadline.frame.size.width = max(0, inner - 80)
         taskProgress.frame = CGRect(x: 20, y: taskDetail.frame.maxY + 14, width: inner, height: 4)
-        let taskNodesTop = taskProgress.frame.maxY + 14
+        let taskNodesTop = taskProgress.frame.maxY + 6
         let taskCardY = taskTitle.frame.maxY + 18
         let taskNodesHeight = taskNodes.preferredHeight
         taskCard.frame = CGRect(x: cardInset, y: taskCardY, width: cardWidth, height: taskNodesTop + taskNodesHeight + 14)
@@ -1404,10 +1404,13 @@ class DownloadsTableViewController: SileoViewController {
                 
                 TabBarController.singleton?.updatePopup()
                 
-                // Keep the completed queue until the user explicitly chooses
-                // its completion action, including respring and relaunch.
+                // Evaluate once at completion; reopening a finished task never
+                // replays the automatic action.
                 if restoreBatch != nil || UserDefaults.standard.bool(forKey: "AlwaysShowLog") || status != 0 {
                     self.showDetails(nil)
+                } else if UserDefaults.standard.bool(forKey: "AutoComplete"),
+                          TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
+                    self.completeButtonTapped(nil)
                 }
                 NotificationCenter.default.post(name: NSNotification.Name("Sileo.CompleteInstall"), object: nil)
             }
@@ -1564,14 +1567,15 @@ private final class TaskNodeStrip: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         guard !nodes.isEmpty else { return }
-        let pitch = bounds.width / CGFloat(nodes.count)
+        let nodeWidth: CGFloat = min(40, bounds.width / CGFloat(nodes.count))
+        let pitch = nodes.count > 1 ? (bounds.width - nodeWidth) / CGFloat(nodes.count - 1) : 0
         let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
         for index in nodes.indices {
             let position = rtl ? nodes.count - 1 - index : index
             let item = items[index]
             if index < lines.count {
                 let nextPosition = rtl ? position - 1 : position + 1
-                let lineX = CGFloat(min(position, nextPosition)) * pitch + pitch / 2 + 12
+                let lineX = CGFloat(min(position, nextPosition)) * pitch + nodeWidth / 2 + 12
                 lines[index].frame = CGRect(x: lineX, y: 13, width: max(0, pitch - 24), height: 2)
                 let lineColor: UIColor = item.state == .complete || item.state == .running ? accent : .tertiarySystemFill
                 lines[index].backgroundColor = lineColor
@@ -1589,7 +1593,7 @@ private final class TaskNodeStrip: UIView {
                     lines[index].layer.removeAnimation(forKey: "task.line.pulse")
                 }
             }
-            nodes[index].frame = CGRect(x: CGFloat(position) * pitch, y: 0, width: pitch, height: bounds.height)
+            nodes[index].frame = CGRect(x: CGFloat(position) * pitch, y: 0, width: nodeWidth, height: bounds.height)
             nodes[index].update(item, accent: accent, animate: window != nil && !UIAccessibility.isReduceMotionEnabled)
         }
     }
