@@ -15,3 +15,6 @@
 
 # files the user drops in for review (Apelin)
 /incoming/
+
+# local design previews (not application assets)
+/Design/
