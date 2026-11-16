@@ -30,6 +30,7 @@
 "Backup_Task_Start_All" = "Start All";
 "Backup_Task_Pause_All" = "Pause All";
 "Backup_Task_Start" = "Start";
+"Backup_Task_Retry" = "Retry";
 "Backup_Task_Pause" = "Pause";
 "Backup_Task_Pause_Requested" = "Pause requested; waiting at a safe boundary. Tap Start to resume.";
 "Backup_Task_Ready" = "Ready. Start a task or all tasks; dependencies run first.";

@@ -121,6 +121,23 @@ final class BackupTaskSession {
         }
     }
 
+    /// Retry only failed rows; successful and removed tasks remain untouched.
+    func resetFailure(_ id: String) {
+        precondition(Thread.isMainThread)
+        guard !closed, !activeIDs.contains(id),
+              let index = tasks.firstIndex(where: { $0.id == id && $0.outcome == false }) else { return }
+        tasks[index].outcome = nil
+        tasks[index].fraction = 0
+        tasks[index].detail = String(localizationKey: "Backup_Task_Waiting")
+        tasks[index].active = false
+        lastSummary = nil
+        pauseCondition.lock()
+        pausedIDs.remove(id)
+        pauseCondition.broadcast()
+        pauseCondition.unlock()
+        onChange?()
+    }
+
     func begin(_ ids: Set<String>) {
         guard Thread.isMainThread else { DispatchQueue.main.async { self.begin(ids) }; return }
         guard !closed else { return }
@@ -683,6 +700,24 @@ final class BackupProgressAlert: SileoPanelViewController {
         render()
     }
 
+    private func retryTask(_ id: String) {
+        guard !session.closed, startHandler != nil, !roundRunning, !cancelling, !finishingRestore,
+              session.tasks.contains(where: { $0.id == id && $0.outcome == false }) else { return }
+        let manager = DownloadManager.shared
+        guard !manager.aptRunning, !manager.queueRunning, manager.operationCount() == 0,
+              manager.restoreBatch == nil else {
+            resultMessage = String(localizationKey: "Restore_Isolation_Busy")
+            render()
+            return
+        }
+        session.resetFailure(id)
+        allTasksPaused = false
+        // Keep the retry visible after it leaves the failure category.
+        currentFilter = 0
+        filters.selectedSegmentIndex = 0
+        startTask(id)
+    }
+
     private func startTask(_ id: String?) {
         guard !session.closed, let handler = startHandler, !cancelling, !finishingRestore else { return }
         if roundRunning {
@@ -851,6 +886,17 @@ final class BackupProgressAlert: SileoPanelViewController {
                         dot.heightAnchor.constraint(equalToConstant: 24)
                     ])
                     controls.addArrangedSubview(select)
+                } else if task.outcome == false, startHandler != nil {
+                    let retry = Self.headerButton(title: String(localizationKey: "Backup_Task_Retry")) { [weak self] in
+                        self?.retryTask(task.id)
+                    }
+                    retry.setTitle(nil, for: .normal)
+                    retry.setImage(UIImage(systemName: "arrow.clockwise"), for: .normal)
+                    retry.accessibilityLabel = String(localizationKey: "Backup_Task_Retry")
+                    retry.isEnabled = !roundRunning && !cancelling && !finishingRestore
+                    retry.widthAnchor.constraint(equalToConstant: 44).isActive = true
+                    retry.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+                    controls.addArrangedSubview(retry)
                 } else if task.outcome == nil, startHandler != nil {
                     let inRound = roundRunning && session.activeIDs.contains(task.id)
                     let paused = session.isPaused(task.id)

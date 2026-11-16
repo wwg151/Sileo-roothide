@@ -29,6 +29,7 @@
 "Backup_Task_Start_All" = "全部开始";
 "Backup_Task_Pause_All" = "全部暂停";
 "Backup_Task_Start" = "开始";
+"Backup_Task_Retry" = "重试";
 "Backup_Task_Pause" = "暂停";
 "Backup_Task_Pause_Requested" = "已请求暂停，将在安全节点等待；点开始继续。";
 "Backup_Task_Ready" = "已准备就绪。点击开始或全部开始，所需依赖会先执行。";
