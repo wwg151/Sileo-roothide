@@ -413,7 +413,17 @@ final class BackupProgressAlert: SileoPanelViewController {
             self?.render()
             // Wait until the current completion callback has finished resetting
             // download state before starting the next serial operation.
-            DispatchQueue.main.async { [weak self] in self?.startNextQueuedTask() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.startNextQueuedTask()
+                guard !self.roundRunning, !self.session.hasPendingTasks,
+                      !self.restoreCompletionFailed,
+                      !self.session.tasks.isEmpty,
+                      self.session.tasks.allSatisfy({ $0.outcome == true }),
+                      self.session.removedResults.allSatisfy({ $0.outcome }) else { return }
+                // Closing never invokes the optional, explicitly tapped finish action.
+                self.close()
+            }
         }
     }
 
@@ -517,8 +527,9 @@ final class BackupProgressAlert: SileoPanelViewController {
         NotificationCenter.default.post(name: DownloadManager.lockStateChangeNotification, object: nil)
         batch.perform(progress: { _, _, _, _ in }, output: { text, _ in
             NSLog("SileoLog: restore: %@", text)
-        }, completion: { _, finish, refresh in
+        }, completion: { status, finish, refresh in
             DispatchQueue.main.async {
+                self.restoreCompletionFailed = status != 0 || BackupManager.shared.isCancelled
                 if finish.rawValue > self.session.accumulatedFinish.rawValue {
                     self.session.accumulatedFinish = finish
                 }
@@ -543,6 +554,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     private var finishingRestore = false
+    private var restoreCompletionFailed = false
 
     private func showRestoreCompletion() {
         guard !roundRunning, !finishingRestore else { return }

@@ -1407,27 +1407,17 @@ class DownloadsTableViewController: SileoViewController {
                 
                 // Decide only when the transaction completes. Opening a retained
                 // queue later must never replay an automatic restart.
-                if status != 0 || self.taskCancelled {
+                let hasDownloadErrors = DownloadManager.shared.vars.queuedDownloads.raw.values.contains {
+                    $0.session == DownloadManager.shared.currentDownloadSession
+                        && !($0.failureReason ?? "").isEmpty
+                }
+                if status != 0 || self.taskCancelled || !self.errors.isEmpty || hasDownloadErrors {
                     self.showDetails(nil)
                 } else {
-                    if UserDefaults.standard.bool(forKey: "AlwaysShowLog") {
-                        self.showDetails(nil)
-                    }
-                    switch self.returnButtonAction {
-                    case .back, .uicache:
-                        // Keep the existing icon-cache / Sileo refresh handling,
-                        // then clear the queue regardless of panel visibility.
-                        self.completeButtonTapped(nil)
-                    case .reload, .restart:
-                        if TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
-                            self.completeButtonTapped(nil)
-                        }
-                    case .reboot, .usreboot:
-                        // Userspace restart always requires an explicit tap.
-                        break
-                    case .reopen:
-                        self.completeButtonTapped(nil)
-                    }
+                    // Successful installs only dismiss the queue. Never run a
+                    // finish command automatically, including Sileo's uicache
+                    // refresh, which can terminate this process on iOS 16.
+                    self.queueCompleted()
                 }
                 NotificationCenter.default.post(name: NSNotification.Name("Sileo.CompleteInstall"), object: nil)
             }
