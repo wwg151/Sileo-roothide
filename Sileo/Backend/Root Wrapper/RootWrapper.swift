@@ -184,8 +184,8 @@ final public class MacRootWrapper {
     close(pipestdout[1])
     close(pipestderr[1])
 
-    var stdoutStr = ""
-    var stderrStr = ""
+    var stdoutData = Data()
+    var stderrData = Data()
 
     let mutex = DispatchSemaphore(value: 0)
 
@@ -221,12 +221,7 @@ final public class MacRootWrapper {
             return
         }
 
-        let array = Array(UnsafeBufferPointer(start: buffer, count: bytesRead)) + [UInt8(0)]
-        array.withUnsafeBufferPointer { ptr in
-            let str = String(cString: unsafeBitCast(ptr.baseAddress, to: UnsafePointer<CChar>.self))
-            NSLog("SileoLog: stdout=\(str)")
-            stdoutStr += str
-        }
+        stdoutData.append(buffer, count: bytesRead)
     }
     stderrSource.setEventHandler {
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufsiz)
@@ -242,12 +237,7 @@ final public class MacRootWrapper {
             return
         }
 
-        let array = Array(UnsafeBufferPointer(start: buffer, count: bytesRead)) + [UInt8(0)]
-        array.withUnsafeBufferPointer { ptr in
-            let str = String(cString: unsafeBitCast(ptr.baseAddress, to: UnsafePointer<CChar>.self))
-            NSLog("SileoLog: stderr=\(str)")
-            stderrStr += str
-        }
+        stderrData.append(buffer, count: bytesRead)
     }
 
     stdoutSource.resume()
@@ -258,6 +248,10 @@ final public class MacRootWrapper {
     var status: Int32 = 0
     waitpid(pid, &status, 0)
 
+    let stdoutStr = String(decoding: stdoutData, as: UTF8.self)
+    let stderrStr = String(decoding: stderrData, as: UTF8.self)
+    NSLog("SileoLog: stdout=\(stdoutStr)")
+    NSLog("SileoLog: stderr=\(stderrStr)")
     return (Int(status), stdoutStr, stderrStr)
 }
 

@@ -690,10 +690,20 @@ final class DownloadManager {
 
     private func saveDownloadedPackage(package: Package, fileURL: URL, progress: (String) -> Void) -> Bool {
         let directory = URL(fileURLWithPath: "/var/mobile/Downloads", isDirectory: true)
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-")
         func component(_ value: String) -> String {
-            let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "package"
-            return String(encoded.prefix(64))
+            // File URLs handle Unicode directly; percent escaping here becomes
+            // literal %XX text in Files and can be truncated mid-escape.
+            let forbidden = CharacterSet.controlCharacters.union(CharacterSet(charactersIn: "/\\:"))
+            let cleaned = value.precomposedStringWithCanonicalMapping.unicodeScalars.map {
+                forbidden.contains($0) ? "_" : String($0)
+            }.joined()
+            var result = ""
+            for character in cleaned {
+                let next = String(character)
+                guard result.utf8.count + next.utf8.count <= 64 else { break }
+                result += next
+            }
+            return result.isEmpty || result == "." || result == ".." ? "package" : result
         }
         let filename = [package.package, package.version, package.architecture ?? "unknown"].map(component).joined(separator: "_")
         let manager = FileManager.default
