@@ -272,9 +272,9 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
     /// Width is the cell's contentView width, after UIKit's editing indentation.
     static func recommendedHeight(forError error: String, contentWidth: CGFloat, hasButton: Bool) -> CGFloat {
         guard !error.isEmpty else { return preferredRowHeight }
-        // Match the expanded error frame: 24pt leading, 20pt trailing,
-        // and the optional 44pt action button reserved by layoutSubviews.
-        let textWidth = max(1, contentWidth - 24 - 20 - (hasButton ? 44 : 0))
+        // The row width includes the card's outer margins. Match its inner
+        // error label (24pt leading, 20pt trailing and optional 44pt action).
+        let textWidth = max(1, contentWidth - 2 * cardHorizontalInset - 24 - 20 - (hasButton ? 44 : 0))
         let textHeight = error.boundingRect(
             with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -295,15 +295,11 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         progressView.isHidden = true
         textLabel?.isHidden = true
         detailTextLabel?.isHidden = true
-        let width = contentView.bounds.width
         let height = contentView.bounds.height
         let compact = height < Self.preferredRowHeight - 1
         let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
         statusLabel.numberOfLines = hasError && !compact ? 0 : 1
         statusLabel.lineBreakMode = hasError && !compact ? .byWordWrapping : .byTruncatingTail
-        func frame(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
-            CGRect(x: rtl ? width - x - w : x, y: y, width: max(0, w), height: max(0, h))
-        }
         // Leave UIKit's delete control outside the card. Once editing controls
         // disappear, both edges return to the overview's horizontal inset.
         let cardInset = Self.cardHorizontalInset
@@ -313,6 +309,14 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         let left = bounds.minX + max(cardInset, leadingInset > 0 ? leadingInset + 8 : cardInset)
         let right = bounds.maxX - max(cardInset, trailingInset > 0 ? trailingInset + 8 : cardInset)
         cardView.frame = CGRect(x: left, y: 0, width: max(0, right - left), height: max(0, height))
+        // Content lives in contentView, but its horizontal grid belongs to
+        // the card, which is positioned independently of editing controls.
+        let cardContentRect = convert(cardView.frame, to: contentView)
+        let width = cardContentRect.width
+        func frame(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
+            CGRect(x: cardContentRect.minX + (rtl ? width - x - w : x),
+                   y: y, width: max(0, w), height: max(0, h))
+        }
         var corners: CACornerMask = []
         if isFirstInGroup {
             corners.formUnion([.layerMinXMinYCorner, .layerMaxXMinYCorner])
