@@ -66,6 +66,9 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
     
     func applicationDidFinishLaunching(_ application: UIApplication) {
         NSLog("SileoLog: applicationDidFinishLaunching")
+        // A fresh launch must never replay an install's restart prompt or
+        // let its persisted flag suppress source refresh and package checks.
+        UserDefaults.standard.removeObject(forKey: "uicacheRequired")
 //uicache redirected
 //        EvanderNetworking.CACHE_FORCE = .libraryDirectory // Library/Cache -> /Library ?
 //        let prefix = CommandPath.prefix
@@ -91,20 +94,6 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
         // Start the language helper for customised localizations
         _ = LanguageHelper.shared
 
-//        UserDefaults.standard.setValue(true, forKey: "uicacheRequired")
-        if UserDefaults.standard.bool(forKey: "uicacheRequired") {
-            DispatchQueue.main.async {
-                let alert = UIAlertController(title: String(localizationKey: "Apply_Changes"), message: String(localizationKey: "Apply_Changes_Confirm"), preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: String(localizationKey: "After_Install_Relaunch"), style: .destructive, handler: { _ in
-                    UserDefaults.standard.setValue(false, forKey: "uicacheRequired")
-                    UserDefaults.standard.synchronize()
-                    spawnAsRoot(args:[jbroot("/usr/bin/uicache"), "-p", rootfs(Bundle.main.bundlePath)])
-                    exit(0)
-                }))
-                
-                SileoAppDelegate.presentController(alert)
-            }
-        }
         
         guard let tabBarController = self.window?.rootViewController as? UITabBarController else {
             fatalError("Invalid Storyboard")
