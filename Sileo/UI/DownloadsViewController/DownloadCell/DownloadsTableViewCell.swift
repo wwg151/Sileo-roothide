@@ -193,9 +193,10 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         var status = queuedStatus
 
         if let error = errorDescription, !error.isEmpty {
+            // The reason belongs under the package name. A trailing action here
+            // made an error row read differently from the rows above it.
             hasError = true
             status = String(localizationKey: error)
-            findDepButton.isHidden = searchPackageKeyword?.isEmpty != false
         } else if let action = action {
             status = action.status ?? String(localizationKey: "Ready_Status")
             activityProgress = clampedProgress(action.progress)
@@ -272,15 +273,23 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
     /// Width is the cell's contentView width, after UIKit's editing indentation.
     static func recommendedHeight(forError error: String, contentWidth: CGFloat, hasButton: Bool) -> CGFloat {
         guard !error.isEmpty else { return preferredRowHeight }
-        // The row width includes the card's outer margins. Match its inner
-        // error label (24pt leading, 20pt trailing and optional 44pt action).
-        let textWidth = max(1, contentWidth - 2 * cardHorizontalInset - 24 - 20 - (hasButton ? 44 : 0))
+        // The row width includes the card's outer margins. The reason starts at
+        // the name's column, so it shares that inset, and only a visible action
+        // takes room on the trailing side.
+        let textWidth = max(1, contentWidth - 2 * cardHorizontalInset - errorTextX - 20 - (hasButton ? 44 : 0))
         let textHeight = error.boundingRect(
             with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: UIFont.systemFont(ofSize: 12)], context: nil).height
-        return max(preferredRowHeight, ceil(72 + textHeight))
+        // Keep the package name and version on the same anchors as normal rows;
+        // the reason starts below them and grows the row downward.
+        return max(preferredRowHeight, ceil(errorTextTop + textHeight + 10))
     }
+
+    /// The text column, shared by the name, the version and an error reason.
+    static let errorTextX: CGFloat = 78
+    /// The normal row's version ends at 56pt; leave a 6pt gap before the reason.
+    private static let errorTextTop: CGFloat = 62
 
     func recommendedHeight(for contentWidth: CGFloat) -> CGFloat {
         Self.recommendedHeight(forError: hasError ? (statusLabel.text ?? "") : "",
@@ -326,7 +335,10 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         }
         cardView.layer.maskedCorners = corners
         cardView.layer.cornerRadius = corners.isEmpty ? 0 : 16
-        iconView.frame = frame(20, (height - 44) / 2, 44, 44)
+        // An error row is taller than a normal one; its icon and action stay on
+        // the normal row's anchors so they line up with the rows above.
+        let sideTopMaster = hasError && !compact ? (Self.preferredRowHeight - 44) / 2 : (height - 44) / 2
+        iconView.frame = frame(20, sideTopMaster, 44, 44)
         iconView.backgroundColor = .tertiarySystemFill
         let buttonVisible = !retryButton.isHidden || !findDepButton.isHidden
         let end: CGFloat = width - 20 - (buttonVisible ? 44 : 0)
@@ -336,7 +348,7 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         nameLabel.textAlignment = alignment
         versionLabel.textAlignment = alignment
         statusLabel.textAlignment = alignment
-        retryButton.frame = frame(width - 60, (height - 44) / 2, 44, 44)
+        retryButton.frame = frame(width - 60, sideTopMaster, 44, 44)
         findDepButton.frame = retryButton.frame
         nameLabel.frame = frame(textX, compact ? 6 : 13, textWidth, 20)
         versionLabel.isHidden = compact && hasError
@@ -352,19 +364,23 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
                 let gap: CGFloat = versionWidth > 0 ? 8 : 0
                 statusLabel.frame = frame(textX + versionWidth + gap, metadataY, textWidth - versionWidth - gap, metadataHeight)
             }
+        } else if hasError {
+            // A reason keeps the name and version on the anchors an 88pt row
+            // uses and grows downward, so the package name never rides up and
+            // the red text lines up with the name instead of the card edge.
+            let nameY: CGFloat = 13
+            nameLabel.frame = frame(textX, nameY, textWidth, 20)
+            versionLabel.frame = frame(textX, 39, textWidth, 17)
+            statusLabel.frame = frame(textX, Self.errorTextTop, textWidth, max(0, height - Self.errorTextTop - 10))
         } else {
             versionLabel.frame = frame(textX, 39, textWidth, 17)
-            if hasError {
-                statusLabel.frame = frame(24, 62, max(0, end - 24), max(0, height - 72))
-            } else {
-                // Reserve a bounded trailing column so long names and status
-                // strings truncate independently instead of overlapping.
-                let statusWidth = min(textWidth * 0.44, statusLabel.sizeThatFits(CGSize(width: textWidth, height: 20)).width)
-                let gap: CGFloat = statusWidth > 0 ? 10 : 0
-                nameLabel.frame = frame(textX, 13, textWidth - statusWidth - gap, 20)
-                statusLabel.frame = frame(end - statusWidth, 15, statusWidth, 18)
-                statusLabel.textAlignment = rtl ? .left : .right
-            }
+            // Reserve a bounded trailing column so long names and status
+            // strings truncate independently instead of overlapping.
+            let statusWidth = min(textWidth * 0.44, statusLabel.sizeThatFits(CGSize(width: textWidth, height: 20)).width)
+            let gap: CGFloat = statusWidth > 0 ? 10 : 0
+            nameLabel.frame = frame(textX, 13, textWidth - statusWidth - gap, 20)
+            statusLabel.frame = frame(end - statusWidth, 15, statusWidth, 18)
+            statusLabel.textAlignment = rtl ? .left : .right
         }
         let textViews: [UIView] = [nameLabel, versionLabel, statusLabel]
         let visibleText = textViews.filter { !$0.isHidden && $0.bounds.height > 0 }
@@ -384,7 +400,10 @@ class DownloadsTableViewCell: BaseSubtitleTableViewCell {
         let showsProgress = !activityTrack.isHidden
         let progressViews: [UIView] = showsProgress ? [activityTrack, percentageLabel] : []
         let visibleContent = visibleText + progressViews.filter { !$0.isHidden && $0.bounds.height > 0 }
-        if let top = visibleContent.map({ $0.frame.minY }).min(),
+        // An error row is deliberately top-anchored: centering it would push
+        // its name above the ordinary rows it is read against.
+        if !(hasError && !compact),
+           let top = visibleContent.map({ $0.frame.minY }).min(),
            let bottom = visibleContent.map({ $0.frame.maxY }).max() {
             let offset = (height - (bottom - top)) / 2 - top
             for view in visibleContent {

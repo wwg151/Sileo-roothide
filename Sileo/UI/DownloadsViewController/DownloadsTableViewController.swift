@@ -1744,7 +1744,9 @@ extension DownloadsTableViewController: UITableViewDataSource {
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         if indexPath.section == 3 {
-            return DownloadsTableViewCell.recommendedHeight(forError: dependencyDescription(errors[indexPath.row]), contentWidth: tableView.bounds.width, hasButton: true)
+            // The reason now shares the name's column and an error row carries
+            // no trailing action, so no button width is reserved.
+            return DownloadsTableViewCell.recommendedHeight(forError: dependencyDescription(errors[indexPath.row]), contentWidth: tableView.bounds.width, hasButton: false)
         }
         let packages = taskGroups[indexPath.section]
         if packages.indices.contains(indexPath.row),
