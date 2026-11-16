@@ -102,6 +102,12 @@ class DownloadsTableViewController: SileoViewController {
         let stage: Int
         let failed: Bool
         let rows: [String]
+        let nodes: [Node]
+
+        struct Node {
+            let title: String
+            let state: String
+        }
     }
 
     /// Main-thread snapshot shared by the window, collapsed queue and peek.
@@ -111,6 +117,7 @@ class DownloadsTableViewController: SileoViewController {
         let downloads = entries.compactMap { manager.queuedDownload(package: $0.package.package) }
             .filter { $0.session == manager.currentDownloadSession }
         let failures = downloads.filter { !($0.failureReason ?? "").isEmpty }
+        let nodes = nodeSnapshot().map { TaskPresentation.Node(title: $0.title, state: $0.state.rawValue) }
         let blocked = !errors.isEmpty || !failures.isEmpty
         let rows: [String]
         if !actions.isEmpty {
@@ -128,7 +135,7 @@ class DownloadsTableViewController: SileoViewController {
         if taskCancelled || (nodeSession != nil && manager.downloadsCancelled && !(manager.restoreBatch != nil && isInstalling && !isFinishedInstalling)) {
             return TaskPresentation(title: String(localizationKey: "Task_Node_Cancelled"),
                 detail: currentTaskStatus ?? taskOperationSummary, progress: nil,
-                stage: isInstalling || isFinishedInstalling ? 1 : 0, failed: false, rows: rows)
+                stage: isInstalling || isFinishedInstalling ? 1 : 0, failed: false, rows: rows, nodes: nodes)
         }
         // Completion always wins over every running flag and cached message.
         if isFinishedInstalling {
@@ -136,17 +143,17 @@ class DownloadsTableViewController: SileoViewController {
             return TaskPresentation(title: String(localizationKey: failed ? "Task_Install_Issue" : "Task_Completed"),
                 detail: failed ? String(localizationKey: "Task_Check_Log") : taskCompletionHint,
                 progress: failed ? (hasAPTProgress ? min(0.99, aptProgress) : nil) : 1,
-                stage: failed ? 1 : 2, failed: failed, rows: rows)
+                stage: failed ? 1 : 2, failed: failed, rows: rows, nodes: nodes)
         }
         if checkingSavedPackages && !isFinishedInstalling {
             return TaskPresentation(title: String(localizationKey: "Auto_Save_Packages_Checking"),
                 detail: currentTaskStatus ?? String(localizationKey: "Task_Keep_Open"),
-                progress: nil, stage: 1, failed: false, rows: rows)
+                progress: nil, stage: 1, failed: false, rows: rows, nodes: nodes)
         }
         if restoreCancellationRequested && !isFinishedInstalling {
             return TaskPresentation(title: String(localizationKey: "Restore_Isolation_Cancelling"),
                 detail: currentTaskStatus ?? taskOperationSummary,
-                progress: nil, stage: 1, failed: false, rows: rows)
+                progress: nil, stage: 1, failed: false, rows: rows, nodes: nodes)
         }
         if isInstalling {
             return TaskPresentation(title: currentOperationTitle ?? String(localizationKey: "Deck_Executing"),
@@ -154,12 +161,17 @@ class DownloadsTableViewController: SileoViewController {
                     ? [String(localizationKey: "Task_Node_Restore_Sequence"), currentTaskStatus]
                         .compactMap { $0 }.joined(separator: " · ")
                     : currentTaskStatus ?? String(localizationKey: "Task_Keep_Open"),
-                progress: hasAPTProgress ? min(0.99, aptProgress) : nil, stage: 1, failed: false, rows: rows)
+                progress: hasAPTProgress ? min(0.99, aptProgress) : nil, stage: 1, failed: false, rows: rows, nodes: nodes)
         }
         if blocked {
+            let activeCount = downloads.filter { $0.phase == .downloading || $0.phase == .converting }.count
+            let detail = [failures.isEmpty ? nil : String(format: String(localizationKey: "Task_Node_Failure_Count"), failures.count),
+                          activeCount == 0 ? nil : String(format: String(localizationKey: "Task_Node_Active_Count"), activeCount),
+                          failures.first?.failureReason ?? String(localizationKey: "Task_Resolve_Dependencies")]
+                .compactMap { $0 }.joined(separator: " · ")
             return TaskPresentation(title: String(localizationKey: "Task_Attention"),
-                detail: failures.first?.failureReason ?? String(localizationKey: "Task_Resolve_Dependencies"),
-                progress: nil, stage: 0, failed: true, rows: rows)
+                detail: detail,
+                progress: nil, stage: 0, failed: true, rows: rows, nodes: nodes)
         }
         if isDownloading && !entries.isEmpty {
             let networkActive = downloads.contains { $0.phase == .downloading }
@@ -188,11 +200,12 @@ class DownloadsTableViewController: SileoViewController {
             let conversionDetail = String(format: String(localizationKey: "Task_Node_Converting_Count"), convertingCount)
             let summaryDetail = convertingCount > 0 ? (networkActive ? detail + " · " + conversionDetail : conversionDetail) : detail
             return TaskPresentation(title: String(localizationKey: ready ? "Ready_Status" : converting ? "Compat_Converting" : "Downloading_Package_Status"),
-                detail: summaryDetail, progress: converting ? nil : ready ? 1 : fraction, stage: 0, failed: false, rows: rows)
+                detail: summaryDetail, progress: converting ? nil : ready ? 1 : fraction,
+                stage: 0, failed: false, rows: rows, nodes: nodes)
         }
         return TaskPresentation(title: String(localizationKey: "Task_Ready"),
-            detail: taskOperationSummary,
-            progress: nil, stage: 0, failed: false, rows: rows)
+            detail: taskOperationSummary.isEmpty ? String(format: String(localizationKey: "Package_Queue_Count"), entries.count + uninstallations.count + uninstalldeps.count) : taskOperationSummary,
+            progress: nil, stage: 0, failed: false, rows: rows, nodes: nodes)
     }
 
     /// Preserve the operation captured before apt changes installed versions.
@@ -267,7 +280,7 @@ class DownloadsTableViewController: SileoViewController {
 
     /// A plan is captured once, before execution mutates installed metadata.
     /// Optional stages never disappear during retries or cache hits.
-    private func refreshNodes(capturingPlan: Bool = false) {
+    private func nodeSnapshot(capturingPlan: Bool = false) -> [TaskNodeStrip.Item] {
         let manager = DownloadManager.shared
         let session = manager.currentDownloadSession
         if !capturingPlan && (isDownloading || isInstalling || isFinishedInstalling) {
@@ -340,12 +353,28 @@ class DownloadsTableViewController: SileoViewController {
             case .execute, .complete: done = succeeded
             }
             if done { state = .complete }
-            if started && !taskCancelled && !isFinishedInstalling && kind == activeKind && !done { state = .running }
+            let active = kind == .prepare ? preparing && !preparationFinished
+                : kind == .download ? downloading
+                : kind == .convert ? convertingCount > 0
+                : kind == .execute ? isInstalling : false
+            if started && !taskCancelled && !isFinishedInstalling && active && !done { state = .running }
             if !taskCancelled && (failedKinds.contains(kind) || (kind == .prepare && !errors.isEmpty)
                 || (kind == .execute && isFinishedInstalling && installExitStatus != 0)) { state = .failed }
             if taskCancelled && !done && kind == activeKind { state = .cancelled }
             return TaskNodeStrip.Item(title: title, state: state)
         }
+        return items
+    }
+
+    private func refreshNodes(capturingPlan: Bool = false) {
+        let items = nodeSnapshot(capturingPlan: capturingPlan)
+        let activeKind = lastActiveNode
+        let executing = isInstalling || isFinishedInstalling
+        let downloads = nodeEntries.compactMap { DownloadManager.shared.queuedDownload(package: $0.package) }
+            .filter { $0.session == DownloadManager.shared.currentDownloadSession }
+        let convertingCount = downloads.filter { $0.phase == .converting }.count
+        let downloading = downloads.contains { $0.phase == .downloading }
+        let failedKinds = items.filter { $0.state == .failed }
         taskNodes.update(items: items, accent: view.tintColor ?? .systemTeal)
         if !taskCancelled && !isFinishedInstalling && errors.isEmpty && failedKinds.isEmpty {
             taskStage.text = items[nodePlan.firstIndex(of: activeKind) ?? 0].title

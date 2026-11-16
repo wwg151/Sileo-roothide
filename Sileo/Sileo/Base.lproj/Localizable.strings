@@ -50,6 +50,8 @@
 "Task_Node_Convert" = "Convert";
 "Task_Node_Mixed" = "Apply";
 "Task_Node_Converting_Count" = "Converting %d packages";
+"Task_Node_Failure_Count" = "%d failed";
+"Task_Node_Active_Count" = "%d still active";
 "Task_Node_Restore_Sequence" = "Preparing and installing packages one at a time";
 "Task_Node_Cancelled" = "Cancelled";
 "Task_Node_State_waiting" = "Waiting";

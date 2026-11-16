@@ -49,6 +49,8 @@
 "Task_Node_Convert" = "转换";
 "Task_Node_Mixed" = "混合执行";
 "Task_Node_Converting_Count" = "%d 个插件包正在转换";
+"Task_Node_Failure_Count" = "%d 个失败";
+"Task_Node_Active_Count" = "%d 个仍在进行";
 "Task_Node_Restore_Sequence" = "正在逐个准备并安装插件包";
 "Task_Node_Cancelled" = "已取消";
 "Task_Node_State_waiting" = "等待中";

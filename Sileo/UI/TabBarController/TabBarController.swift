@@ -20,7 +20,8 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private let fixedQueue = UIButton(type: .custom)
     private let fixedQueueTitle = UILabel()
     private let fixedQueueDetail = UILabel()
-    private let fixedQueueRing = UIImageView()
+    private let fixedQueueNodes = UIStackView()
+    private var fixedNodeViews: [UIStackView] = []
     private var fixedTaskClosing = false
 
     private func layoutFixedQueue() {
@@ -29,13 +30,23 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             fixedQueue.backgroundColor = .secondarySystemBackground
             fixedQueue.layer.cornerRadius = 32
             fixedQueue.layer.cornerCurve = .continuous
-            fixedQueueTitle.font = .systemFont(ofSize: 15, weight: .semibold)
-            fixedQueueDetail.font = .systemFont(ofSize: 12)
+            fixedQueueTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+            fixedQueueTitle.lineBreakMode = .byTruncatingTail
+            fixedQueueDetail.font = .systemFont(ofSize: 11)
             fixedQueueDetail.textColor = .secondaryLabel
-            for child in [fixedQueueTitle, fixedQueueDetail, fixedQueueRing] {
+            fixedQueueDetail.lineBreakMode = .byTruncatingTail
+            fixedQueueNodes.axis = .horizontal
+            fixedQueueNodes.alignment = .center
+            fixedQueueNodes.distribution = .fillEqually
+            fixedQueueNodes.spacing = 0
+            fixedQueueNodes.isUserInteractionEnabled = false
+            fixedQueueNodes.semanticContentAttribute = .unspecified
+            fixedQueue.isAccessibilityElement = true
+            for child in [fixedQueueTitle, fixedQueueDetail] as [UIView] {
                 child.isUserInteractionEnabled = false
                 fixedQueue.addSubview(child)
             }
+            fixedQueue.addSubview(fixedQueueNodes)
             fixedQueue.addTarget(self, action: #selector(openFixedTask), for: .touchUpInside)
             view.addSubview(fixedQueue)
         }
@@ -47,9 +58,15 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         }
         UIView.performWithoutAnimation {
             fixedQueue.frame = CGRect(x: 10, y: bottom - 64, width: view.bounds.width - 20, height: 64)
-            fixedQueueRing.frame = CGRect(x: 14, y: 12, width: 40, height: 40)
-            fixedQueueTitle.frame = CGRect(x: 66, y: 11, width: fixedQueue.bounds.width - 82, height: 22)
-            fixedQueueDetail.frame = CGRect(x: 66, y: 35, width: fixedQueue.bounds.width - 82, height: 18)
+            fixedQueueNodes.frame = CGRect(x: 14, y: 4, width: fixedQueue.bounds.width - 28, height: 34)
+            fixedQueueTitle.frame = CGRect(x: 14, y: 4, width: fixedQueue.bounds.width - 28, height: 24)
+            fixedQueueDetail.frame = CGRect(x: 14, y: 38, width: fixedQueue.bounds.width - 28, height: 18)
+            let compact = fixedQueue.bounds.width < 360 || UIFont.preferredFont(forTextStyle: .caption1).pointSize > 15
+            fixedQueueNodes.isHidden = false
+            fixedQueueTitle.isHidden = !compact
+            fixedQueueNodes.frame.size.height = compact ? 14 : 34
+            fixedQueueTitle.frame.origin.y = 18
+            for column in fixedNodeViews { column.arrangedSubviews.last?.isHidden = compact }
             fixedQueue.isHidden = !popupIsPresented || TabBarController.popupIsOpen || fixedTaskClosing
         }
         if taskPeek == nil { view.bringSubviewToFront(fixedQueue) }
@@ -194,6 +211,7 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
             layoutFixedQueue()
             updateQueueSummary()
             completion?()
+            layoutFixedQueue()
             return
         }
         popupLock.wait()
@@ -393,6 +411,73 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         updatePopup(completion: nil)
     }
     
+    private func queueNodeImage(_ nodes: [DownloadsTableViewController.TaskPresentation.Node], failed: Bool) -> UIImage {
+        let size = CGSize(width: 40, height: 40)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            guard !nodes.isEmpty else { return }
+            let cg = context.cgContext
+            let pitch = size.width / CGFloat(nodes.count)
+            cg.setLineWidth(1.2)
+            if nodes.count > 1 {
+                for index in 0..<(nodes.count - 1) {
+                    let left = CGPoint(x: pitch * (CGFloat(index) + 0.5) + 4, y: 15)
+                    let right = CGPoint(x: pitch * (CGFloat(index) + 1.5) - 4, y: 15)
+                    cg.setStrokeColor((nodes[index].state == "complete" ? (view.tintColor ?? .systemTeal) : .tertiaryLabel).cgColor)
+                    cg.move(to: left); cg.addLine(to: right); cg.strokePath()
+                }
+            }
+            for (index, node) in nodes.enumerated() {
+                let center = CGPoint(x: pitch * (CGFloat(index) + 0.5), y: 15)
+                let rect = CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)
+                let color: UIColor = node.state == "failed" ? .systemRed
+                    : node.state == "complete" || node.state == "running" ? (view.tintColor ?? .systemTeal) : .tertiaryLabel
+                cg.setFillColor(node.state == "complete" ? color.cgColor : UIColor.clear.cgColor)
+                cg.setStrokeColor(color.cgColor)
+                cg.fillEllipse(in: rect); cg.strokeEllipse(in: rect)
+            }
+            let caption = nodes.first(where: { $0.state == "running" || $0.state == "failed" || $0.state == "cancelled" })?.title
+                ?? nodes.last?.title ?? ""
+            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 7, weight: .medium), .foregroundColor: failed ? UIColor.systemRed : UIColor.label]
+            let text = NSAttributedString(string: caption, attributes: attributes)
+            let textSize = text.size()
+            text.draw(in: CGRect(x: max(0, (size.width - textSize.width) / 2), y: 25, width: min(size.width, textSize.width), height: 10))
+        }
+    }
+
+    private func updateFixedQueueNodes(_ items: [DownloadsTableViewController.TaskPresentation.Node]) {
+        fixedNodeViews.forEach { $0.removeFromSuperview() }
+        fixedNodeViews = items.map { item in
+            let column = UIStackView()
+            column.isUserInteractionEnabled = false
+            column.axis = .vertical
+            column.alignment = .center
+            column.distribution = .fill
+            column.spacing = 0
+            let marker = UILabel()
+            marker.font = .systemFont(ofSize: 12, weight: .semibold)
+            marker.textAlignment = .center
+            let color: UIColor = item.state == "failed" ? .systemRed
+                : item.state == "complete" || item.state == "running" ? (view.tintColor ?? .systemTeal) : .tertiaryLabel
+            marker.textColor = color
+            marker.text = item.state == "complete" ? "✓" : item.state == "failed" ? "!"
+                : item.state == "cancelled" ? "×" : item.state == "running" ? "◌" : "○"
+            let label = UILabel()
+            label.font = .systemFont(ofSize: 9, weight: .medium)
+            label.textAlignment = .center
+            label.textColor = color
+            label.lineBreakMode = .byTruncatingTail
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.75
+            label.text = item.title
+            column.addArrangedSubview(marker)
+            column.addArrangedSubview(label)
+            column.accessibilityElements = [marker, label]
+            return column
+        }
+        fixedQueueNodes.arrangedSubviews.forEach { fixedQueueNodes.removeArrangedSubview($0); $0.removeFromSuperview() }
+        fixedNodeViews.forEach { fixedQueueNodes.addArrangedSubview($0) }
+    }
+
     /// Queue, peek and full window share one main-thread snapshot. No delayed
     /// download summary can overwrite the final result after apt has exited.
     private func updateQueueSummary() {
@@ -406,21 +491,32 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
         let symbol = task.failed ? "exclamationmark" : finished ? "checkmark"
             : task.stage == 1 ? "shippingbox" : progress == nil ? "clock" : "arrow.down"
         let image = queueRingImage(fraction: finished ? 1 : progress, symbol: symbol, failed: task.failed)
+        let nodeSummary = task.nodes.map { node in
+            let marker = node.state == "complete" ? "✓" : node.state == "failed" ? "!"
+                : node.state == "cancelled" ? "×" : node.state == "running" ? "◌" : "○"
+            return marker + " " + node.title
+        }.joined(separator: "   ›   ")
+        let queueImage = task.nodes.isEmpty ? image : queueNodeImage(task.nodes, failed: task.failed)
+        let percentage = task.progress.flatMap { value -> String? in
+            guard value.isFinite, value < 1, !task.failed else { return nil }
+            return "\(Int(max(0, min(1, value)) * 100))%"
+        }
+        let queueDetail = [task.title, percentage, task.detail.isEmpty ? nil : task.detail]
+            .compactMap { $0 }.joined(separator: " · ")
         if let item = downloadsController?.popupItem {
-            item.title = task.title
-            item.subtitle = task.detail
-            if let progress = progress, !finished, !task.failed {
-                item.title = task.title + " · \(Int(progress * 100))%"
-            }
-            item.image = image
+            item.title = task.nodes.isEmpty ? task.title : nodeSummary
+            item.subtitle = queueDetail
+            item.image = queueImage
             item.progress = 0
         }
         if usesFixedQueue {
-            fixedQueueTitle.text = downloadsController?.popupItem.title
-            fixedQueueDetail.text = task.detail
-            fixedQueueRing.image = image
-            fixedQueueTitle.textColor = task.failed ? .systemRed : .label
-            fixedQueue.accessibilityLabel = [fixedQueueTitle.text ?? task.title, task.detail].joined(separator: ", ")
+            fixedQueueTitle.text = task.title
+            fixedQueueDetail.text = queueDetail
+            fixedQueue.accessibilityLabel = [task.title, task.detail,
+                task.nodes.map { "\($0.title), \(String(localizationKey: "Task_Node_State_\($0.state)"))" }.joined(separator: ", ")]
+                .filter { !$0.isEmpty }.joined(separator: ", ")
+            updateFixedQueueNodes(task.nodes)
+            layoutFixedQueue()
         }
         taskPeek?.update(title: task.title, detail: task.detail,
                          rows: Array(task.rows.prefix(3)), image: image,
