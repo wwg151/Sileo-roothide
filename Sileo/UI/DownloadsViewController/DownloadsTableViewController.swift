@@ -1400,11 +1400,13 @@ class DownloadsTableViewController: SileoViewController {
                 
                 TabBarController.singleton?.updatePopup()
                 
-                // Successful transactions respect the preference even if apt
-                // emitted warnings. Failed transactions must remain inspectable.
+                // Decide only at completion: reopening a completed queue must
+                // never replay this action. Collapsed tasks keep their result
+                // and completion button until the user explicitly taps it.
                 if restoreBatch != nil || UserDefaults.standard.bool(forKey: "AlwaysShowLog") || status != 0 {
                     self.showDetails(nil)
-                } else if UserDefaults.standard.bool(forKey: "AutoComplete") {
+                } else if UserDefaults.standard.bool(forKey: "AutoComplete"),
+                          TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
                     self.completeButtonTapped(nil)
                 }
                 NotificationCenter.default.post(name: NSNotification.Name("Sileo.CompleteInstall"), object: nil)

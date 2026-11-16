@@ -25,6 +25,23 @@ class TabBarController: UITabBarController, UITabBarControllerDelegate, LNPopupP
     private var fixedNodeViews: [UIStackView] = []
     private var fixedTaskClosing = false
 
+    /// Automatic completion is allowed only while the task center is visible.
+    /// Closing transitions already count as collapsed, including interactive drags.
+    var allowsAutomaticTaskCompletion: Bool {
+        guard UIApplication.shared.applicationState == .active,
+              popupIsPresented, TabBarController.popupIsOpen,
+              !fixedTaskClosing, !popupIsClosing,
+              let controller = downloadsController,
+              controller.viewIfLoaded?.window != nil,
+              !controller.isBeingDismissed,
+              controller.transitionCoordinator == nil else { return false }
+        if usesFixedQueue {
+            return controller.presentingViewController != nil
+        }
+        let gestureState = popupContentView.popupInteractionGestureRecognizer.state
+        return popupPresentationState == .open && gestureState != .began && gestureState != .changed
+    }
+
     private func layoutFixedQueue() {
         guard usesFixedQueue else { return }
         if fixedQueue.superview == nil {
