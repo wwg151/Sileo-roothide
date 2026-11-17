@@ -14,12 +14,6 @@ final class RepoManager {
     
     private let NO_PGP = true
     private var hasDuplicateRepo = false
-
-    // A refresh owns repository state and list files until its completion runs.
-    // Waiting here is confined to a worker queue, never the main thread.
-    private let refreshQueue = DispatchQueue(label: "org.coolstar.SileoStore.refresh", qos: .userInitiated)
-    private let hashCacheLock = NSLock()
-    private let refreshTimeout: TimeInterval = 35
     
     static let progressNotification = Notification.Name("SileoRepoManagerProgress")
     private var repoDatabase = DispatchQueue(label: "org.coolstar.SileoStore.repo-database")
@@ -579,13 +573,6 @@ final class RepoManager {
                 success(task, status, fullURL, url)
             },
             failure: { task, status, error in
-                // Only a missing representation warrants trying another format.
-                // Transport failures, cancellation and server errors apply to the
-                // request, not to the compression format.
-                guard error == nil, status == 404 || status == 410 else {
-                    failure(task, status, error)
-                    return
-                }
                 let newExtensions = Array(extensions.dropFirst())
                 guard !newExtensions.isEmpty else { return failure(task, status, error) }
                 self.fetch(from: url, lastModifiedTime: lastModifiedTime, withExtensionsUntilSuccess: newExtensions, taskupdate: taskupdate, progress: progress, success: success, failure: failure)
@@ -706,9 +693,7 @@ final class RepoManager {
             self.postProgressNotification(repo)
         }
 
-        // Source I/O is network-bound, not CPU-bound. Keep cold-start bursts
-        // bounded regardless of processor count or refresh trigger.
-        for iqueue in 0..<min(repos.count, 4) {
+        for iqueue in 0..<min(repos.count, ProcessInfo.processInfo.processorCount * 2 * (isBackground ? 1 : 2)) {
             updateGroup.enter() //enter group before async block
             let repoQueue = DispatchQueue(label: "repo-update-queue-\(iqueue)")
             repoQueue.async {
@@ -807,7 +792,7 @@ final class RepoManager {
                     releaseTask?.resume()
                     
                     var startTime = Date()
-                    let refreshTimeout = self.refreshTimeout
+                    let refreshTimeout: TimeInterval = isBackground ? 10 : 20
                     
                     var releaseGPGTask: EvanderDownloader? = nil
                     defer { releaseGPGTask?.cancel() }
@@ -1280,8 +1265,6 @@ final class RepoManager {
         guard let repo = URL(string: repo) else { return }
         let repoPath = repo.appendingPathComponent("Packages").appendingPathExtension(type)
         let jsonPath = EvanderNetworking._cacheDirectory.appendingPathComponent("RepoHashCache").appendingPathExtension("json")
-        hashCacheLock.lock()
-        defer { hashCacheLock.unlock() }
         var dict = [String: [String: String]]()
         if let cachedData = try? Data(contentsOf: jsonPath),
            let tmp = try? JSONSerialization.jsonObject(with: cachedData, options: .mutableContainers) as? [String: [String: String]] {
@@ -1291,7 +1274,7 @@ final class RepoManager {
         hashDict[repoPath.absoluteString] = hash
         dict[hashtype.rawValue] = hashDict
         if let jsonData = try? JSONEncoder().encode(dict) {
-            try? jsonData.write(to: jsonPath, options: .atomic)
+            try? jsonData.write(to: jsonPath)
         }
     }
 
@@ -1312,16 +1295,11 @@ final class RepoManager {
     }
 
     func update(force: Bool, forceReload: Bool, isBackground: Bool, repos: [Repo] = RepoManager.shared.repoList, completion: @escaping (Bool, NSAttributedString) -> Void) {
-        refreshQueue.async {
+        DispatchQueue.global(qos: .userInitiated).async {
             PackageListManager.shared.initWait()
-            let finished = DispatchSemaphore(value: 0)
-            self._update(force: force, forceReload: forceReload, isBackground: isBackground, repos: repos) { errors, output in
-                // _update completes on main after all workers and list cleanup.
-                // Do not let another round touch those files before this point.
-                defer { finished.signal() }
-                completion(errors, output)
-            }
-            finished.wait()
+//            DispatchQueue.main.async {
+                self._update(force: force, forceReload: forceReload, isBackground: isBackground, repos: repos, completion: completion)
+//            }
         }
     }
 
