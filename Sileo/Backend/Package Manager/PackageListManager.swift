@@ -651,7 +651,8 @@ final class PackageListManager {
         DownloadManager.shared.upgradeAll(packages: upgrades) {
             DownloadManager.shared.reloadData(recheckPackages: true) {
                 completion?()
-                if UserDefaults.standard.bool(forKey: "UpgradeAllAutoQueue", fallback: true) {
+                if UserDefaults.standard.bool(forKey: "UpgradeAllAutoQueue", fallback: true)
+                    && !UserDefaults.standard.bool(forKey: "SkipOperationConfirmation") {
                     TabBarController.singleton?.presentPopupController()
                 }
             }

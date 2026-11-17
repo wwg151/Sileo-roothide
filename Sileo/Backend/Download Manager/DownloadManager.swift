@@ -79,6 +79,25 @@ final class DownloadManager {
         private static let dataQueueKey = aptQueueKey
         private static let dataQueue = aptQueue
     
+    // Consumed only after dependency resolution, never by progress/UI refreshes.
+    private let automaticStartLock = NSLock()
+    private var pendingAutomaticStart = false
+
+    private func requestAutomaticStart() {
+        guard UserDefaults.standard.bool(forKey: "SkipOperationConfirmation") else { return }
+        automaticStartLock.lock()
+        pendingAutomaticStart = true
+        automaticStartLock.unlock()
+    }
+
+    private func consumeAutomaticStart() -> Bool {
+        automaticStartLock.lock()
+        defer { automaticStartLock.unlock() }
+        let pending = pendingAutomaticStart
+        pendingAutomaticStart = false
+        return pending
+    }
+
     struct TSyncVars {
         public var upgrades = SafeSet<DownloadPackage>(queue: dataQueue, key: dataQueueKey, context: dataQueueContext)
         public var installations = SafeSet<DownloadPackage>(queue: dataQueue, key: dataQueueKey, context: dataQueueContext)
@@ -986,6 +1005,7 @@ final class DownloadManager {
     
     public func removeAllItems() {
         NSLog("SileoLog: DownloadManager.removeAllItems")
+        _ = consumeAutomaticStart()
         restoreBatch = nil
         self.vars.upgrades.removeAll()
         self.vars.installdeps.removeAll()
@@ -1016,9 +1036,15 @@ final class DownloadManager {
                 TabBarController.singleton?.displayError(error.localizedDescription)
             }
             
+            let shouldStartAutomatically = consumeAutomaticStart()
             DispatchQueue.main.async {
                 self.viewController.reloadData()
-                TabBarController.singleton?.updatePopup(completion: completion)
+                TabBarController.singleton?.updatePopup(completion: {
+                    completion?()
+                    if shouldStartAutomatically {
+                        self.viewController.startWithoutConfirmationIfPossible()
+                    }
+                })
                 NotificationCenter.default.post(name: PackageListManager.stateChange, object: nil)
             }
         }
@@ -1401,6 +1427,9 @@ final class DownloadManager {
             self.vars.uninstalldeps.insert(downloadPackage)
         }
         
+        if queue == .installations || queue == .uninstallations || queue == .upgrades {
+            requestAutomaticStart()
+        }
         completion?()
     }
     
@@ -1423,6 +1452,7 @@ final class DownloadManager {
                 remove(downloadPackage: downloadPackage, queue: found)
                 self.vars.upgrades.insert(downloadPackage)
             }
+            if !packages.isEmpty { requestAutomaticStart() }
             completion()
         }
     }

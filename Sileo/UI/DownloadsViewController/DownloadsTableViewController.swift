@@ -789,6 +789,11 @@ class DownloadsTableViewController: SileoViewController {
             self.uninstalldeps = uninstalldeps
             self.errors = ContiguousArray<APTBrokenPackage>(errors)
         }
+        if !errors.isEmpty { revealAutomaticFailure() }
+        if DownloadManager.shared.operationCount() == 0 {
+            automaticStartNeedsReview = false
+            openedAutomaticFailure = false
+        }
         rebuildTaskGroups()
         self.tableView?.reloadData()
         self.reloadControlsOnly()
@@ -857,6 +862,9 @@ class DownloadsTableViewController: SileoViewController {
             return
         }
         
+        if !(download.failureReason ?? "").isEmpty {
+            revealAutomaticFailure()
+        }
         let groupsChanged = rebuildTaskGroups()
         if groupsChanged {
             tableView?.reloadData()
@@ -955,8 +963,42 @@ class DownloadsTableViewController: SileoViewController {
         TabBarController.singleton?.updatePopup(bypass: true)
     }
     
+    private var automaticStartNeedsReview = false
+    private var openedAutomaticFailure = false
+
+    public func startWithoutConfirmationIfPossible() {
+        let manager = DownloadManager.shared
+        guard UserDefaults.standard.bool(forKey: "SkipOperationConfirmation"),
+              manager.restoreBatch == nil, !manager.queueRunning, !manager.aptRunning,
+              !isFinishedInstalling, manager.operationCount() > 0 else { return }
+        loadViewIfNeeded()
+        let essentialRemoval = (uninstallations + uninstalldeps).contains {
+            manager.isEssential($0.package)
+        }
+        if automaticStartNeedsReview || !errors.isEmpty || essentialRemoval {
+            automaticStartNeedsReview = true
+            TabBarController.singleton?.presentPopupController()
+            return
+        }
+        confirmQueued(nil)
+    }
+
+    private func revealAutomaticFailure() {
+        guard UserDefaults.standard.bool(forKey: "SkipOperationConfirmation"),
+              !openedAutomaticFailure else { return }
+        openedAutomaticFailure = true
+        automaticStartNeedsReview = true
+        TabBarController.singleton?.updatePopup(completion: {
+            TabBarController.singleton?.presentPopupController()
+        })
+    }
+
     @IBAction public func confirmQueued(_ sender: Any?) {
-        guard DownloadManager.shared.restoreBatch == nil, !DownloadManager.shared.aptRunning else { return }
+        let manager = DownloadManager.shared
+        guard manager.restoreBatch == nil, !manager.aptRunning, !manager.queueRunning,
+              manager.vars.errors.isEmpty, manager.operationCount() > 0 else { return }
+        automaticStartNeedsReview = false
+        openedAutomaticFailure = false
         NSLog("SileoLog: confirmQueued(\(sender))")
         if sender != nil {
             let actions = uninstallations + uninstalldeps
@@ -1427,6 +1469,7 @@ class DownloadsTableViewController: SileoViewController {
                         && !($0.failureReason ?? "").isEmpty
                 }
                 if status != 0 || self.taskCancelled || !self.errors.isEmpty || hasDownloadErrors {
+                    if !self.taskCancelled { self.revealAutomaticFailure() }
                     self.showDetails(nil)
                 } else if UserDefaults.standard.bool(forKey: "AutoRespring") {
                     if UserDefaults.standard.bool(forKey: "AlwaysShowLog") {

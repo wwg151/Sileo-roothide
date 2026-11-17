@@ -456,15 +456,17 @@ class SileoAppDelegate: UIResponder, UIApplicationDelegate, UITabBarControllerDe
             
             sourcesVC.refreshSources(forceUpdate: false, forceReload: true, isBackground: false, useRefreshControl: true, useErrorScreen: true, completion: { _, _ in
                 PackageListManager.shared.upgradeAll(completion: {
-                    if UserDefaults.standard.bool(forKey: "AutoConfirmUpgradeAllShortcut", fallback: false) {
-                        let downloadMan = DownloadManager.shared
-// already reloadData(recheckPackages: true) in PackageListManager.shared.upgradeAll
-//                        downloadMan.reloadData(recheckPackages: false)
-                        downloadMan.viewController.confirmQueued(self)
+                    let skipsConfirmation = UserDefaults.standard.bool(forKey: "SkipOperationConfirmation")
+                    alert.dismiss(animated: true) {
+                        if skipsConfirmation {
+                            DownloadManager.shared.viewController.startWithoutConfirmationIfPossible()
+                        } else {
+                            if UserDefaults.standard.bool(forKey: "AutoConfirmUpgradeAllShortcut", fallback: false) {
+                                DownloadManager.shared.viewController.confirmQueued(self)
+                            }
+                            tabBarController.presentPopupController()
+                        }
                     }
-                    //ignore UpgradeAllAutoQueue, always Show Queue on Upgrade All Shortcut
-                    tabBarController.presentPopupController()
-                    alert.dismiss(animated: true, completion: nil)
                 })
             })
         } else if shortcutItem.type.hasSuffix(".Refresh") {

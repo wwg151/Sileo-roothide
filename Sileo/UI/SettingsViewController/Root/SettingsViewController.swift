@@ -99,7 +99,7 @@ extension SettingsViewController { // UITableViewDataSource
         case 1: // Themes
             return 5
         case 2:
-            return 15
+            return 16
         case 3: // About section
             return 5
         default:
@@ -235,6 +235,10 @@ extension SettingsViewController { // UITableViewDataSource
                 cell.amyPogLabel.text = String(localizationKey: "Auto_Respring")
                 cell.fallback = false
                 cell.defaultKey = "AutoRespring"
+            case 15:
+                cell.amyPogLabel.text = String(localizationKey: "Skip_Operation_Confirmation")
+                cell.fallback = false
+                cell.defaultKey = "SkipOperationConfirmation"
             default:
                 fatalError("You done goofed")
             }
