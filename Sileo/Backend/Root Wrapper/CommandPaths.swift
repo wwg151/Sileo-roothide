@@ -34,7 +34,7 @@ public class CommandPath {
 
     static var configurationHome: String {
         #if SILEO_ROOTLESS
-        return jbroot("/var/mobile")
+        return jbroot("/User")
         #else
         return "\(prefix)/var/mobile"
         #endif
