@@ -33,7 +33,11 @@ public class CommandPath {
     }
 
     static var configurationHome: String {
-        Bootstrap.roothide ? "\(prefix)/var/mobile" : "/var/mobile"
+        #if SILEO_ROOTLESS
+        return jbroot("/var/mobile")
+        #else
+        return "\(prefix)/var/mobile"
+        #endif
     }
 
     // dpkg lists are relative to the virtual root on roothide, but already
