@@ -342,6 +342,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     private let cardTitle: String
     private let firstMessage: String
     private let cancellable: Bool
+    private let allowsPausing: Bool
     private var onCancel: (() -> Void)?
     private let filters = UISegmentedControl(items: [
         String(format: String(localizationKey: "Backup_Task_All"), 0),
@@ -368,8 +369,10 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     var isRunning: Bool { roundRunning || deletingBackups }
-    var hasUnfinishedTasks: Bool { deletingBackups || roundRunning || (startHandler == nil && resultMessage == nil) || session.hasPendingTasks }
-    var hasPendingCompletion: Bool { onFinishedClose != nil }
+    /// Waiting or finished rows may be replaced from the menu; live work may not.
+    var preventsTaskReplacement: Bool {
+        isRunning || finishingRestore || onFinishedClose != nil || (startHandler == nil && resultMessage == nil)
+    }
     private let manage = UIButton(type: .system)
     private let clear = UIButton(type: .system)
     private let action = UIButton(type: .system)
@@ -384,14 +387,16 @@ final class BackupProgressAlert: SileoPanelViewController {
     private var allTasksPaused = false
     private var cancelling = false
 
-    init(title: String, message: String, cancellable: Bool, onCancel: (() -> Void)?) {
+    init(title: String, message: String, cancellable: Bool, allowsPausing: Bool = true, onCancel: (() -> Void)?) {
         cardTitle = title
         firstMessage = message
         self.cancellable = cancellable
+        self.allowsPausing = allowsPausing
         self.onCancel = onCancel
         super.init(title: title, subtitle: nil, icon: "archivebox")
         session.completionTitle = title
-        let listBody = UIStackView(arrangedSubviews: [search, filters, table])
+        let statusViews: [UIView] = firstMessage.isEmpty ? [] : [resultLabel]
+        let listBody = UIStackView(arrangedSubviews: statusViews + [search, filters, table])
         listBody.axis = .vertical
         listBody.spacing = 10
         listBody.isLayoutMarginsRelativeArrangement = true
@@ -414,7 +419,7 @@ final class BackupProgressAlert: SileoPanelViewController {
             // Wait until the current completion callback has finished resetting
             // download state before starting the next serial operation.
             DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
+                guard let self = self, !self.session.closed else { return }
                 self.startNextQueuedTask()
                 guard !UserDefaults.standard.bool(forKey: "AutoRespring"),
                       !self.roundRunning, !self.session.hasPendingTasks,
@@ -488,7 +493,6 @@ final class BackupProgressAlert: SileoPanelViewController {
         footer.axis = .vertical
         footer.spacing = 8
         setFooter(footer)
-        table.onRemoveRow = { [weak self] row in self?.removeVisibleRow(row) }
         render()
         session.onChange = { [weak self] in self?.scheduleRender() }
     }
@@ -638,10 +642,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     override func present(from host: UIViewController) {
         guard !session.closed else { return }
         if let previous = DownloadManager.shared.backupTaskPanel, previous !== self {
-            guard !previous.hasUnfinishedTasks, !previous.hasPendingCompletion else {
-                previous.present(from: host)
-                return
-            }
+            guard !previous.preventsTaskReplacement else { return }
             previous.session.closeSession()
         }
         DownloadManager.shared.backupTaskPanel = self
@@ -699,7 +700,7 @@ final class BackupProgressAlert: SileoPanelViewController {
             render()
             return
         }
-        guard !cancelling else { return }
+        guard !cancelling, allowsPausing || !roundRunning else { return }
         if roundRunning && !allTasksPaused {
             allTasksPaused = true
             for id in session.activeIDs where !session.isPaused(id) { session.togglePause(id) }
@@ -765,6 +766,7 @@ final class BackupProgressAlert: SileoPanelViewController {
     }
 
     private func removeVisibleRow(_ index: Int) {
+        guard allowsPausing || !roundRunning else { return }
         let rows = visibleTasks()
         guard rows.indices.contains(index) else { return }
         session.remove(ids: [rows[index].id])
@@ -839,6 +841,11 @@ final class BackupProgressAlert: SileoPanelViewController {
     private func render() {
         guard isViewLoaded else { return }
         if deletionEntries != nil { renderBackupDeletion(); return }
+        if roundRunning && !allowsPausing {
+            table.onRemoveRow = nil
+        } else {
+            table.onRemoveRow = { [weak self] row in self?.removeVisibleRow(row) }
+        }
         let successCount = session.tasks.filter { $0.outcome == true }.count
         let failureCount = session.tasks.filter { $0.outcome == false }.count
         let total = session.tasks.count
@@ -929,9 +936,11 @@ final class BackupProgressAlert: SileoPanelViewController {
                     control.setImage(UIImage(systemName: queued ? "clock" : (inRound && !paused ? "pause.fill" : "play.fill")), for: .normal)
                     control.accessibilityLabel = String(localizationKey: queued ? "Backup_Task_Queued" : key)
                     control.isEnabled = !cancelling && !queued && (!inRound || task.id != "archive")
-                    control.widthAnchor.constraint(equalToConstant: 44).isActive = true
-                    control.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
-                    controls.addArrangedSubview(control)
+                    if allowsPausing || !inRound {
+                        control.widthAnchor.constraint(equalToConstant: 44).isActive = true
+                        control.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+                        controls.addArrangedSubview(control)
+                    }
                 }
                 controls.widthAnchor.constraint(equalToConstant: 44).isActive = true
                 let stack = UIStackView(arrangedSubviews: [row, controls])
@@ -970,7 +979,7 @@ final class BackupProgressAlert: SileoPanelViewController {
         if !session.tasks.isEmpty {
             resultLabel.text = resultMessage ?? (roundRunning
                 ? String(localizationKey: cancelling ? "Backup_Task_Cancelling" : "Backup_Task_Running")
-                : (session.hasPendingTasks ? String(localizationKey: "Backup_Task_Ready") : String(localizationKey: "Backup_Task_Empty")))
+                : (session.hasPendingTasks ? (firstMessage.isEmpty ? String(localizationKey: "Backup_Task_Ready") : firstMessage) : String(localizationKey: "Backup_Task_Empty")))
         } else {
             resultLabel.text = resultMessage ?? String(localizationKey: "Backup_Task_Empty")
         }
@@ -979,7 +988,7 @@ final class BackupProgressAlert: SileoPanelViewController {
         startAllButton?.setTitle(String(localizationKey: allKey), for: .normal)
         startAllButton?.accessibilityLabel = String(localizationKey: allKey)
         startAllButton?.isEnabled = managing ? (editingAllowed && !session.tasks.isEmpty) : (ready && !cancelling)
-        startAllButton?.isHidden = !managing && !ready
+        startAllButton?.isHidden = !managing && (!ready || (roundRunning && !allowsPausing))
         action.isHidden = roundRunning ? !cancellable : onFinishedClose == nil
         action.isEnabled = !cancelling
         action.setTitle(String(localizationKey: roundRunning ? "Cancel" : (onFinishedClose != nil ? "Backup_Task_Complete_Action" : "Close")), for: .normal)

@@ -446,9 +446,9 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
 
     private func canCreateBackupTask() -> Bool {
         let manager = DownloadManager.shared
-        if let panel = manager.backupTaskPanel,
-           panel.hasUnfinishedTasks || panel.hasPendingCompletion {
-            panel.present(from: self)
+        if manager.backupTaskPanel?.preventsTaskReplacement == true {
+            showBackupMessage(title: String(localizationKey: "Backup_Restore"),
+                              message: String(localizationKey: "Backup_Task_Switch_Busy"))
             return false
         }
         guard !manager.queueRunning, !manager.aptRunning, manager.operationCount() == 0,
@@ -705,33 +705,62 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         panel.present(from: self)
     }
 
-    private func backupConfiguration(prepared: BackupProgressAlert? = nil) {
-        guard let prepared = prepared else {
-            prepareArchiveTask("Backup_Configuration") { [weak self] in self?.backupConfiguration(prepared: $0) }
-            return
-        }
+    private func backupConfiguration() {
+        guard canCreateBackupTask() else { return }
+        let title = String(localizationKey: "Backup_Configuration")
         guard backupAvailable else {
-            prepared.finish(message: String(localizationKey: "Backup_Unavailable"))
+            showBackupMessage(title: title, message: String(localizationKey: "Backup_Unavailable"))
             return
         }
+        let items: [String]
+        do {
+            items = try BackupManager.shared.configurationItems()
+        } catch {
+            showBackupMessage(title: title, message: error.localizedDescription)
+            return
+        }
+        guard !items.isEmpty else {
+            showBackupMessage(title: title, message: String(localizationKey: "Backup_Configuration_Empty"))
+            return
+        }
+        let panel = BackupProgressAlert(title: title,
+                                        message: String(localizationKey: "Backup_Configuration_Ready"),
+                                        cancellable: true, allowsPausing: false,
+                                        onCancel: { BackupManager.shared.cancelCurrentOperation() })
+        panel.session.register(items.map { ($0, $0) })
+        panel.prepareStart { [weak panel] _ in
+            guard let panel = panel else { return }
+            Self.runConfigurationBackup(panel)
+        }
+        panel.present(from: self)
+    }
+
+    private static func runConfigurationBackup(_ progress: BackupProgressAlert) {
+        let session = progress.session
+        let items = session.tasks.filter { session.activeIDs.contains($0.id) }.map(\.id)
         let folder: BackupManager.BackupFolder
         do {
-            folder = try BackupManager.shared.createBackupFolder(kind: .configuration)
+            if let existing = session.backupFolder {
+                folder = existing
+            } else {
+                folder = try BackupManager.shared.createBackupFolder(kind: .configuration)
+            }
         } catch {
-            prepared.finish(message: error.localizedDescription)
+            progress.finish(message: error.localizedDescription)
             return
         }
-        let progress = prepared
-        progress.session.completionPath = folder.url.path
-        progress.startSingleTask(name: String(localizationKey: "Backup_Configuration"))
-        BackupManager.shared.backupConfiguration(to: folder, completion: { result in
+        let running = String(localizationKey: "Backup_Task_Running")
+        for item in items { session.update(item, fraction: 0, detail: running) }
+        BackupManager.shared.backupConfiguration(items: items, to: folder) { result in
             switch result {
             case .success:
-                progress.finishSingleTask(message: String(localizationKey: "Backup_Configuration_Done") + "\n\n" + folder.url.path, success: true)
+                session.backupFolder = folder
+                for item in items { session.update(item, fraction: 1, detail: "", outcome: true) }
+                progress.finish(message: String(localizationKey: "Backup_Configuration_Done") + "\n\n" + folder.url.path)
             case .failure(let error):
-                progress.finishSingleTask(message: error.localizedDescription, success: false)
+                progress.finish(message: error.localizedDescription)
             }
-        })
+        }
     }
 
     private func restoreConfiguration() {

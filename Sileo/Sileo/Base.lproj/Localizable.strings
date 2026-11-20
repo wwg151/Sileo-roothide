@@ -472,6 +472,10 @@
 "Clear_Select_Backups" = "Select the backups to clear";
 "Clear_Selected_Count" = "Clear (%d)";
 "Backup_Configuration_Done" = "Configuration backed up.";
+"Backup_Configuration_Empty" = "There are no configuration items to back up.";
+"Backup_Configuration_Items_Changed" = "Some selected configuration items no longer exist. Reopen Configuration Backup to reload the list.";
+"Backup_Configuration_Ready" = "Remove any folders or files you want to skip, then start one task or all tasks.";
+"Backup_Task_Switch_Busy" = "The current task is being prepared or is running, or an install completion action is still pending. Open Task List to continue.";
 "Restore_Configuration_Done" = "Configuration restored. Log out of the device for it to take effect.";
 "Backup_No_Backup" = "No backup was found.";
 "Backup_Choose_Folder" = "Choose a backup";

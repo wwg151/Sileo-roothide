@@ -13,6 +13,7 @@
 //  cache when it is still there and repacked from disk otherwise.
 //
 
+import Darwin
 import Foundation
 
 // Restore requested packages individually; dpkg decides installation success.
@@ -393,11 +394,15 @@ final class BackupManager {
     }
 
     func createBackupFolder(kind: BackupKind) throws -> BackupFolder {
-        let folder = rootURL.appendingPathComponent(
-            kind.folderPrefix + timestampFormatter.string(from: Date()),
-            isDirectory: true
-        )
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = kind.folderPrefix + timestampFormatter.string(from: Date())
+        let fileManager = FileManager.default
+        var suffix = 1
+        var folder = rootURL.appendingPathComponent(name, isDirectory: true)
+        while fileManager.fileExists(atPath: folder.path) {
+            suffix += 1
+            folder = rootURL.appendingPathComponent("\(name)_\(suffix)", isDirectory: true)
+        }
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         return BackupFolder(url: folder)
     }
 
@@ -863,45 +868,69 @@ final class BackupManager {
 
     // MARK: - Configuration
 
+    private static let excludedConfigurationItems: Set<String> = ["Caches", "Filza"]
+
+    func configurationItems() throws -> [String] {
+        // Include top-level files and symlinks, just as the original Library archive did.
+        let library = URL(fileURLWithPath: CommandPath.configurationHome, isDirectory: true)
+            .appendingPathComponent("Library", isDirectory: true)
+        return try FileManager.default.contentsOfDirectory(atPath: library.path)
+            .filter { !Self.excludedConfigurationItems.contains($0) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .map { "Library/\($0)" }
+    }
+
     func backupConfiguration(
+        items: [String],
         to folder: BackupFolder,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         beginOperation()
         DispatchQueue.global(qos: .userInitiated).async {
-            let fileManager = FileManager.default
-            do {
-                try fileManager.createDirectory(at: folder.configurationURL, withIntermediateDirectories: true)
-            } catch {
-                DispatchQueue.main.async { completion(.failure(error)) }
-                return
+            let result = Result<Void, Error> {
+                try self.archiveConfiguration(items: items, to: folder)
             }
-            // Roothide preferences live inside its bootstrap; rootless preferences
-            // remain in the system mobile home.
-            let libraryParent = CommandPath.configurationHome
-            let archive = folder.configurationURL.appendingPathComponent("Library.tar")
-            try? fileManager.removeItem(at: archive)
-            let (status, _, errorOutput) = spawnAsRoot(args: [
-                PackageRepacker.tarPath, "-cf", rootfs(archive.path),
-                "-C", rootfs(libraryParent),
-                "--exclude=Library/Caches",
-                "--exclude=Library/Filza",
-                "Library"
-            ])
-            guard status == 0 else {
-                DispatchQueue.main.async {
-                    completion(.failure(BackupError.failed(errorOutput.isEmpty ? "tar exited with \(status)" : errorOutput)))
-                }
-                return
-            }
-            if self.isCancelled {
-                self.discard(folder)
-                DispatchQueue.main.async { completion(.failure(BackupError.cancelled)) }
-                return
-            }
-            spawnAsRoot(args: [CommandPath.chown, "501:501", rootfs(archive.path)])
-            DispatchQueue.main.async { completion(.success(())) }
+            DispatchQueue.main.async { completion(result) }
         }
+    }
+
+    private func archiveConfiguration(items: [String], to folder: BackupFolder) throws {
+        let fileManager = FileManager.default
+        let archive = folder.configurationURL.appendingPathComponent("Library.tar")
+        let temporary = folder.configurationURL.appendingPathComponent(".Library-\(UUID().uuidString).tar")
+        let appending = fileManager.fileExists(atPath: archive.path)
+        var createdArchive = false
+        defer {
+            try? fileManager.removeItem(at: temporary)
+            if !createdArchive && !appending { discard(folder) }
+        }
+        guard !isCancelled else { throw BackupError.cancelled }
+        let available = Set(try configurationItems())
+        guard !items.isEmpty, items.allSatisfy({ available.contains($0) }) else {
+            throw BackupError.failed(String(localizationKey: "Backup_Configuration_Items_Changed"))
+        }
+        try fileManager.createDirectory(at: folder.configurationURL, withIntermediateDirectories: true)
+        if appending { try fileManager.copyItem(at: archive, to: temporary) }
+        guard !isCancelled else { throw BackupError.cancelled }
+
+        // Preserve the restore format and only replace the archive once tar succeeds.
+        let (status, _, errorOutput) = spawnAsRoot(args: [
+            PackageRepacker.tarPath, appending ? "-rf" : "-cf", rootfs(temporary.path),
+            "-C", rootfs(CommandPath.configurationHome), "--"
+        ] + items)
+        guard !isCancelled else { throw BackupError.cancelled }
+        guard status == 0 else {
+            throw BackupError.failed(errorOutput.isEmpty ? "tar exited with \(status)" : errorOutput)
+        }
+        let (ownerStatus, _, ownerError) = spawnAsRoot(args: [CommandPath.chown, "501:501", rootfs(temporary.path)])
+        guard ownerStatus == 0 else {
+            throw BackupError.failed(ownerError.isEmpty ? "chown exited with \(ownerStatus)" : ownerError)
+        }
+        guard !isCancelled else { throw BackupError.cancelled }
+        guard Darwin.rename(temporary.path, archive.path) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        createdArchive = true
     }
 
     func restoreConfiguration(

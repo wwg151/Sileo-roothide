@@ -478,6 +478,10 @@
 "Clear_Select_Backups" = "选择要清除的备份";
 "Clear_Selected_Count" = "清除 (%d)";
 "Backup_Configuration_Done" = "配置备份完成。";
+"Backup_Configuration_Empty" = "没有可备份的配置项目。";
+"Backup_Configuration_Items_Changed" = "部分选中的配置项目已不存在，请重新打开「配置备份」刷新列表。";
+"Backup_Configuration_Ready" = "移除不想备份的文件夹或文件，再点击开始或全部开始。";
+"Backup_Task_Switch_Busy" = "当前任务正在准备或执行，或还有待处理的安装完成操作。请打开「任务列表」继续。";
 "Restore_Configuration_Done" = "配置已恢复，建议注销设备后生效。";
 "Backup_No_Backup" = "没有找到备份。";
 "Backup_Choose_Folder" = "请选择备份";
