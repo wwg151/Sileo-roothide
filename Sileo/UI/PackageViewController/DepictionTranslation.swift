@@ -110,58 +110,65 @@ enum DepictionTranslation {
         let source: String
     }
 
-    /// A page is applied as a unit. If a request fails or the page moves on,
-    /// the original remains visible and no more work is submitted.
+    /// Apply the available translations together, keeping original prose for failed fragments.
+    /// Stop submitting work when the request is no longer current.
     static func translate(_ depiction: [String: Any], source: String?, target: String,
-                          isCurrent: @escaping () -> Bool, completion: @escaping (Result?) -> Void) {
-        guard isCurrent(), SileoSystemTranslationAvailable() else { completion(nil); return }
+                          isCurrent: @escaping () -> Bool, completion: @escaping (Result?, Bool) -> Void) {
+        guard isCurrent(), SileoSystemTranslationAvailable() else { completion(nil, true); return }
         var seen = Set<String>()
+        var fragments = [String]()
         var pieces = [Piece]()
         let placeholder = String(localizationKey: "Package_Changelogs_Unavailable")
         let noDescription = String(localizationKey: "Package_No_Description_Available")
-        guard #available(iOS 15.0, *) else { completion(nil); return }
+        guard #available(iOS 15.0, *) else { completion(nil, true); return }
         let recognizer = NLLanguageRecognizer()
-        _ = rewrite(depiction) { text, _ in
-            guard pieces.count < 160, text.utf16.count <= 3000, text.filter(\.isLetter).count >= 4,
-                  text != placeholder, text != noDescription, seen.insert(text).inserted else { return text }
-            if let source = source {
-                pieces.append(Piece(text: text, source: source))
-                return text
-            }
-            // Leave existing Chinese intact when translating into Chinese automatically.
-            let han = text.unicodeScalars.contains { (0x3400...0x9FFF).contains($0.value) || (0x20000...0x323AF).contains($0.value) }
+        func detect(_ text: String) -> String? {
             recognizer.reset()
             recognizer.processString(text)
-            let confidence = recognizer.languageHypotheses(withMaximum: 1).values.first ?? 0
-            if confidence >= 0.55, let detected = recognizer.dominantLanguage?.rawValue, detected != "und",
-               !matchesLanguage(detected, target),
-               !(parts(target).languageCode == "zh" && (parts(detected).languageCode == "zh" || (han && detected != "ja" && detected != "ko"))) {
-                pieces.append(Piece(text: text, source: detected))
+            guard let detected = recognizer.dominantLanguage, detected != .undetermined,
+                  recognizer.languageHypotheses(withMaximum: 1)[detected, default: 0] >= 0.55 else { return nil }
+            return detected.rawValue
+        }
+        _ = rewrite(depiction) { text, _ in
+            if fragments.count < 160, text.utf16.count <= 3000, text.filter(\.isLetter).count >= 4,
+               text != placeholder, text != noDescription, seen.insert(text).inserted {
+                fragments.append(text)
             }
             return text
         }
-        guard !pieces.isEmpty else { completion(nil); return }
+        let pageLanguage = source == nil ? detect(fragments.prefix(24).joined(separator: "\n")) : nil
+        for text in fragments {
+            guard let detected = source ?? detect(text) ?? pageLanguage, !matchesLanguage(detected, target) else { continue }
+            // Do not use an English page-wide fallback to translate existing Chinese.
+            let han = text.unicodeScalars.contains { (0x3400...0x9FFF).contains($0.value) || (0x20000...0x323AF).contains($0.value) }
+            if source == nil, parts(target).languageCode == "zh",
+               parts(detected).languageCode == "zh" || (han && detected != "ja" && detected != "ko") { continue }
+            pieces.append(Piece(text: text, source: detected))
+        }
+        guard !pieces.isEmpty else { completion(nil, false); return }
         let deadline = ProcessInfo.processInfo.systemUptime + 45
         availablePairs { pairs in
-            guard isCurrent(), let pairs = pairs else { completion(nil); return }
+            guard isCurrent(), let pairs = pairs else { completion(nil, true); return }
             var translations = [String: String]()
             var offline = false
-            func next(_ index: Int) {
-                guard isCurrent(), ProcessInfo.processInfo.systemUptime < deadline else { completion(nil); return }
-                guard index < pieces.count else {
-                    guard !translations.isEmpty else { completion(nil); return }
-                    let replace: (String, Bool) -> String = { text, markdown in
-                        guard let answer = translations[text] else { return text }
-                        return markdown ? escapeMarkdown(answer) : answer
-                    }
-                    completion(Result(translated: rewrite(depiction, replace: replace),
-                                      compared: rewrite(depiction, compared: true, replace: replace)))
-                    return
+            var incomplete = false
+            func finish() {
+                guard !translations.isEmpty else { completion(nil, incomplete); return }
+                let replace: (String, Bool) -> String = { text, markdown in
+                    guard let answer = translations[text] else { return text }
+                    return markdown ? escapeMarkdown(answer) : answer
                 }
+                completion(Result(translated: rewrite(depiction, replace: replace),
+                                  compared: rewrite(depiction, compared: true, replace: replace)), incomplete)
+            }
+            func next(_ index: Int) {
+                guard isCurrent() else { return }
+                guard index < pieces.count else { finish(); return }
+                guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete = true; finish(); return }
                 let piece = pieces[index]
                 let pair = pairs.filter { $0.count == 2 && score($0[0], piece.source) > 0 && score($0[1], target) > 0 }
                     .max { score($0[0], piece.source) * 4 + score($0[1], target) < score($1[0], piece.source) * 4 + score($1[1], target) }
-                guard let pair = pair else { next(index + 1); return }
+                guard let pair = pair else { incomplete = true; next(index + 1); return }
                 let key = (pair[0] + ">" + pair[1] + "\n" + piece.text) as NSString
                 func record(_ translated: String) {
                     if translated != piece.text { translations[piece.text] = translated }
@@ -172,9 +179,10 @@ enum DepictionTranslation {
                     return
                 }
                 func request(_ onlyOffline: Bool) {
-                    guard isCurrent(), ProcessInfo.processInfo.systemUptime < deadline else { completion(nil); return }
+                    guard isCurrent() else { return }
+                    guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete = true; finish(); return }
                     SileoSystemTranslate(piece.text, pair[0], pair[1], onlyOffline) { answer in
-                        guard isCurrent() else { completion(nil); return }
+                        guard isCurrent() else { return }
                         if let answer = answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let cleanAnswer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                             cache.setObject(cleanAnswer as NSString, forKey: key)
@@ -183,7 +191,8 @@ enum DepictionTranslation {
                             offline = true
                             request(true)
                         } else {
-                            completion(nil)
+                            incomplete = true
+                            next(index + 1)
                         }
                     }
                 }
@@ -233,7 +242,11 @@ enum DepictionTranslation {
     }
 
     private static func comparison(original: [String: Any], translated: [String: Any]) -> [String: Any] {
-        ["class": "DepictionStackView", "views": [original, translated]]
+        var stack: [String: Any] = ["class": "DepictionStackView", "views": [original, translated]]
+        // A Markdown or label node can itself be a tab, not just a child of one.
+        stack["tabname"] = original["tabname"]
+        stack["tintColor"] = original["tintColor"]
+        return stack
     }
 
     private static func rewriteMarkdown(_ markdown: String, replace: (String) -> String) -> String {

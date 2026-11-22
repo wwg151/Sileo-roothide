@@ -70,8 +70,12 @@ class PackageQueueButton: PackageButton {
     /// The package's actions, in Sileo's own card dropped from the button.
     fileprivate func presentActionCard() {
         guard let package = package, !(package.isProvisional ?? false) else { return }
-        let items = actionItems(for: package)
-        guard !items.isEmpty, let host = viewControllerForPresentation ?? hostViewController() else { return }
+        guard let host = viewControllerForPresentation ?? hostViewController() else { return }
+        var items = actionItems(for: package)
+        if let details = host as? PackageViewController, let translation = details.translationActionItem() {
+            items.append(translation)
+        }
+        guard !items.isEmpty else { return }
         SileoActionMenu.present(header: nil,
                                 items: items,
                                 from: host,

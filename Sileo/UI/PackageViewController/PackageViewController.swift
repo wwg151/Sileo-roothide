@@ -76,6 +76,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var translationSource: String?
     private var translationTarget = DepictionTranslation.defaultTarget
     private var translationResult: DepictionTranslation.Result?
+    private var translationWasIncomplete = false
     private var hasPageTranslationConsent = false
     private struct TranslationPageIdentity: Equatable {
         let identifier: String
@@ -84,7 +85,38 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let depictionURL: URL?
     }
     private var translationPageIdentity: TranslationPageIdentity?
-    private var shouldShowTranslationFailure = false
+    private enum TranslationStatus: Equatable {
+        case translating, incomplete
+    }
+    private var translationStatus: TranslationStatus? {
+        didSet {
+            guard oldValue != translationStatus else { return }
+            translationStatusLabel.text = translationStatus.map {
+                String(localizationKey: $0 == .translating ? "Depiction_Translation_Progress" : "Depiction_Translation_Failed_Inline")
+            }
+            translationStatusRow.isHidden = translationStatus == nil
+            if translationStatus == .translating {
+                translationSpinner.startAnimating()
+            } else {
+                translationSpinner.stopAnimating()
+            }
+            view.setNeedsLayout()
+        }
+    }
+    private let translationSpinner = UIActivityIndicatorView(style: .medium)
+    private let translationStatusLabel = UILabel()
+    private lazy var translationStatusRow: UIStackView = {
+        translationSpinner.hidesWhenStopped = true
+        translationStatusLabel.font = .preferredFont(forTextStyle: .footnote)
+        translationStatusLabel.adjustsFontForContentSizeCategory = true
+        translationStatusLabel.textColor = .secondaryLabel
+        translationStatusLabel.numberOfLines = 0
+        let row = UIStackView(arrangedSubviews: [translationSpinner, translationStatusLabel])
+        row.alignment = .center
+        row.spacing = 8
+        row.isHidden = true
+        return row
+    }()
 
     private var translationMode: DepictionTranslation.Mode {
         translationModeOverride ?? (DepictionTranslation.isEnabled ? .translated : .original)
@@ -116,10 +148,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         guard let rawDepict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               renderDepiction(rawDepict, updatingMetadata: true) else { return }
         originalDepiction = rawDepict
-        translationID = UUID()
-        translationResult = nil
-        hasAttemptedTranslation = false
         renderedTranslationMode = .original
+        invalidateTranslation()
     }
 
     @discardableResult
@@ -171,15 +201,20 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     @objc private func translationSettingChanged() {
         translationModeOverride = nil
         hasPageTranslationConsent = false
-        shouldShowTranslationFailure = false
         invalidateTranslation()
         refreshDepictionTranslation()
     }
 
-    private func invalidateTranslation() {
+    private func cancelTranslationRequest() {
         translationID = UUID()
-        hasAttemptedTranslation = false
+        translationStatus = nil
+        if translationResult == nil { hasAttemptedTranslation = false }
+    }
+
+    private func invalidateTranslation() {
         translationResult = nil
+        translationWasIncomplete = false
+        cancelTranslationRequest()
         showOriginalDepiction()
     }
 
@@ -191,39 +226,46 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     }
 
     private func refreshDepictionTranslation() {
-        guard translationMode != .original, DepictionTranslation.isEnabled || hasPageTranslationConsent else {
-            translationID = UUID()
-            if translationResult == nil { hasAttemptedTranslation = false }
+        let mode = translationMode
+        guard mode != .original, DepictionTranslation.isEnabled || hasPageTranslationConsent else {
+            cancelTranslationRequest()
             showOriginalDepiction()
             return
         }
-        guard canTranslateDepiction, !isWaitingForNativeDepiction, let originalDepiction = originalDepiction else { return }
+        guard canTranslateDepiction, viewIfLoaded?.window != nil, !isWaitingForNativeDepiction,
+              let originalDepiction = originalDepiction else { return }
         if let result = translationResult {
-            guard renderedTranslationMode != translationMode else { return }
-            let depiction = translationMode == .compared ? result.compared : result.translated
-            if renderDepiction(depiction, updatingMetadata: false) { renderedTranslationMode = translationMode }
+            if renderedTranslationMode != mode {
+                let depiction = mode == .compared ? result.compared : result.translated
+                guard renderDepiction(depiction, updatingMetadata: false) else {
+                    showOriginalDepiction()
+                    translationStatus = .incomplete
+                    return
+                }
+                renderedTranslationMode = mode
+            }
+            translationStatus = translationWasIncomplete ? .incomplete : nil
             return
         }
         guard !hasAttemptedTranslation else { return }
         hasAttemptedTranslation = true
         let token = UUID()
         translationID = token
+        translationStatus = .translating
         DepictionTranslation.translate(originalDepiction, source: translationSource, target: translationTarget,
                                        isCurrent: { [weak self] in
             guard let self = self else { return false }
             return self.translationID == token && self.canTranslateDepiction &&
                 (DepictionTranslation.isEnabled || self.hasPageTranslationConsent)
-        }, completion: { [weak self] result in
+        }, completion: { [weak self] result, incomplete in
             guard let self = self, self.translationID == token, self.canTranslateDepiction else { return }
             self.translationResult = result
+            self.translationWasIncomplete = incomplete
+            self.translationStatus = incomplete ? .incomplete : nil
             if result != nil {
-                self.shouldShowTranslationFailure = false
                 self.refreshDepictionTranslation()
-            } else if self.shouldShowTranslationFailure {
-                self.shouldShowTranslationFailure = false
-                self.translationModeOverride = .original
+            } else {
                 self.showOriginalDepiction()
-                self.presentTranslationAlert(message: "Depiction_Translation_Unavailable")
             }
         })
     }
@@ -246,6 +288,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
         self.navigationItem.largeTitleDisplayMode = .never
         scrollView.delegate = self
+        contentView.addSubview(translationStatusRow)
         
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(PackageViewController.reloadData),
@@ -353,11 +396,11 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         }
         
         depictionLoadID = UUID()
-        translationID = UUID()
+        translationResult = nil
+        translationWasIncomplete = false
+        cancelTranslationRequest()
         originalDepiction = nil
         isWaitingForNativeDepiction = false
-        hasAttemptedTranslation = false
-        translationResult = nil
         renderedTranslationMode = .original
         depictionView?.removeFromSuperview()
         depictionView = nil
@@ -393,7 +436,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         if pageIdentity != translationPageIdentity {
             translationPageIdentity = pageIdentity
             hasPageTranslationConsent = false
-            shouldShowTranslationFailure = false
             translationModeOverride = nil
             translationSource = nil
             translationTarget = DepictionTranslation.defaultTarget
@@ -635,9 +677,12 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     }
 
-    // Switching versions only refreshes what depends on the version, so the page does not flash like a full reload
+    // Keep the existing depiction only when the selected package still represents the same content.
     func show(package: Package) {
-        guard let current = self.package, current.package == package.package, !(package.isProvisional ?? false) else {
+        guard let current = self.package, current.package == package.package,
+              current.version == package.version, current.sourceFile == package.sourceFile,
+              current.sileoDepiction == package.sileoDepiction, current.description == package.description,
+              !(package.isProvisional ?? false) else {
             self.package = package
             reloadData()
             return
@@ -676,15 +721,16 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        canTranslateDepiction = navigationController?.topViewController === self
+        // Context-menu previews also call viewDidAppear; only a real detail page owns translation.
+        canTranslateDepiction = navigationController.map { $0.topViewController === self }
+            ?? (presentingViewController != nil || splitViewController != nil)
         refreshDepictionTranslation()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         canTranslateDepiction = false
-        translationID = UUID()
-        if translationResult == nil { hasAttemptedTranslation = false }
+        cancelTranslationRequest()
         
         let collapsed = splitViewController?.isCollapsed ?? false
         let navController = collapsed ? (splitViewController?.viewControllers[0] as? UINavigationController) : weakNavController
@@ -833,18 +879,31 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
         depictionHeight = depictionView?.depictionHeight(width: self.view.bounds.width) ?? 0
 
+        let width = view.bounds.width
         let headerHeight = packageInfoView.frame.maxY
+        let statusWidth = max(0, width - 32)
+        var statusHeight: CGFloat = 0
+        if translationStatus != nil {
+            let spinnerWidth = translationStatus == .translating ? translationSpinner.intrinsicContentSize.width + translationStatusRow.spacing : 0
+            let textSize = translationStatusLabel.sizeThatFits(CGSize(width: max(1, statusWidth - spinnerWidth), height: .greatestFiniteMagnitude))
+            let rowHeight = max(ceil(textSize.height), translationSpinner.intrinsicContentSize.height)
+            translationStatusRow.frame = CGRect(x: 16, y: headerHeight + 6, width: statusWidth, height: rowHeight)
+            statusHeight = rowHeight + 12
+        }
 
-        depictionView?.frame = CGRect(x: 0, y: headerHeight, width: self.view.bounds.width, height: depictionHeight)
+        let depictionTop = headerHeight + statusHeight
+        depictionView?.frame = CGRect(x: 0, y: depictionTop, width: width, height: depictionHeight)
 
-        let footerHeight = depictionFooterView?.depictionHeight(width: self.view.bounds.width) ?? 0
-        depictionFooterView?.frame = CGRect(x: 0, y: headerHeight + depictionHeight, width: self.view.bounds.width, height: footerHeight)
+        let footerTop = depictionTop + depictionHeight
+        let footerHeight = depictionFooterView?.depictionHeight(width: width) ?? 0
+        depictionFooterView?.frame = CGRect(x: 0, y: footerTop, width: width, height: footerHeight)
 
-        contentView.frame = CGRect(origin: .zero, size: CGSize(width: self.view.bounds.width, height: headerHeight + depictionHeight + footerHeight))
-        scrollView.contentSize = CGSize(width: self.view.bounds.width, height: headerHeight + depictionHeight + footerHeight)
+        let contentHeight = footerTop + footerHeight
+        contentView.frame = CGRect(origin: .zero, size: CGSize(width: width, height: contentHeight))
+        scrollView.contentSize = CGSize(width: width, height: contentHeight)
 
         contentViewWidth.constant = scrollView.bounds.width
-        contentViewHeight.constant = headerHeight + depictionHeight + footerHeight
+        contentViewHeight.constant = contentHeight
 
         self.view.updateConstraintsIfNeeded()
 
@@ -961,8 +1020,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.present(sharePopup, animated: true)
     }
 
-    /// A tap still opens the package actions in the chosen menu style.
-    /// A long press exposes translation through UIKit's button menu.
+    /// Share and wishlist remain separate from the install button’s actions.
     @available(iOS 14.0, *)
     private func installShareMenu() {
         refreshShareMenu()
@@ -975,101 +1033,101 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     @objc private func refreshShareMenu() {
         guard #available(iOS 14.0, *), let shareButton = shareButton else { return }
         shareButton.removeTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
-        guard #available(iOS 15.0, *), DepictionTranslation.supportedPlatform else {
-            let attached = SileoActionMenu.attachMenu(to: shareButton, header: nil) { [weak self] in
-                self?.shareMenuActions() ?? []
-            }
-            if !attached { shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside) }
-            return
+        let attached = SileoActionMenu.attachMenu(to: shareButton, header: nil) { [weak self] in
+            self?.shareMenuActions() ?? []
         }
+        if !attached { shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside) }
+    }
 
-        let usesSystemShareMenu = !UIColor.hidesSeparators
-        let deferred = UIDeferredMenuElement.uncached { [weak self] completion in
-            guard let self = self, self.package != nil else { completion([]); return }
-            var items = usesSystemShareMenu ? SileoActionMenu.menuElements(self.shareMenuActions()) : []
-            items.append(self.depictionTranslationMenu())
-            completion(items)
-        }
-        // Keep the primary action and use the button's native long-press menu.
-        // When the primary menu is already native, UIKit shares it between both gestures.
-        shareButton.menu = UIMenu(children: [deferred])
-        shareButton.showsMenuAsPrimaryAction = usesSystemShareMenu
-        if !usesSystemShareMenu {
-            shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
+    func translationActionItem() -> SileoActionMenuItem? {
+        guard canTranslateDepiction, DepictionTranslation.supportedPlatform, let identity = translationPageIdentity else { return nil }
+        return SileoActionMenuItem(title: String(localizationKey: "Depiction_Translation_Menu"),
+                                   imageName: "character.bubble") { [weak self] in
+            guard let self = self, self.translationPageIdentity == identity else { return }
+            self.presentDepictionTranslationOptions()
         }
     }
 
-    @available(iOS 15.0, *)
-    private func depictionTranslationMenu() -> UIMenu {
-        let modes = DepictionTranslation.Mode.allCases.map { mode in
-            UIAction(title: mode.title, state: mode == renderedTranslationMode ? .on : .off) { [weak self] _ in
-                self?.selectTranslationMode(mode)
-            }
+    private func presentDepictionTranslationOptions() {
+        guard canTranslateDepiction, presentedViewController == nil, let identity = translationPageIdentity else { return }
+        let panel = SileoPanelViewController(title: String(localizationKey: "Depiction_Translation_Menu"),
+                                             icon: "character.bubble")
+        var rows = DepictionTranslation.Mode.allCases.map { mode in
+            SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: mode.title, detail: nil,
+                                                                   selected: mode == renderedTranslationMode) { [weak self, weak panel] in
+                panel?.close { [weak self] in
+                    guard let self = self, self.translationPageIdentity == identity else { return }
+                    self.selectTranslationMode(mode)
+                }
+            }, height: 52)
         }
-        return UIMenu(title: String(localizationKey: "Depiction_Translation_Menu"),
-                      image: UIImage(systemName: "character.bubble"), children: [
-            UIMenu(options: .displayInline, children: modes),
-            UIMenu(options: .displayInline, children: [translationLanguageMenu(choosingSource: true),
-                                                       translationLanguageMenu(choosingSource: false)])
-        ])
+        for choosingSource in [true, false] {
+            let chosen = choosingSource ? translationSource : translationTarget
+            let title = String(localizationKey: choosingSource ? "Depiction_Translation_Source" : "Depiction_Translation_Target")
+            let detail = chosen.map(DepictionTranslation.languageName) ?? String(localizationKey: "Depiction_Translation_Detect")
+            rows.append(SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: title, detail: detail,
+                                                                              selected: false) { [weak self, weak panel] in
+                panel?.close { [weak self] in
+                    guard let self = self, self.translationPageIdentity == identity else { return }
+                    self.presentTranslationLanguages(choosingSource: choosingSource, title: title, identity: identity)
+                }
+            }, height: 52))
+        }
+        panel.table.setItems(rows)
+        panel.present(from: self)
     }
 
-    @available(iOS 15.0, *)
-    private func translationLanguageMenu(choosingSource: Bool) -> UIMenu {
-        let title = String(localizationKey: choosingSource ? "Depiction_Translation_Source" : "Depiction_Translation_Target")
-        let detect = String(localizationKey: "Depiction_Translation_Detect")
-        let chosen: String? = choosingSource ? translationSource : translationTarget
-        let options = UIDeferredMenuElement.uncached { [weak self] completion in
-            guard let self = self else { completion([]); return }
-            DepictionTranslation.languages(choosingSource: choosingSource, source: self.translationSource,
-                                            target: self.translationTarget) { [weak self] identifiers in
-                let sorted = identifiers.map { ($0, DepictionTranslation.languageName($0)) }.sorted {
-                    $0.1.localizedStandardCompare($1.1) == .orderedAscending
-                }
-                let selected = chosen.flatMap { value in
-                    identifiers.first(where: { $0 == value }) ??
-                        identifiers.first(where: { DepictionTranslation.matchesLanguage($0, value) })
-                }
-                var actions: [UIMenuElement] = sorted.map { identifier, name in
-                    UIAction(title: name, state: identifier == selected ? .on : .off) { [weak self] _ in
-                        self?.selectTranslationLanguage(identifier, choosingSource: choosingSource)
+    private func presentTranslationLanguages(choosingSource: Bool, title: String, identity: TranslationPageIdentity) {
+        let chosen = choosingSource ? translationSource : translationTarget
+        DepictionTranslation.languages(choosingSource: choosingSource, source: translationSource,
+                                        target: translationTarget) { [weak self] identifiers in
+            guard let self = self, self.canTranslateDepiction, self.translationPageIdentity == identity,
+                  self.presentedViewController == nil else { return }
+            let panel = SileoPanelViewController(title: title, icon: "character.bubble")
+            let selected = chosen.flatMap { value in
+                identifiers.first(where: { $0 == value }) ??
+                    identifiers.first(where: { DepictionTranslation.matchesLanguage($0, value) })
+            }
+            let sorted = identifiers.map { ($0, DepictionTranslation.languageName($0)) }.sorted {
+                $0.1.localizedStandardCompare($1.1) == .orderedAscending
+            }
+            func row(_ identifier: String?, _ name: String, selected: Bool) -> SileoPanelTable.Item {
+                SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: name, detail: nil,
+                                                                       selected: selected) { [weak self, weak panel] in
+                    panel?.close { [weak self] in
+                        guard let self = self, self.canTranslateDepiction, self.translationPageIdentity == identity else { return }
+                        self.selectTranslationLanguage(identifier, choosingSource: choosingSource)
+                        self.presentDepictionTranslationOptions()
                     }
-                }
-                if actions.isEmpty {
-                    actions.append(UIAction(title: String(localizationKey: "Depiction_Translation_No_Languages"),
-                                            attributes: .disabled) { _ in })
-                }
-                completion(actions)
+                }, height: 52)
             }
+            var rows = sorted.map { row($0.0, $0.1, selected: $0.0 == selected) }
+            if identifiers.isEmpty {
+                rows.append(SileoPanelTable.Item(SileoPanelViewController.sectionLabel(
+                    String(localizationKey: "Depiction_Translation_No_Languages")), height: 34))
+            }
+            if choosingSource {
+                rows.insert(row(nil, String(localizationKey: "Depiction_Translation_Detect"), selected: chosen == nil), at: 0)
+            }
+            panel.table.setItems(rows)
+            panel.present(from: self)
         }
-        var children: [UIMenuElement] = [options]
-        if choosingSource {
-            children.insert(UIAction(title: detect, state: chosen == nil ? .on : .off) { [weak self] _ in
-                self?.selectTranslationLanguage(nil, choosingSource: true)
-            }, at: 0)
-        }
-        let menu = UIMenu(title: title, children: children)
-        menu.subtitle = chosen.map(DepictionTranslation.languageName) ?? detect
-        return menu
     }
 
     private func selectTranslationMode(_ mode: DepictionTranslation.Mode) {
-        guard navigationController?.topViewController === self else { return }
+        guard canTranslateDepiction, viewIfLoaded?.window != nil else { return }
         if mode != .original, !DepictionTranslation.isEnabled, !hasPageTranslationConsent {
             let loadID = depictionLoadID
-            presentTranslationAlert(message: "Depiction_Translation_Consent") { [weak self] in
+            presentTranslationConsent { [weak self] in
                 guard let self = self, self.depictionLoadID == loadID else { return }
                 self.hasPageTranslationConsent = true
-                self.selectTranslationMode(mode)
+                self.translationModeOverride = mode
+                self.refreshDepictionTranslation()
             }
             return
         }
         translationModeOverride = mode
-        shouldShowTranslationFailure = mode != .original && translationResult == nil
-        if translationResult == nil && renderedTranslationMode == .original {
-            translationID = UUID()
-            hasAttemptedTranslation = false
-        }
+        if mode != .original, translationStatus == .incomplete, translationResult == nil { invalidateTranslation() }
         refreshDepictionTranslation()
     }
 
@@ -1081,21 +1139,16 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             guard let identifier = identifier, translationTarget != identifier else { return }
             translationTarget = identifier
         }
-        shouldShowTranslationFailure = translationMode != .original
         invalidateTranslation()
         refreshDepictionTranslation()
     }
 
-    private func presentTranslationAlert(message: String, onConfirm: (() -> Void)? = nil) {
+    private func presentTranslationConsent(onConfirm: @escaping () -> Void) {
         guard presentedViewController == nil, viewIfLoaded?.window != nil else { return }
         let alert = UIAlertController(title: String(localizationKey: "Depiction_Translation_Menu"),
-                                      message: String(localizationKey: message), preferredStyle: .alert)
-        if let onConfirm = onConfirm {
-            alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-            alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default) { _ in onConfirm() })
-        } else {
-            alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel))
-        }
+                                      message: String(localizationKey: "Depiction_Translation_Consent"), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default) { _ in onConfirm() })
         present(alert, animated: true)
     }
 
