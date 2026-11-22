@@ -998,36 +998,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             }
         }
 
-        if let installedPackage = installedPackage, let package = self.package {
-            let ignoreUpdatesText = installedPackage.wantInfo == .hold ?
-                String(localizationKey: "Package_Hold_Disable_Action") : String(localizationKey: "Package_Hold_Enable_Action")
-            let ignoreUpdates = UIAlertAction(title: ignoreUpdatesText, style: .default) { _ in
-                do {
-                    if installedPackage.wantInfo == .hold {
-#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
-                        try DpkgWrapper.ignoreUpdates(false, package: package.package)
-                        installedPackage.wantInfo = .install
-#endif
-                    } else {
-#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
-                        try DpkgWrapper.ignoreUpdates(true, package: package.package)
-                        installedPackage.wantInfo = .hold
-#endif
-                    }
-                    NotificationCenter.default.post(Notification(name: PackageListManager.prefsNotification))
-                } catch {
-                    sharePopup.dismiss(animated: true) {
-                        let alertController = UIAlertController(title: String(localizationKey: "Unknown", type: .error), message: "\(error)", preferredStyle: .alert)
-                        alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: { _ in
-                            self.dismiss(animated: true, completion: nil)
-                        }))
-                        self.present(alertController, animated: true, completion: nil)
-                    }
-                }
-            }
-            sharePopup.addAction(ignoreUpdates)
-        }
-
         let wishListText = WishListManager.shared.isPackageInWishList(package.package) ?
             String(localizationKey: "Package_Wishlist_Remove") : String(localizationKey: "Package_Wishlist_Add")
         let wishlist = UIAlertAction(title: wishListText, style: .default) { _ in
@@ -1214,15 +1184,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             })
         }
 
-        if let installedPackage = installedPackage {
-            let title = installedPackage.wantInfo == .hold ?
-                String(localizationKey: "Package_Hold_Disable_Action") : String(localizationKey: "Package_Hold_Enable_Action")
-            actions.append(SileoActionMenuItem(title: title,
-                                               imageName: "pause.circle") { [weak self] in
-                self?.toggleIgnoringUpdates()
-            })
-        }
-
         let wishListText = WishListManager.shared.isPackageInWishList(package.package) ?
             String(localizationKey: "Package_Wishlist_Remove") : String(localizationKey: "Package_Wishlist_Add")
         actions.append(SileoActionMenuItem(title: wishListText,
@@ -1272,30 +1233,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             if !success {
                 unavailable()
             }
-        }
-    }
-
-    private func toggleIgnoringUpdates() {
-        guard let installedPackage = installedPackage, let package = self.package else { return }
-        do {
-            if installedPackage.wantInfo == .hold {
-#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
-                try DpkgWrapper.ignoreUpdates(false, package: package.package)
-                installedPackage.wantInfo = .install
-#endif
-            } else {
-#if !targetEnvironment(simulator) && !TARGET_SIMULATOR
-                try DpkgWrapper.ignoreUpdates(true, package: package.package)
-                installedPackage.wantInfo = .hold
-#endif
-            }
-            NotificationCenter.default.post(Notification(name: PackageListManager.prefsNotification))
-        } catch {
-            let alertController = UIAlertController(title: String(localizationKey: "Unknown", type: .error),
-                                                    message: "\(error)",
-                                                    preferredStyle: .alert)
-            alertController.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel, handler: nil))
-            self.present(alertController, animated: true, completion: nil)
         }
     }
 
