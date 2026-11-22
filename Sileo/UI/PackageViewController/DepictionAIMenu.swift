@@ -228,11 +228,16 @@ final class DepictionAIMenu {
             return
         }
         if let selection = DepictionAIProvider.selection, selection.provider.id == id, selection.model == model {
-            didSelect()
+            // Re-selecting the active model repeats the test and reports the answer;
+            // the picker stays open behind the progress alert.
+            Self.verify(current, model: model, from: source) { [weak source] reply in
+                guard let source = source else { return }
+                Self.showSuccess(model: model, reply: reply, from: source)
+            }
             return
         }
         // Ask the provider first: a model that cannot answer is never offered for consent.
-        Self.verify(current, model: model, from: source) { [weak self, weak source] in
+        Self.verify(current, model: model, from: source) { [weak self, weak source] _ in
             guard let self = self, let source = source else { return }
             self.requestConsent(current, host: host, model: model, from: source, didSelect: didSelect)
         }
@@ -262,26 +267,21 @@ final class DepictionAIMenu {
     }
 
     private static func verify(_ provider: Provider, model: String, from source: UIViewController,
-                               proceed: @escaping () -> Void) {
+                               proceed: @escaping (String) -> Void) {
         let progress = UIAlertController(title: aiText("Test_Title"), message: aiText("Test_Body"), preferredStyle: .alert)
-        let indicator = UIActivityIndicatorView(style: .medium)
-        indicator.startAnimating()
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        progress.view.addSubview(indicator)
-        NSLayoutConstraint.activate([
-            indicator.centerXAnchor.constraint(equalTo: progress.view.centerXAnchor),
-            indicator.bottomAnchor.constraint(equalTo: progress.view.bottomAnchor, constant: -20)
-        ])
+        var cancelled = false
+        progress.addAction(UIAlertAction(title: aiText("Cancel"), style: .cancel) { _ in cancelled = true })
         source.present(progress, animated: true)
         DepictionAIProvider.test(provider, model: model) { result in
             DispatchQueue.main.async {
                 let finish: () -> Void = { [weak source] in
+                    guard !cancelled else { return }
                     switch result {
-                    case .success:
-                        proceed()
+                    case .success(let reply):
+                        proceed(reply)
                     case .failure(let error):
                         guard let source = source else { return }
-                        showError(testErrorKey(error), from: source)
+                        showError(error.key, detail: error.detail, from: source)
                     }
                 }
                 if progress.presentingViewController != nil {
@@ -290,18 +290,6 @@ final class DepictionAIMenu {
                     finish()
                 }
             }
-        }
-    }
-
-    private static func testErrorKey(_ error: Error) -> String {
-        guard let failure = error as? DepictionAIProvider.Failure else { return "Test_Failed" }
-        switch failure {
-        case .missingKey: return "Test_Missing_Key"
-        case .authentication: return "Test_Authentication"
-        case .rateLimited: return "Test_Rate_Limited"
-        case .timeout: return "Test_Timeout"
-        case .httpStatus: return "Test_Model"
-        default: return "Test_Failed"
         }
     }
 
@@ -332,11 +320,22 @@ final class DepictionAIMenu {
         }
     }
 
-    private static func showError(_ key: String, from source: UIViewController) {
+    private static func showError(_ key: String, detail: String? = nil, from source: UIViewController) {
+        let text = detail.flatMap { $0.isEmpty ? nil : aiText(key) + "\n\n" + $0 } ?? aiText(key)
+        presentAlert(title: aiText("Error_Title"), message: text, from: source)
+    }
+
+    private static func showSuccess(model: String, reply: String, from source: UIViewController) {
+        let brief = reply.count > 60 ? String(reply.prefix(60)) + "…" : reply
+        presentAlert(title: aiText("Test_OK_Title"),
+                     message: String(format: aiText("Test_OK_Body"), model, brief), from: source)
+    }
+
+    private static func presentAlert(title: String, message: String, from source: UIViewController) {
         let present = { [weak source] in
             guard let source = source, source.viewIfLoaded?.window != nil, !source.isBeingDismissed,
                   source.navigationController?.isBeingDismissed != true, source.presentedViewController == nil else { return }
-            let alert = UIAlertController(title: aiText("Error_Title"), message: aiText(key), preferredStyle: .alert)
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: aiText("OK"), style: .default))
             source.present(alert, animated: true)
         }

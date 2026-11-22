@@ -43,7 +43,9 @@
 "Depiction_AI_Test_Authentication" = "The provider rejected the API key. Check the key and its permissions.";
 "Depiction_AI_Test_Rate_Limited" = "The provider is receiving too many requests. Wait a moment and try again.";
 "Depiction_AI_Test_Timeout" = "The test request timed out. Check your connection and try again.";
-"Depiction_AI_Test_Model" = "The provider says this model does not exist or is not available. Check the model ID.";
+"Depiction_AI_Test_Model" = "The provider refused this model or returned no text. Check the model ID and the provider settings.";
+"Depiction_AI_Test_OK_Title" = "Connection Works";
+"Depiction_AI_Test_OK_Body" = "Model %1$@ answered: %2$@";
 "Depiction_AI_Model_ID" = "Model ID";
 "Depiction_AI_Cancel" = "Cancel";
 "Depiction_AI_Continue" = "Continue";

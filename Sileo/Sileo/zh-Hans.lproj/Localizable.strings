@@ -42,7 +42,9 @@
 "Depiction_AI_Test_Authentication" = "提供商拒绝了此 API Key。请检查它及其权限。";
 "Depiction_AI_Test_Rate_Limited" = "请求过于频繁。请稍等片刻再试。";
 "Depiction_AI_Test_Timeout" = "测试连接超时。请检查网络连接后重试。";
-"Depiction_AI_Test_Model" = "提供商表示此模型不存在或不可用。请检查模型 ID。";
+"Depiction_AI_Test_Model" = "提供商拒绝了此模型，或没有返回文本。请检查模型 ID 和提供商设置。";
+"Depiction_AI_Test_OK_Title" = "连接正常";
+"Depiction_AI_Test_OK_Body" = "模型 %1$@ 回复：%2$@";
 "Depiction_AI_Model_ID" = "模型 ID";
 "Depiction_AI_Cancel" = "取消";
 "Depiction_AI_Continue" = "继续";

@@ -578,16 +578,11 @@ enum DepictionAIProvider {
               let prompt = String(data: inputData, encoding: .utf8) else {
             DispatchQueue.main.async { completion([:]) }; return
         }
-        let route: String
-        switch provider.kind {
-        case .openAI: route = "chat/completions"
-        case .anthropic: route = "messages"
-        case .gemini: route = "models/\(model):generateContent"
-        }
+        let route = translationRoute(for: provider.kind, model: model)
         func payload(_ effort: ThinkingEffort) -> Object {
             switch provider.kind {
             case .openAI:
-                var object: Object = ["model": model, "stream": false, "n": 1,
+                var object: Object = ["model": model,
                                       "messages": [["role": "system", "content": translationInstructions],
                                                    ["role": "user", "content": prompt]]]
                 if effort != .modelDefault { object["reasoning_effort"] = effort.rawValue }
@@ -657,45 +652,168 @@ enum DepictionAIProvider {
         transport.start(request(url, kind: provider.kind, key: key, body: body), timeLimit: remaining)
     }
 
-    /// Sends one minimal completion so the menu can show whether the model answers at all.
-    /// It carries no package text: a fixed instruction only.
-    static func test(_ provider: Provider, model: String, completion: @escaping (Result<Void, Failure>) -> Void) {
-        func finish(_ result: Result<Void, Failure>) {
+    struct ProbeError: Error {
+        let key: String
+        let detail: String?
+    }
+
+    private static let probeSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.waitsForConnectivity = false
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 40
+        return URLSession(configuration: config)
+    }()
+
+    private static func translationRoute(for kind: ProtocolKind, model: String) -> String {
+        switch kind {
+        case .openAI: return "chat/completions"
+        case .anthropic: return "messages"
+        case .gemini: return "models/\(model):generateContent"
+        }
+    }
+
+    /// Mirrors a real chat call instead of a synthetic one: the same body a translation
+    /// sends, the gateway's reasoning switch, a 30-second budget and one lean retry
+    /// without the optional fields. Only "Reply with OK." is sent, never package text.
+    static func test(_ provider: Provider, model: String,
+                     completion: @escaping (Result<String, ProbeError>) -> Void) {
+        func finish(_ result: Result<String, ProbeError>) {
             DispatchQueue.main.async { completion(result) }
         }
         guard let model = cleanModel(model, kind: provider.kind) else {
-            finish(.failure(.invalidConfiguration)); return
-        }
-        let route: String
-        let payload: Object
-        switch provider.kind {
-        case .openAI:
-            route = "chat/completions"
-            payload = ["model": model, "stream": false, "n": 1,
-                       "messages": [["role": "user", "content": "Reply with OK."]]]
-        case .anthropic:
-            route = "messages"
-            payload = ["model": model, "max_tokens": 16, "stream": false,
-                       "messages": [["role": "user", "content": "Reply with OK."]]]
-        case .gemini:
-            route = "models/\(model):generateContent"
-            payload = ["contents": [["role": "user", "parts": [["text": "Reply with OK."]]]]]
-        }
-        guard let url = endpoint(provider, route: route),
-              let body = try? JSONSerialization.data(withJSONObject: payload) else {
-            finish(.failure(.invalidConfiguration)); return
+            finish(.failure(ProbeError(key: "Test_Model", detail: nil))); return
         }
         switch synchronized({ readKey(for: provider) }) {
-        case .failure(let error):
-            finish(.failure(error))
+        case .failure:
+            finish(.failure(ProbeError(key: "Test_Missing_Key", detail: nil)))
         case .success(let key):
-            let transport = Transport { result in
-                switch result {
-                case .success: finish(.success(()))
-                case .failure(let error): finish(.failure(error))
+            guard let url = endpoint(provider, route: translationRoute(for: provider.kind, model: model)) else {
+                finish(.failure(ProbeError(key: "Test_Failed", detail: nil))); return
+            }
+            sendProbe(provider, key: key, url: url, model: model, lean: false, completion: finish)
+        }
+    }
+
+    private static func sendProbe(_ provider: Provider, key: String, url: URL, model: String, lean: Bool,
+                                  completion: @escaping (Result<String, ProbeError>) -> Void) {
+        let system = "You are a connectivity test assistant."
+        let prompt = "Reply with OK."
+        var payload: Object
+        switch provider.kind {
+        case .openAI:
+            payload = ["model": model, "messages": [["role": "system", "content": system],
+                                                    ["role": "user", "content": prompt]]]
+            if !lean {
+                payload["max_tokens"] = 4096
+                // The gateway validates this field strictly, and a reasoning model
+                // otherwise spends the whole budget thinking; the lean retry drops it.
+                payload["reasoning_effort"] = "none"
+            }
+        case .anthropic:
+            payload = ["model": model, "max_tokens": 1024, "system": system,
+                       "messages": [["role": "user", "content": prompt]]]
+        case .gemini:
+            payload = ["contents": [["role": "user", "parts": [["text": prompt]]]]]
+        }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            completion(.failure(ProbeError(key: "Test_Failed", detail: nil))); return
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        switch provider.kind {
+        case .openAI: request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
+        case .anthropic:
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .gemini: request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        }
+        probeSession.dataTask(with: request) { data, response, error in
+            func retryLean() {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+                    sendProbe(provider, key: key, url: url, model: model, lean: true, completion: completion)
                 }
             }
-            transport.start(request(url, kind: provider.kind, key: key, body: body), timeLimit: 12)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if let error = error {
+                guard lean else { retryLean(); return }
+                let failureKey = (error as? URLError)?.code == .timedOut ? "Test_Timeout" : "Test_Failed"
+                completion(.failure(ProbeError(key: failureKey, detail: error.localizedDescription)))
+                return
+            }
+            let payload = data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? Object
+            guard (200...299).contains(status) else {
+                guard lean else { retryLean(); return }
+                let reason: String
+                switch status {
+                case 401, 403, 407: reason = "Test_Authentication"
+                case 429: reason = "Test_Rate_Limited"
+                default: reason = "Test_Model"
+                }
+                let detail = serverMessage(from: payload, data: data).map { "HTTP \(status) · \($0)" }
+                    ?? "HTTP \(status)"
+                completion(.failure(ProbeError(key: reason, detail: detail)))
+                return
+            }
+            let text = probeText(payload, kind: provider.kind)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let text = text, !text.isEmpty else {
+                completion(.failure(ProbeError(key: "Test_Model", detail: "HTTP \(status)")))
+                return
+            }
+            completion(.success(text))
+        }.resume()
+    }
+
+    private static func serverMessage(from payload: Object?, data: Data?) -> String? {
+        if let error = payload?["error"] {
+            if let object = error as? Object, let message = object["message"] as? String, !message.isEmpty {
+                return clipped(message)
+            }
+            if let message = error as? String, !message.isEmpty { return clipped(message) }
+        }
+        if let message = payload?["message"] as? String, !message.isEmpty { return clipped(message) }
+        if let payload = payload, !payload.isEmpty { return nil }
+        if let data = data, let raw = String(data: data, encoding: .utf8), !raw.isEmpty {
+            return clipped(raw.replacingOccurrences(of: "\n", with: " "))
+        }
+        return nil
+    }
+
+    private static func clipped(_ text: String) -> String {
+        let flat = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return flat.count > 180 ? String(flat.prefix(180)) + "…" : flat
+    }
+
+    private static func probeText(_ payload: Object?, kind: ProtocolKind) -> String? {
+        guard let payload = payload else { return nil }
+        switch kind {
+        case .openAI:
+            guard let choices = payload["choices"] as? [Object], let first = choices.first,
+                  let message = first["message"] as? Object else { return nil }
+            return message["content"] as? String
+        case .anthropic:
+            guard let content = payload["content"] as? [Object] else { return nil }
+            for block in content where block["type"] as? String == "text" {
+                if let text = block["text"] as? String { return text }
+            }
+            return nil
+        case .gemini:
+            guard let candidates = payload["candidates"] as? [Object], let first = candidates.first,
+                  let content = first["content"] as? Object,
+                  let parts = content["parts"] as? [Object] else { return nil }
+            for part in parts {
+                if let value = part["thought"] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID(),
+                   value.boolValue { continue }
+                if let text = part["text"] as? String { return text }
+            }
+            return nil
         }
     }
 
