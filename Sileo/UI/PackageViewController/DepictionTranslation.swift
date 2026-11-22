@@ -1,5 +1,6 @@
 import Foundation
 import NaturalLanguage
+import os
 
 /// Only native package prose is sent to Apple's engine. UI labels, actions,
 /// raw HTML depictions and the original repository data stay untouched.
@@ -110,6 +111,18 @@ enum DepictionTranslation {
         let source: String
     }
 
+    @available(iOS 15.0, *)
+    private static let log = Logger(subsystem: "org.coolstar.SileoStore", category: "DepictionTranslation")
+
+    /// One line per fragment the engine would not translate, so a page that
+    /// stays partly English can be traced in the device log.
+    @available(iOS 15.0, *)
+    private static func failed(_ piece: Piece, pair: [String]?) {
+        let preview = String(piece.text.prefix(60)).replacingOccurrences(of: "\n", with: " ")
+        let line = "untranslated pair=\(pair?.joined(separator: ">") ?? "none") source=\(piece.source) text=\(preview)"
+        log.notice("\(line, privacy: .public)")
+    }
+
     /// Apply the available translations together, keeping original prose for failed fragments.
     /// Stop submitting work when the request is no longer current.
     static func translate(_ depiction: [String: Any], source: String?, target: String,
@@ -150,7 +163,6 @@ enum DepictionTranslation {
         availablePairs { pairs in
             guard isCurrent(), let pairs = pairs else { completion(nil, true); return }
             var translations = [String: String]()
-            var offline = false
             var incomplete = false
             func finish() {
                 guard !translations.isEmpty else { completion(nil, incomplete); return }
@@ -168,7 +180,12 @@ enum DepictionTranslation {
                 let piece = pieces[index]
                 let pair = pairs.filter { $0.count == 2 && score($0[0], piece.source) > 0 && score($0[1], target) > 0 }
                     .max { score($0[0], piece.source) * 4 + score($0[1], target) < score($1[0], piece.source) * 4 + score($1[1], target) }
-                guard let pair = pair else { incomplete = true; next(index + 1); return }
+                guard let pair = pair else {
+                    failed(piece, pair: nil)
+                    incomplete = true
+                    next(index + 1)
+                    return
+                }
                 let key = (pair[0] + ">" + pair[1] + "\n" + piece.text) as NSString
                 func record(_ translated: String) {
                     if translated != piece.text { translations[piece.text] = translated }
@@ -188,15 +205,18 @@ enum DepictionTranslation {
                             cache.setObject(cleanAnswer as NSString, forKey: key)
                             record(cleanAnswer)
                         } else if !onlyOffline {
-                            offline = true
+                            // This piece, not the rest of the page: one failure used to
+                            // send every later fragment to an offline model that most
+                            // devices do not have.
                             request(true)
                         } else {
+                            failed(piece, pair: pair)
                             incomplete = true
                             next(index + 1)
                         }
                     }
                 }
-                request(offline)
+                request(false)
             }
             next(0)
         }
@@ -225,7 +245,15 @@ enum DepictionTranslation {
             }
         case "DepictionTabView":
             if let tabs = depiction["tabs"] as? [[String: Any]] {
-                result["tabs"] = tabs.map { rewrite($0, compared: compared, replace: replace) }
+                result["tabs"] = tabs.map { tab -> [String: Any] in
+                    var copy = rewrite(tab, compared: compared, replace: replace)
+                    // The tab button's own title is the only prose outside a view.
+                    if let name = tab["tabname"] as? String, !name.isEmpty {
+                        let translated = translateText(name) { replace($0, false) }
+                        if translated != name { copy["tabname"] = translated }
+                    }
+                    return copy
+                }
             }
         case "DepictionStackView", "DepictionAutoStackView", "DepictionLayerView":
             if let views = depiction["views"] as? [[String: Any]] {

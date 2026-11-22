@@ -91,6 +91,11 @@ void SileoSystemTranslationPairs(void (^completion)(NSArray<NSArray<NSString *> 
 }
 
 static NSString *TranslatedText(id result) {
+    // A paragraph answer arrives as the translated string itself in the first
+    // argument, with nothing in the second; a single sentence comes back as a
+    // result object in either argument.
+    if ([result isKindOfClass:NSString.class]) return result;
+    if ([result isKindOfClass:NSAttributedString.class]) return [result string];
     id text = ReadProperty(result, @"translatedText");
     if ([text isKindOfClass:NSAttributedString.class]) return [text string];
     if ([text isKindOfClass:NSString.class]) return text;
@@ -132,7 +137,7 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
 }
 
 // The engine answers some requests with an empty result rather than a
-// translation; another ask usually succeeds, so each text gets three tries
+// translation; another ask usually succeeds, so each text gets two tries
 // before it counts as untranslated.
 @interface SileoTranslationJob : NSObject
 @property (nonatomic, copy) NSString *text;
@@ -150,7 +155,7 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
 - (void)start {
     if (!self.completion) return;
     [SileoActiveTranslationJobs() addObject:self];
-    if (self.attempt >= 3) {
+    if (self.attempt >= 2) {
         [self finish:nil];
         return;
     }
@@ -166,7 +171,7 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
             if (value.length) {
                 [job finish:value];
             } else {
-                [job retry];
+                [job retryRestartingSession:NO];
             }
         });
     };
@@ -210,18 +215,24 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
         [self finish:nil];
         return;
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 7 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         SileoTranslationJob *job = weakSelf;
-        if (job && job.token == token) [job retry];
+        if (job && job.token == token) [job retryRestartingSession:YES];
     });
 }
 
-- (void)retry {
-    // A session can end while the app sits in the background; begin another
-    // before asking again.
-    SileoRestartTranslationSession();
+/// A second ask waits a moment: the engine drops back-to-back requests. Only a
+/// request that never answered at all ends the session, which is the one case
+/// that needs beginning again.
+- (void)retryRestartingSession:(BOOL)restart {
     self.request = nil;
-    [self start];
+    __weak SileoTranslationJob *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 350 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        SileoTranslationJob *job = weakSelf;
+        if (!job || !job.completion) return;
+        if (restart) SileoRestartTranslationSession();
+        [job start];
+    });
 }
 
 - (void)finish:(NSString *)answer {
