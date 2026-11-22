@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+<title id="title">Sileo · AI 翻译菜单设计</title><desc id="desc">AI 图标位于插件包详情右上角、更多按钮左边。三个画面展示菜单首页、提供商子菜单和新增表单。</desc>
+<defs>
+  <filter id="shadow" x="-25%" y="-25%" width="150%" height="160%"><feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#17243d" flood-opacity=".16"/></filter>
+  <g id="spark" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"><path d="M10 2l2.1 5.9L18 10l-5.9 2.1L10 18l-2.1-5.9L2 10l5.9-2.1z"/><path d="M20 1v6m-3-3h6" stroke-linecap="round"/></g>
+  <g id="dots" fill="currentColor"><circle cx="3" cy="9" r="1.7"/><circle cx="10" cy="9" r="1.7"/><circle cx="17" cy="9" r="1.7"/></g>
+  <path id="arrow" d="M0 0l5 5-5 5" fill="none" stroke="#778293" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <g id="phone"><rect width="332" height="531" rx="27" fill="#fff" stroke="#dce4ea"/><path d="M1 96h330" stroke="#e8edf0"/><text x="23" y="30" class="status">9:41</text><path d="M271 25h9m4 0h6" stroke="#1d2a37" stroke-width="3" stroke-linecap="round"/><rect x="295" y="20" width="15" height="9" rx="2" fill="#1d2a37"/><rect x="311" y="23" width="2" height="3" rx="1" fill="#1d2a37"/><path d="M28 57l-7 7 7 7" stroke="#087b6b" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="36" y="70" class="teal small">返回</text><text x="166" y="70" text-anchor="middle" class="nav">插件包详情</text><rect x="244" y="46" width="40" height="36" rx="12" fill="#e0f7ef"/><use href="#spark" x="252" y="54" color="#087b6b"/><use href="#dots" x="294" y="55" color="#182638"/><rect x="20" y="117" width="45" height="45" rx="11" fill="#cbeee5"/><path d="M33 139l10-6 10 6-10 6zM33 139v9l10 6 10-6v-9m-10 6v9" transform="translate(0 -4)" stroke="#087b6b" stroke-width="1.5" fill="none" stroke-linejoin="round"/><text x="77" y="136" class="nav">示例插件包</text><text x="77" y="155" class="tiny muted">插件包简介与更新日志</text><text x="22" y="198" class="small muted">简介</text><text x="78" y="198" class="small muted">更新日志</text><path d="M22 208h288m-288 20h115m-115 13h84" stroke="#e8edf0" stroke-width="3" stroke-linecap="round"/><path d="M112 514h108" stroke="#1b2732" stroke-width="4" stroke-linecap="round"/></g>
+</defs>
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#172638}.title{font-size:34px;font-weight:730}.nav{font-size:16px;font-weight:680}.label{font-size:16px;font-weight:700}.row{font-size:15px}.small{font-size:13px}.tiny{font-size:12px}.status{font-size:13px;font-weight:700}.muted{fill:#586879}.teal{fill:#087b6b}.red{fill:#c43d49}.rule{stroke:#e3e8ec}.menu{fill:#f9fafc;stroke:#e2e7eb}.strong{font-weight:700}
+</style>
+<rect width="1200" height="760" fill="#f2f6f8"/>
+<text x="52" y="45" class="tiny teal strong" letter-spacing="2">SILEO  /  界面设计稿</text>
+<text x="52" y="91" class="title">AI 翻译菜单</text>
+<text x="54" y="120" class="small muted">插件包详情 · 右上角「…」左侧 · 点击 AI 图标打开系统菜单</text>
+<path d="M52 140h1096" stroke="#d9e3e9"/>
+<text x="60" y="169" class="label"><tspan class="teal">01</tspan><tspan dx="10">主菜单</tspan></text>
+<text x="434" y="169" class="label"><tspan class="teal">02</tspan><tspan dx="10">提供商子菜单</tspan></text>
+<text x="808" y="169" class="label"><tspan class="teal">03</tspan><tspan dx="10">新增提供商</tspan></text>
+<g transform="translate(60 185)"><use href="#phone"/>
+  <path d="M254 106l10-9 10 9" fill="#f9fafc" stroke="#e2e7eb"/>
+  <rect class="menu" x="52" y="105" width="247" height="193" rx="15" filter="url(#shadow)"/>
+  <text x="68" y="129" class="tiny muted strong">AI 翻译</text>
+  <text x="68" y="151" class="tiny muted">当前：使用系统翻译</text>
+  <path class="rule" d="M52 165h247m-231 45h231m-231 44h231"/>
+  <text x="68" y="194" class="row">添加提供商…</text><text x="267" y="194" class="row teal">＋</text>
+  <text x="68" y="238" class="row">提供商 A</text><use href="#arrow" x="273" y="228"/>
+  <text x="68" y="282" class="row">提供商 B</text><use href="#arrow" x="273" y="272"/>
+  <text x="28" y="451" class="tiny muted">选中模型后，菜单顶部显示提供商与模型名，</text>
+  <text x="28" y="471" class="tiny muted">并新增「切回系统翻译」。</text>
+</g>
+<g transform="translate(434 185)"><use href="#phone"/>
+  <rect class="menu" x="46" y="105" width="253" height="276" rx="15" filter="url(#shadow)"/>
+  <text x="62" y="131" class="tiny muted strong">‹  AI 翻译　／　提供商 A</text>
+  <path class="rule" d="M46 146h253m-237 47h237m-237 47h237m-237 47h237m-237 47h237"/>
+  <text x="62" y="175" class="row">获取模型…</text><text x="270" y="175" class="row teal">↓</text>
+  <text x="62" y="222" class="row">选择已获取的模型</text><use href="#arrow" x="273" y="212"/>
+  <text x="62" y="269" class="row">手动输入模型 ID…</text>
+  <text x="62" y="316" class="row">编辑提供商…</text>
+  <text x="62" y="363" class="row red">移除提供商…</text>
+  <text x="28" y="430" class="tiny muted">「获取模型」打开可搜索列表，勾选才启用。</text>
+  <text x="28" y="450" class="tiny muted">移除需确认；移除当前提供商则回到系统翻译。</text>
+</g>
+<g transform="translate(808 185)"><use href="#phone"/>
+  <rect x="1" y="1" width="330" height="529" rx="26" fill="#1a2b3b" opacity=".20"/>
+  <rect x="1" y="99" width="330" height="431" rx="25" fill="#f4f6f9"/>
+  <path d="M147 109h38" stroke="#bac5cf" stroke-width="4" stroke-linecap="round"/>
+  <text x="21" y="142" class="small teal">取消</text><text x="166" y="142" text-anchor="middle" class="nav">添加提供商</text><text x="284" y="142" class="small teal strong">保存</text>
+  <rect x="17" y="164" width="298" height="201" rx="14" fill="#fff"/>
+  <path class="rule" d="M31 214h284m-284 50h284m-284 50h284"/>
+  <text x="31" y="194" class="row">名称</text><text x="121" y="194" class="small muted">选填，默认使用域名</text>
+  <text x="31" y="244" class="row">接口协议</text><text x="121" y="244" class="small">OpenAI 兼容</text><use href="#arrow" x="287" y="234"/>
+  <text x="31" y="294" class="row">Base URL</text><text x="121" y="294" class="tiny muted">https://api.example.com/v1</text>
+  <text x="31" y="344" class="row">API Key</text><text x="121" y="344" class="small muted">••••••••</text><text x="262" y="344" class="tiny teal">显示</text>
+  <text x="24" y="389" class="tiny muted">协议：OpenAI 兼容 / Anthropic / Gemini</text>
+  <text x="24" y="410" class="tiny muted">API Key 存入系统钥匙串，不写入备份。</text>
+  <rect x="17" y="428" width="298" height="54" rx="12" fill="#e4f5f0"/>
+  <text x="29" y="450" class="tiny teal">保存不会开启自动翻译。首次启用前，</text>
+  <text x="29" y="469" class="tiny teal">会提示待译文字将发送给所选提供商。</text>
+  <path d="M112 514h108" stroke="#1b2732" stroke-width="4" stroke-linecap="round"/>
+</g>
+<text x="600" y="744" text-anchor="middle" class="small muted">自动翻译已开启：选中 AI 时优先用 AI → 未译片段走系统翻译 → 仍失败则保留原文</text>
+</svg>

@@ -75,6 +75,14 @@ enum DepictionAIProvider {
 
     private static let settingsKey = "DepictionAIProvider.Settings.v1"
     private static let keychainService = "org.coolstar.SileoStore.DepictionAIProvider.v1"
+    // OpenCode's gateway routes on this header; other services ignore it.
+    private static let sessionID: String = {
+        let key = "DepictionAIProvider.SessionID.v1"
+        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty { return existing }
+        let value = "ses_" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
+        UserDefaults.standard.set(value, forKey: key)
+        return value
+    }()
     private static let lock = NSLock()
     // An in-flight discovery cannot replace model edits made by a later save.
     private static var discoveryRevisions: [UUID: UUID] = [:]
@@ -334,6 +342,7 @@ enum DepictionAIProvider {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store, no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue(sessionID, forHTTPHeaderField: "x-opencode-session")
         switch kind {
         case .openAI:
             request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
@@ -728,6 +737,7 @@ enum DepictionAIProvider {
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(sessionID, forHTTPHeaderField: "x-opencode-session")
         switch provider.kind {
         case .openAI: request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
         case .anthropic:
