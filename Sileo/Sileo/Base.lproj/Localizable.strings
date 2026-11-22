@@ -8,6 +8,67 @@
  LOCALISATIONS
 */
 
+// Depiction AI translation
+"Depiction_AI_Title" = "AI Translation";
+"Depiction_AI_Current_Model" = "Current: %1$@ · %2$@";
+"Depiction_AI_Thinking_Current" = "Thinking Effort: %@";
+"Depiction_AI_Thinking_default" = "Model Default";
+"Depiction_AI_Thinking_low" = "Low";
+"Depiction_AI_Thinking_medium" = "Medium";
+"Depiction_AI_Thinking_high" = "High";
+"Depiction_AI_Thinking_xhigh" = "Extra High";
+"Depiction_AI_Thinking_max" = "Maximum";
+"Depiction_AI_Thinking_Unsupported" = "Thinking Effort: Not Available for This Model";
+"Depiction_AI_Thinking_Save_Failed" = "Could not save the thinking effort.";
+"Depiction_AI_Current_System" = "Current: System Translation";
+"Depiction_AI_Add" = "Add Provider…";
+"Depiction_AI_Use_System" = "Switch to System Translation";
+"Depiction_AI_Fetch" = "Fetch Models…";
+"Depiction_AI_Cached" = "Choose a Cached Model";
+"Depiction_AI_Manual" = "Enter Model ID…";
+"Depiction_AI_Edit" = "Edit Provider…";
+"Depiction_AI_Remove" = "Remove Provider…";
+"Depiction_AI_Invalid_URL" = "Enter a valid base URL.";
+"Depiction_AI_Provider_Changed" = "This provider has changed or been removed. Reopen the AI Translation menu and try again.";
+"Depiction_AI_Save_Failed" = "Could not save the provider.";
+"Depiction_AI_Fetch_Failed" = "Could not fetch models. Check the provider settings or enter a model ID manually.";
+"Depiction_AI_Fetch_Missing_Key" = "Add an API key in the provider settings before fetching models.";
+"Depiction_AI_Fetch_Authentication" = "The provider could not authenticate the request. Check the API key and its permissions.";
+"Depiction_AI_Fetch_Rate_Limited" = "The provider is receiving too many requests. Wait a moment and try again.";
+"Depiction_AI_Fetch_Timeout" = "The model request timed out. Check your connection and try again.";
+"Depiction_AI_Model_ID" = "Model ID";
+"Depiction_AI_Cancel" = "Cancel";
+"Depiction_AI_Continue" = "Continue";
+"Depiction_AI_Empty_Model" = "Enter a model ID.";
+"Depiction_AI_Consent_Body" = "When translation uses this model, text from package descriptions and changelogs that needs translation will be sent to %1$@ (%2$@) using %3$@. Selecting a model does not turn on automatic translation.";
+"Depiction_AI_Consent_Title" = "Use AI Translation?";
+"Depiction_AI_Enable" = "Use This Model";
+"Depiction_AI_Activate_Failed" = "Could not select this model. Check the provider settings and try again.";
+"Depiction_AI_Remove_Body" = "Remove %@ and its saved API key? If this is the current provider, translation will switch back to the system.";
+"Depiction_AI_Remove_Confirm" = "Remove";
+"Depiction_AI_Remove_Failed" = "Could not remove the provider.";
+"Depiction_AI_Error_Title" = "AI Translation";
+"Depiction_AI_OK" = "OK";
+"Depiction_AI_Edit_Title" = "Edit Provider";
+"Depiction_AI_Add_Title" = "Add Provider";
+"Depiction_AI_Name_Placeholder" = "Optional; defaults to domain";
+"Depiction_AI_Key_Keep" = "Leave blank to keep the key if the URL and protocol are unchanged";
+"Depiction_AI_Key_Placeholder" = "Enter API key";
+"Depiction_AI_Show" = "Show";
+"Depiction_AI_Hide" = "Hide";
+"Depiction_AI_Key_Storage" = "The API key is stored in the system Keychain and is not included in backups.";
+"Depiction_AI_Form_Consent" = "Saving does not enable automatic translation. Before you use a model, you’ll be asked to confirm that text to translate will be sent to its provider.";
+"Depiction_AI_Clear_Key_Help" = "Turn this on and save to remove the stored API key.";
+"Depiction_AI_Clear_Key" = "Clear Saved API Key";
+"Depiction_AI_Name" = "Name";
+"Depiction_AI_Protocol" = "Protocol";
+"Depiction_AI_URL" = "Base URL";
+"Depiction_AI_Key" = "API Key";
+"Depiction_AI_Search" = "Search models";
+"Depiction_AI_Loading" = "Fetching models…";
+"Depiction_AI_Empty_List" = "No models available.";
+"Depiction_AI_No_Results" = "No matching models.";
+
 // Common Prompts
 "Backup_Task_List" = "Task List";
 "Backup_Task_Complete_Action" = "View Installation Completion Actions";
@@ -405,7 +466,7 @@
 "Depiction_Translation_Progress" = "Translating…";
 "Depiction_Translation_Finished" = "Translation complete.";
 "Depiction_Translation_Failed_Inline" = "Translation incomplete. Untranslated text is shown as written.";
-"Auto_Translate_Depictions_Explain" = "Automatically translate native package descriptions and changelogs into Simplified Chinese. Apple’s system translation service may send the text to Apple servers.";
+"Auto_Translate_Depictions_Explain" = "Automatically translate native package descriptions and changelogs into Simplified Chinese. If an AI provider is enabled, text that needs translation is sent to that provider first. When system translation is used, including as a fallback, the text may be sent to Apple servers.";
 "Auto_Translate_Depictions_Unavailable" = "Sileo could not access system translation into Simplified Chinese on this device.";
 "Depiction_Translation_Menu" = "Translate";
 "Depiction_Translation_Original" = "Original";
@@ -414,7 +475,7 @@
 "Depiction_Translation_Source" = "Source Language";
 "Depiction_Translation_Target" = "Target Language";
 "Depiction_Translation_Detect" = "Detect Language";
-"Depiction_Translation_Consent" = "Translate the native description and changelog on this page? Apple’s system translation service may send this text to Apple servers.";
+"Depiction_Translation_Consent" = "Translate the native description and changelog on this page? If an AI provider is enabled, text that needs translation is sent to that provider first. When system translation is used, including as a fallback, the text may be sent to Apple servers.";
 "Depiction_Translation_No_Languages" = "No languages available";
 "Remove_Broken_Sources" = "Remove Broken Sources";
 "Remove_Broken_Sources.Title" = "Remove Broken Sources?";

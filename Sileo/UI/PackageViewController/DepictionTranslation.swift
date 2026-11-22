@@ -2,8 +2,8 @@ import Foundation
 import NaturalLanguage
 import os
 
-/// Only native package prose is sent to Apple's engine. UI labels, actions,
-/// raw HTML depictions and the original repository data stay untouched.
+/// Only native depiction text fragments go to the selected engine. Markup,
+/// code, link destinations and the original repository data stay untouched.
 enum DepictionTranslation {
     static let settingKey = "AutoTranslateDepictions"
     static let changed = Notification.Name(settingKey)
@@ -52,6 +52,7 @@ enum DepictionTranslation {
     }
 
     static func verify(_ completion: @escaping (Bool) -> Void) {
+        if DepictionAIProvider.selection != nil { completion(true); return }
         availablePairs { pairs in
             completion(pairs?.contains(where: { $0.count == 2 && score($0[1], defaultTarget) > 0 }) == true)
         }
@@ -123,8 +124,7 @@ enum DepictionTranslation {
     /// stays partly English can be traced in the device log.
     @available(iOS 15.0, *)
     private static func failed(_ piece: Piece, pair: [String]?) {
-        let preview = String(piece.text.prefix(60)).replacingOccurrences(of: "\n", with: " ")
-        let line = "untranslated pair=\(pair?.joined(separator: ">") ?? "none") source=\(piece.source) text=\(preview)"
+        let line = "untranslated pair=\(pair?.joined(separator: ">") ?? "none") language=\(piece.source)"
         log.notice("\(line, privacy: .public)")
     }
 
@@ -135,7 +135,9 @@ enum DepictionTranslation {
     static func translate(_ depiction: [String: Any], source: String?, target: String,
                           isCurrent: @escaping () -> Bool, progress: ((Result) -> Void)? = nil,
                           completion: @escaping (Result?, Bool) -> Void) {
-        guard isCurrent(), SileoSystemTranslationAvailable() else { completion(nil, true); return }
+        let ai = DepictionAIProvider.selection
+        let systemAvailable = SileoSystemTranslationAvailable()
+        guard isCurrent(), ai != nil || systemAvailable else { completion(nil, true); return }
         var seen = Set<String>()
         var fragments = [String]()
         var fragmentGroup = [Int]()
@@ -182,8 +184,9 @@ enum DepictionTranslation {
         // A long depiction may hold a hundred paragraphs; the last tab is allowed
         // to take longer than a short one, but never forever.
         let deadline = ProcessInfo.processInfo.systemUptime + min(180, 45 + 0.6 * Double(pieces.count))
-        availablePairs { pairs in
-            guard isCurrent(), let pairs = pairs else { completion(nil, true); return }
+        func run() {
+            guard isCurrent() else { return }
+            var resolvedPairs: [[String]]? = systemAvailable ? nil : []
             var translations = [String: String]()
             var incomplete = false
             func buildResult() -> Result {
@@ -211,6 +214,12 @@ enum DepictionTranslation {
             var retried = false
             var handedBack = -1
             var lastIndex = -1
+            var triedAI = Set<Int>()
+            var consecutiveAIMisses = 0
+            let aiDeadline = deadline - 20
+            func aiCacheKey(_ piece: Piece, _ selection: DepictionAIProvider.Selection) -> NSString {
+                ("ai:\(selection.cacheID)\n\(piece.source)>\(target)\n\(piece.text)") as NSString
+            }
             func carryOn() {
                 guard isCurrent() else { return }
                 guard position < queue.count else {
@@ -236,6 +245,55 @@ enum DepictionTranslation {
                 lastIndex = index
                 guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete = true; finish(); return }
                 let piece = pieces[index]
+                if let ai = ai {
+                    if let answer = cache.object(forKey: aiCacheKey(piece, ai)) {
+                        translations[piece.text] = answer as String
+                        carryOn()
+                        return
+                    }
+                    if !retried, consecutiveAIMisses < 2, !triedAI.contains(index),
+                       ProcessInfo.processInfo.systemUptime < aiDeadline {
+                        // Batch adjacent pieces within this tab and language. Keep
+                        // system time available even when a third party is slow.
+                        var batch = [index]
+                        var size = piece.text.utf16.count
+                        for next in queue.dropFirst(position) {
+                            guard batch.count < 12, pieceGroup[next] == pieceGroup[index],
+                                  pieces[next].source == piece.source,
+                                  size + pieces[next].text.utf16.count <= 5000 else { break }
+                            if cache.object(forKey: aiCacheKey(pieces[next], ai)) == nil {
+                                batch.append(next)
+                                size += pieces[next].text.utf16.count
+                            }
+                        }
+                        triedAI.formUnion(batch)
+                        DepictionAIProvider.translate(batch.map { pieces[$0].text }, source: piece.source,
+                                                       target: target, using: ai,
+                                                       timeLimit: aiDeadline - ProcessInfo.processInfo.systemUptime) { answers in
+                            guard isCurrent() else { return }
+                            var accepted = 0
+                            for (offset, item) in batch.enumerated() {
+                                guard let answer = answers[offset]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                      !answer.isEmpty, answer != pieces[item].text else { continue }
+                                accepted += 1
+                                cache.setObject(answer as NSString, forKey: aiCacheKey(pieces[item], ai))
+                            }
+                            consecutiveAIMisses = accepted == 0 ? consecutiveAIMisses + 1 : 0
+                            position -= 1
+                            carryOn()
+                        }
+                        return
+                    }
+                }
+                guard let pairs = resolvedPairs else {
+                    availablePairs { pairs in
+                        guard isCurrent() else { return }
+                        resolvedPairs = pairs ?? []
+                        position -= 1
+                        carryOn()
+                    }
+                    return
+                }
                 let pair = pairs.filter { $0.count == 2 && score($0[0], piece.source) > 0 && score($0[1], target) > 0 }
                     .max { score($0[0], piece.source) * 4 + score($0[1], target) < score($1[0], piece.source) * 4 + score($1[1], target) }
                 guard let pair = pair else {
@@ -279,6 +337,7 @@ enum DepictionTranslation {
             }
             carryOn()
         }
+        run()
     }
 
     /// The tabs a depiction shows, so each one's text can be finished and drawn
@@ -414,7 +473,12 @@ enum DepictionTranslation {
             guard let name = htmlElementName(tag), htmlOpaqueElements.contains(name) else { continue }
             // Code and style contents are not prose: copy them through untouched.
             let closer = "</" + name
-            guard let closing = html[index...].range(of: closer, options: .caseInsensitive) else { continue }
+            // An unclosed opaque element consumes the remaining input. Do not
+            // pass its code or style text to an external translation provider.
+            guard let closing = html[index...].range(of: closer, options: .caseInsensitive) else {
+                output += String(html[index...])
+                break
+            }
             var stop = closing.upperBound
             while stop < html.endIndex, html[stop] != ">" { stop = html.index(after: stop) }
             if stop < html.endIndex { stop = html.index(after: stop) }

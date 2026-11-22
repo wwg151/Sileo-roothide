@@ -62,6 +62,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var shareButton: UIButton?
 
     private var navBarShareButtonItem: UIBarButtonItem?
+    private var navBarAIButtonItem: UIBarButtonItem?
+    private var aiMenuController: AnyObject?
+    private var aiSelectionCacheID: String?
+    private static let aiTranslationChanged = Notification.Name("SileoDepictionAITranslationChanged")
     private var navBarDownloadButtonItem: UIBarButtonItem?
 
     private var depictionView: DepictionBaseView?
@@ -208,8 +212,25 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         refreshDepictionTranslation()
     }
 
+    @objc private func aiTranslationSelectionChanged() {
+        let cacheID = DepictionAIProvider.selection?.activationID
+        guard cacheID != aiSelectionCacheID else { return }
+        aiSelectionCacheID = cacheID
+        // A manual request is for the engine that was selected when it started.
+        // Configuring another engine must not start a new request with auto off.
+        if !DepictionTranslation.isEnabled {
+            hasPageTranslationConsent = false
+            translationModeOverride = nil
+        }
+        invalidateTranslation()
+        refreshDepictionTranslation()
+    }
+
     private func cancelTranslationRequest() {
         translationID = UUID()
+        // A rendered tab is not a complete result. When returning to the
+        // page, restart from the fragment cache instead of treating it as done.
+        if translationStatus == .translating { translationResult = nil }
         translationStatus = nil
         if translationResult == nil { hasAttemptedTranslation = false }
     }
@@ -236,17 +257,9 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         }
         guard canTranslateDepiction, viewIfLoaded?.window != nil, !isWaitingForNativeDepiction,
               let originalDepiction = originalDepiction else { return }
-        if let result = translationResult {
-            if renderedTranslationMode != mode {
-                let depiction = mode == .compared ? result.compared : result.translated
-                guard renderDepiction(depiction, updatingMetadata: false) else {
-                    showOriginalDepiction()
-                    translationStatus = .failed
-                    return
-                }
-                renderedTranslationMode = mode
-            }
-            translationStatus = .done
+        if translationResult != nil {
+            if renderedTranslationMode != mode { drawTranslation() }
+            if translationStatus == nil { translationStatus = .done }
             return
         }
         guard !hasAttemptedTranslation else { return }
@@ -374,7 +387,17 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let navBarShareButtonItem = UIBarButtonItem(customView: shareButton)
         self.navBarShareButtonItem = navBarShareButtonItem
 
-        self.navigationItem.rightBarButtonItems = [navBarShareButtonItem]
+        if #available(iOS 15.0, *), DepictionTranslation.supportedPlatform {
+            aiSelectionCacheID = DepictionAIProvider.selection?.activationID
+            let menu = DepictionAIMenu(presenter: self) {
+                NotificationCenter.default.post(name: PackageViewController.aiTranslationChanged, object: nil)
+            }
+            aiMenuController = menu
+            navBarAIButtonItem = menu.makeButton()
+            NotificationCenter.default.addObserver(self, selector: #selector(aiTranslationSelectionChanged),
+                                                   name: PackageViewController.aiTranslationChanged, object: nil)
+        }
+        self.navigationItem.rightBarButtonItems = [navBarShareButtonItem] + (navBarAIButtonItem.map { [$0] } ?? [])
 
         let packageNavBarIconViewController = UIView(frame: CGRect(origin: .zero, size: CGSize(width: 50, height: 32)))
 
@@ -827,9 +850,9 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             if let navBarDownloadButtonItem = self.navBarDownloadButtonItem,
                 let navBarShareButtonItem = self.navBarShareButtonItem {
                 if (self.shareButton?.alpha ?? 0) > 0 {
-                    self.navigationItem.rightBarButtonItems = [navBarShareButtonItem]
+                    self.navigationItem.rightBarButtonItems = [navBarShareButtonItem] + (self.navBarAIButtonItem.map { [$0] } ?? [])
                 } else {
-                    self.navigationItem.rightBarButtonItems = [navBarDownloadButtonItem]
+                    self.navigationItem.rightBarButtonItems = [navBarDownloadButtonItem] + (self.navBarAIButtonItem.map { [$0] } ?? [])
                 }
             }
         }

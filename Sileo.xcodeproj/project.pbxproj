@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D81100000000000000000011 /* DepictionAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81100000000000000000001; };
+		D81100000000000000000012 /* DepictionAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81100000000000000000001; };
+		D81100000000000000000013 /* DepictionAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81100000000000000000001; };
+		D81100000000000000000021 /* DepictionAIMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81100000000000000000002; };
+		D81100000000000000000022 /* DepictionAIMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81100000000000000000002; };
+		D81100000000000000000023 /* DepictionAIMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81100000000000000000002; };
 		D81000000000000000000003 /* DepictionTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000001; };
 		D81000000000000000000004 /* DepictionTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000001; };
 		D81000000000000000000005 /* DepictionTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000001; };
@@ -1181,6 +1187,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D81100000000000000000001 /* DepictionAIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepictionAIProvider.swift; sourceTree = "<group>"; };
+		D81100000000000000000002 /* DepictionAIMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepictionAIMenu.swift; sourceTree = "<group>"; };
 		D81000000000000000000001 /* DepictionTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepictionTranslation.swift; sourceTree = "<group>"; };
 		D81000000000000000000002 /* SileoSystemTranslation.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SileoSystemTranslation.m; sourceTree = "<group>"; };
 		D81000000000000000000009 /* SileoSystemTranslation.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SileoSystemTranslation.h; sourceTree = "<group>"; };
@@ -3164,6 +3172,8 @@
 				F1D113FF20DD7A9300C8F051 /* PackageButton */,
 				F183CFC6231A563500D3AF3B /* PackageViewController.swift */,
 				D81000000000000000000001 /* DepictionTranslation.swift */,
+				D81100000000000000000001 /* DepictionAIProvider.swift */,
+				D81100000000000000000002 /* DepictionAIMenu.swift */,
 				D81000000000000000000002 /* SileoSystemTranslation.m */,
 				F1D113F820DC608900C8F051 /* PackageViewController.xib */,
 			);
@@ -4279,6 +4289,8 @@
 				E12818B126BBFAA500D2553B /* DownloadsTableViewCell.swift in Sources */,
 				E12818B226BBFAA500D2553B /* PackageViewController.swift in Sources */,
 				D81000000000000000000003 /* DepictionTranslation.swift in Sources */,
+				D81100000000000000000011 /* DepictionAIProvider.swift in Sources */,
+				D81100000000000000000021 /* DepictionAIMenu.swift in Sources */,
 				D81000000000000000000006 /* SileoSystemTranslation.m in Sources */,
 				E12818B326BBFAA500D2553B /* PaymentAuthenticationBannerView.swift in Sources */,
 				E12818B426BBFAA500D2553B /* UIColor-ThemeColors.swift in Sources */,
@@ -4507,6 +4519,8 @@
 				FB40262A23DE87F8002D97FE /* SettingsIconHeaderView.swift in Sources */,
 				F183CFCC231C246600D3AF3B /* PackageViewController.swift in Sources */,
 				D81000000000000000000004 /* DepictionTranslation.swift in Sources */,
+				D81100000000000000000012 /* DepictionAIProvider.swift in Sources */,
+				D81100000000000000000022 /* DepictionAIMenu.swift in Sources */,
 				D81000000000000000000007 /* SileoSystemTranslation.m in Sources */,
 				F147E68122F164230048F868 /* PaymentAuthenticationBannerView.swift in Sources */,
 				F1330EAA2324F76C00971073 /* UIColor-ThemeColors.swift in Sources */,
@@ -4707,6 +4721,8 @@
 				E1EB0362268BA45C0097CEE1 /* DownloadsTableViewCell.swift in Sources */,
 				F183CFC7231A563500D3AF3B /* PackageViewController.swift in Sources */,
 				D81000000000000000000005 /* DepictionTranslation.swift in Sources */,
+				D81100000000000000000013 /* DepictionAIProvider.swift in Sources */,
+				D81100000000000000000023 /* DepictionAIMenu.swift in Sources */,
 				D81000000000000000000008 /* SileoSystemTranslation.m in Sources */,
 				F147E68022F164230048F868 /* PaymentAuthenticationBannerView.swift in Sources */,
 				F1330EA92324F76C00971073 /* UIColor-ThemeColors.swift in Sources */,
