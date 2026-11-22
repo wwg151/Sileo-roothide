@@ -309,6 +309,16 @@ enum DepictionTranslation {
                     return copy
                 }
             }
+        case "DepictionSubheaderView":
+            // Havoc puts the one-line summary a page opens with in a subheader,
+            // not in the Markdown body. Section headers stay as written.
+            if let title = depiction["title"] as? String {
+                let translated = translateText(title) { replace($0, .plain) }
+                if translated != title {
+                    result["title"] = translated
+                    if compared { return comparison(original: depiction, translated: result) }
+                }
+            }
         case "DepictionStackView", "DepictionAutoStackView", "DepictionLayerView":
             if let views = depiction["views"] as? [[String: Any]] {
                 result["views"] = views.map { rewrite($0, compared: compared, replace: replace) }
