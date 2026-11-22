@@ -154,7 +154,7 @@ enum DepictionTranslation {
         }
         let tabs = depictionGroups(depiction)
         func collect(_ text: String, group: Int) -> String {
-            if fragments.count < 160, text.utf16.count <= 3000, text.filter(\.isLetter).count >= 4,
+            if fragments.count < 240, text.utf16.count <= 3000, text.filter(\.isLetter).count >= 4,
                text != placeholder, text != noDescription, seen.insert(text).inserted {
                 fragments.append(text)
                 fragmentGroup.append(group)
@@ -202,16 +202,38 @@ enum DepictionTranslation {
                 guard !translations.isEmpty else { completion(nil, incomplete); return }
                 completion(buildResult(), incomplete)
             }
+            // A paragraph the engine leaves empty is asked for again at the end,
+            // when the session has warmed up: that is where most of the stray
+            // untranslated lines on a long page come from.
+            var queue = Array(0..<pieces.count)
+            var position = 0
+            var missed = [Int]()
+            var retried = false
             var handedBack = -1
-            func next(_ index: Int) {
+            var lastIndex = -1
+            func carryOn() {
                 guard isCurrent() else { return }
-                if let progress = progress, index > 0, index < pieces.count,
-                   pieceGroup[index] != pieceGroup[index - 1], handedBack != pieceGroup[index - 1],
+                guard position < queue.count else {
+                    if !retried, !missed.isEmpty, ProcessInfo.processInfo.systemUptime < deadline {
+                        retried = true
+                        queue = missed
+                        missed = []
+                        position = 0
+                        carryOn()
+                        return
+                    }
+                    finish()
+                    return
+                }
+                let index = queue[position]
+                position += 1
+                if !retried, let progress = progress, lastIndex >= 0,
+                   pieceGroup[index] != pieceGroup[lastIndex], handedBack != pieceGroup[lastIndex],
                    !translations.isEmpty {
-                    handedBack = pieceGroup[index - 1]
+                    handedBack = pieceGroup[lastIndex]
                     progress(buildResult())
                 }
-                guard index < pieces.count else { finish(); return }
+                lastIndex = index
                 guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete = true; finish(); return }
                 let piece = pieces[index]
                 let pair = pairs.filter { $0.count == 2 && score($0[0], piece.source) > 0 && score($0[1], target) > 0 }
@@ -219,13 +241,13 @@ enum DepictionTranslation {
                 guard let pair = pair else {
                     failed(piece, pair: nil)
                     incomplete = true
-                    next(index + 1)
+                    carryOn()
                     return
                 }
                 let key = (pair[0] + ">" + pair[1] + "\n" + piece.text) as NSString
                 func record(_ translated: String) {
                     if translated != piece.text { translations[piece.text] = translated }
-                    next(index + 1)
+                    carryOn()
                 }
                 if let answer = cache.object(forKey: key) {
                     record(answer as String)
@@ -248,13 +270,14 @@ enum DepictionTranslation {
                         } else {
                             failed(piece, pair: pair)
                             incomplete = true
-                            next(index + 1)
+                            missed.append(index)
+                            carryOn()
                         }
                     }
                 }
                 request(false)
             }
-            next(0)
+            carryOn()
         }
     }
 
