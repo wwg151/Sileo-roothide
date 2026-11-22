@@ -403,6 +403,7 @@
 "Hide_Separators" = "Hide Separators";
 "Auto_Translate_Depictions" = "Auto-Translate";
 "Depiction_Translation_Progress" = "Translating…";
+"Depiction_Translation_Finished" = "Translation complete.";
 "Depiction_Translation_Failed_Inline" = "Translation incomplete. Untranslated text is shown as written.";
 "Auto_Translate_Depictions_Explain" = "Automatically translate native package descriptions and changelogs into Simplified Chinese. Apple’s system translation service may send the text to Apple servers.";
 "Auto_Translate_Depictions_Unavailable" = "Sileo could not access system translation into Simplified Chinese on this device.";
