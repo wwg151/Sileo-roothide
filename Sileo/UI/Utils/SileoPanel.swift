@@ -670,6 +670,63 @@ extension SileoPanelViewController {
         return row
     }
 
+    /// A row that opens another list: its title and current value, then a
+    /// chevron saying a tap brings more.
+    static func disclosureRow(title: String,
+                              detail: String?,
+                              handler: @escaping () -> Void) -> SileoPanelRow {
+        let row = SileoPanelRow()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addAction(UIAction { _ in handler() }, for: .touchUpInside)
+
+        let label = UILabel()
+        label.text = title
+        label.font = .systemFont(ofSize: 17)
+        label.textColor = .label
+        label.numberOfLines = 1
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(label)
+
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right"))
+        chevron.translatesAutoresizingMaskIntoConstraints = false
+        chevron.tintColor = .tertiaryLabel
+        chevron.contentMode = .scaleAspectFit
+        row.addSubview(chevron)
+
+        var constraints = [
+            row.heightAnchor.constraint(equalToConstant: 52),
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            chevron.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -16),
+            chevron.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            chevron.widthAnchor.constraint(equalToConstant: 13),
+            chevron.heightAnchor.constraint(equalToConstant: 18)
+        ]
+
+        if let detail = detail, !detail.isEmpty {
+            let detailLabel = UILabel()
+            detailLabel.text = detail
+            detailLabel.font = .systemFont(ofSize: 13)
+            detailLabel.textColor = .secondaryLabel
+            detailLabel.textAlignment = .right
+            detailLabel.numberOfLines = 1
+            detailLabel.lineBreakMode = .byTruncatingMiddle
+            detailLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+            detailLabel.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview(detailLabel)
+            constraints += [
+                detailLabel.trailingAnchor.constraint(equalTo: chevron.leadingAnchor, constant: -8),
+                detailLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: detailLabel.leadingAnchor, constant: -12)
+            ]
+        } else {
+            constraints.append(label.trailingAnchor.constraint(lessThanOrEqualTo: chevron.leadingAnchor, constant: -12))
+        }
+        NSLayoutConstraint.activate(constraints)
+        return row
+    }
+
     /// A small heading that groups rows, with no line under it.
     static func sectionLabel(_ text: String) -> UIView {
         let container = UIView()

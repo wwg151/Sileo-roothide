@@ -1065,8 +1065,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             let chosen = choosingSource ? translationSource : translationTarget
             let title = String(localizationKey: choosingSource ? "Depiction_Translation_Source" : "Depiction_Translation_Target")
             let detail = chosen.map(DepictionTranslation.languageName) ?? String(localizationKey: "Depiction_Translation_Detect")
-            rows.append(SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: title, detail: detail,
-                                                                              selected: false) { [weak self, weak panel] in
+            rows.append(SileoPanelTable.Item(SileoPanelViewController.disclosureRow(title: title, detail: detail) { [weak self, weak panel] in
                 panel?.close { [weak self] in
                     guard let self = self, self.translationPageIdentity == identity else { return }
                     self.presentTranslationLanguages(choosingSource: choosingSource, title: title, identity: identity)
