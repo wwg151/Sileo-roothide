@@ -36,6 +36,14 @@
 "Depiction_AI_Fetch_Authentication" = "The provider could not authenticate the request. Check the API key and its permissions.";
 "Depiction_AI_Fetch_Rate_Limited" = "The provider is receiving too many requests. Wait a moment and try again.";
 "Depiction_AI_Fetch_Timeout" = "The model request timed out. Check your connection and try again.";
+"Depiction_AI_Test_Title" = "Testing the Connection";
+"Depiction_AI_Test_Body" = "Sending a small test request to the selected model.";
+"Depiction_AI_Test_Failed" = "Could not reach the model. Check the network, the API key and the model ID.";
+"Depiction_AI_Test_Missing_Key" = "Add an API key in the provider settings, then choose the model again.";
+"Depiction_AI_Test_Authentication" = "The provider rejected the API key. Check the key and its permissions.";
+"Depiction_AI_Test_Rate_Limited" = "The provider is receiving too many requests. Wait a moment and try again.";
+"Depiction_AI_Test_Timeout" = "The test request timed out. Check your connection and try again.";
+"Depiction_AI_Test_Model" = "The provider says this model does not exist or is not available. Check the model ID.";
 "Depiction_AI_Model_ID" = "Model ID";
 "Depiction_AI_Cancel" = "Cancel";
 "Depiction_AI_Continue" = "Continue";

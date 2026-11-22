@@ -231,13 +231,22 @@ final class DepictionAIMenu {
             didSelect()
             return
         }
+        // Ask the provider first: a model that cannot answer is never offered for consent.
+        Self.verify(current, model: model, from: source) { [weak self, weak source] in
+            guard let self = self, let source = source else { return }
+            self.requestConsent(current, host: host, model: model, from: source, didSelect: didSelect)
+        }
+    }
+
+    private func requestConsent(_ current: Provider, host: String, model: String, from source: UIViewController,
+                                didSelect: @escaping () -> Void) {
         let message = String(format: aiText("Consent_Body"), current.name, host, model)
         let alert = UIAlertController(title: aiText("Consent_Title"), message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: aiText("Cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: aiText("Enable"), style: .default) { [weak self, weak source, weak alert] _ in
             Self.afterAlert(alert) {
                 guard let self = self, let source = source else { return }
-                guard let latest = self.provider(id), latest.baseURL == current.baseURL, latest.kind == current.kind else {
+                guard let latest = self.provider(current.id), latest.baseURL == current.baseURL, latest.kind == current.kind else {
                     Self.showError("Provider_Changed", from: source)
                     return
                 }
@@ -250,6 +259,50 @@ final class DepictionAIMenu {
             }
         })
         source.present(alert, animated: true)
+    }
+
+    private static func verify(_ provider: Provider, model: String, from source: UIViewController,
+                               proceed: @escaping () -> Void) {
+        let progress = UIAlertController(title: aiText("Test_Title"), message: aiText("Test_Body"), preferredStyle: .alert)
+        let indicator = UIActivityIndicatorView(style: .medium)
+        indicator.startAnimating()
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        progress.view.addSubview(indicator)
+        NSLayoutConstraint.activate([
+            indicator.centerXAnchor.constraint(equalTo: progress.view.centerXAnchor),
+            indicator.bottomAnchor.constraint(equalTo: progress.view.bottomAnchor, constant: -20)
+        ])
+        source.present(progress, animated: true)
+        DepictionAIProvider.test(provider, model: model) { result in
+            DispatchQueue.main.async {
+                let finish: () -> Void = { [weak source] in
+                    switch result {
+                    case .success:
+                        proceed()
+                    case .failure(let error):
+                        guard let source = source else { return }
+                        showError(testErrorKey(error), from: source)
+                    }
+                }
+                if progress.presentingViewController != nil {
+                    progress.dismiss(animated: true, completion: finish)
+                } else {
+                    finish()
+                }
+            }
+        }
+    }
+
+    private static func testErrorKey(_ error: Error) -> String {
+        guard let failure = error as? DepictionAIProvider.Failure else { return "Test_Failed" }
+        switch failure {
+        case .missingKey: return "Test_Missing_Key"
+        case .authentication: return "Test_Authentication"
+        case .rateLimited: return "Test_Rate_Limited"
+        case .timeout: return "Test_Timeout"
+        case .httpStatus: return "Test_Model"
+        default: return "Test_Failed"
+        }
     }
 
     private func confirmRemoval(_ id: UUID) {

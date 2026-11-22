@@ -51,7 +51,7 @@ enum DepictionAIProvider {
 
         var activationID: String { "depiction-ai:\(provider.id.uuidString):\(authorization.uuidString)" }
         var cacheID: String { "\(activationID):\(thinkingEffort.rawValue)" }
-        var supportedThinkingEfforts: [ThinkingEffort] { DepictionAIProvider.thinkingEfforts(for: provider, model: model) }
+        var supportedThinkingEfforts: [ThinkingEffort] { DepictionAIProvider.thinkingEfforts(for: provider.kind) }
     }
 
     enum Failure: String, Error {
@@ -110,42 +110,21 @@ enum DepictionAIProvider {
                   provider.models.contains(active.model),
                   case .success = readKey(for: provider) else { return nil }
             let stored = settings.thinkingEfforts?[provider.id.uuidString]?[active.model] ?? .modelDefault
-            let effort = thinkingEfforts(for: provider, model: active.model).contains(stored) ? stored : .modelDefault
+            let effort = thinkingEfforts(for: provider.kind).contains(stored) ? stored : .modelDefault
             return Selection(provider: provider, model: active.model, authorization: active.authorization,
                              thinkingEffort: effort)
         }
     }
 
-    // Capabilities apply to the native APIs, not arbitrary compatible gateways.
-    // Use exact IDs so a chat-only, pro, or future variant does not inherit unsupported values.
-    private static func thinkingEfforts(for provider: Provider, model: String) -> [ThinkingEffort] {
-        let standard: [ThinkingEffort] = [.low, .medium, .high]
-        switch (provider.kind, provider.baseURL) {
-        case (.openAI, "https://api.openai.com"), (.openAI, "https://api.openai.com/v1"):
-            switch model {
-            case "o3", "o3-2025-04-16", "o3-mini", "o3-mini-2025-01-31", "o4-mini", "o4-mini-2025-04-16",
-                 "gpt-5", "gpt-5-2025-08-07", "gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5.1", "gpt-5.1-2025-11-13":
-                return standard
-            case "gpt-5.2", "gpt-5.2-2025-12-11": return standard + [.xhigh]
-            default: return []
-            }
-        case (.anthropic, "https://api.anthropic.com"), (.anthropic, "https://api.anthropic.com/v1"):
-            switch model {
-            case "claude-opus-4-5", "claude-opus-4-5-20251101": return standard
-            case "claude-opus-4-6", "claude-sonnet-4-6": return standard + [.max]
-            case "claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-opus-5-5",
-                 "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5": return standard + [.xhigh, .max]
-            default: return []
-            }
-        case (.gemini, "https://generativelanguage.googleapis.com"),
-             (.gemini, "https://generativelanguage.googleapis.com/v1beta"):
-            switch model {
-            case "gemini-3-pro-preview": return [.low, .high]
-            case "gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite",
-                 "gemini-3.1-flash-lite-preview": return standard
-            default: return []
-            }
-        default: return []
+    // Compatible gateways and most current models accept an effort hint even when the
+    // model is not in a fixed list, so every model gets the levels its protocol can
+    // express. A field the endpoint refuses is retried without it (see translate),
+    // which costs one request instead of hiding the setting.
+    private static func thinkingEfforts(for kind: ProtocolKind) -> [ThinkingEffort] {
+        switch kind {
+        case .openAI: return [.low, .medium, .high]
+        case .anthropic: return [.low, .medium, .high, .xhigh, .max]
+        case .gemini: return [.low, .high]
         }
     }
 
@@ -600,57 +579,124 @@ enum DepictionAIProvider {
             DispatchQueue.main.async { completion([:]) }; return
         }
         let route: String
-        var payload: Object
+        switch provider.kind {
+        case .openAI: route = "chat/completions"
+        case .anthropic: route = "messages"
+        case .gemini: route = "models/\(model):generateContent"
+        }
+        func payload(_ effort: ThinkingEffort) -> Object {
+            switch provider.kind {
+            case .openAI:
+                var object: Object = ["model": model, "stream": false, "n": 1,
+                                      "messages": [["role": "system", "content": translationInstructions],
+                                                   ["role": "user", "content": prompt]]]
+                if effort != .modelDefault { object["reasoning_effort"] = effort.rawValue }
+                return object
+            case .anthropic:
+                var object: Object = ["model": model, "max_tokens": 4096, "stream": false,
+                                      "system": translationInstructions,
+                                      "messages": [["role": "user", "content": prompt]]]
+                if effort != .modelDefault {
+                    object["output_config"] = ["effort": effort.rawValue]
+                    // Adaptive thinking arrived after Opus 4.5, which takes the effort alone.
+                    if !model.hasPrefix("claude-opus-4-5") { object["thinking"] = ["type": "adaptive"] }
+                }
+                return object
+            case .gemini:
+                var config: Object = ["responseMimeType": "application/json", "candidateCount": 1]
+                if effort != .modelDefault {
+                    config["thinkingConfig"] = ["thinkingLevel": effort.rawValue.uppercased()]
+                }
+                return ["systemInstruction": ["parts": [["text": translationInstructions]]],
+                        "contents": [["role": "user", "parts": [["text": prompt]]]],
+                        "generationConfig": config]
+            }
+        }
         let effort = selection.thinkingEffort
+        guard let url = endpoint(provider, route: route),
+              let body = try? JSONSerialization.data(withJSONObject: payload(effort)) else {
+            DispatchQueue.main.async { completion([:]) }; return
+        }
+        let fallback = effort == .modelDefault ? nil : try? JSONSerialization.data(withJSONObject: payload(.modelDefault))
+        let started = synchronized { () -> Bool in
+            guard isActive(selection), case .success(let key) = readKey(for: provider),
+                  deadline > ProcessInfo.processInfo.systemUptime else { return false }
+            sendTranslation(url: url, provider: provider, key: key, authorization: selection, body: body,
+                            fallback: fallback, deadline: deadline, count: texts.count, completion: completion)
+            return true
+        }
+        if !started { DispatchQueue.main.async { completion([:]) } }
+    }
+
+    /// One request, then one retry without the effort field when the endpoint refuses it.
+    private static func sendTranslation(url: URL, provider: Provider, key: String, authorization: Selection,
+                                        body: Data, fallback: Data?, deadline: TimeInterval, count: Int,
+                                        completion: @escaping ([Int: String]) -> Void) {
+        let transport = Transport { result in
+            if case .failure(let failure) = result, failure == .httpStatus, let fallback = fallback,
+               deadline > ProcessInfo.processInfo.systemUptime {
+                sendTranslation(url: url, provider: provider, key: key, authorization: authorization,
+                                body: fallback, fallback: nil, deadline: deadline, count: count,
+                                completion: completion)
+                return
+            }
+            var translated = [Int: String]()
+            if case .success(let response) = result, let output = outputText(response, kind: provider.kind) {
+                translated = parseTranslations(output, count: count)
+            }
+            let answer = translated
+            DispatchQueue.main.async {
+                completion(synchronized { isActive(authorization) } ? answer : [:])
+            }
+        }
+        let remaining = deadline - ProcessInfo.processInfo.systemUptime
+        guard remaining > 0 else {
+            DispatchQueue.main.async { completion([:]) }
+            return
+        }
+        transport.start(request(url, kind: provider.kind, key: key, body: body), timeLimit: remaining)
+    }
+
+    /// Sends one minimal completion so the menu can show whether the model answers at all.
+    /// It carries no package text: a fixed instruction only.
+    static func test(_ provider: Provider, model: String, completion: @escaping (Result<Void, Failure>) -> Void) {
+        func finish(_ result: Result<Void, Failure>) {
+            DispatchQueue.main.async { completion(result) }
+        }
+        guard let model = cleanModel(model, kind: provider.kind) else {
+            finish(.failure(.invalidConfiguration)); return
+        }
+        let route: String
+        let payload: Object
         switch provider.kind {
         case .openAI:
             route = "chat/completions"
             payload = ["model": model, "stream": false, "n": 1,
-                       "messages": [["role": "system", "content": translationInstructions],
-                                    ["role": "user", "content": prompt]]]
-            if effort != .modelDefault { payload["reasoning_effort"] = effort.rawValue }
+                       "messages": [["role": "user", "content": "Reply with OK."]]]
         case .anthropic:
             route = "messages"
-            payload = ["model": model, "max_tokens": 4096, "stream": false, "system": translationInstructions,
-                       "messages": [["role": "user", "content": prompt]]]
-            if effort != .modelDefault {
-                payload["output_config"] = ["effort": effort.rawValue]
-                if model != "claude-opus-4-5", model != "claude-opus-4-5-20251101" {
-                    payload["thinking"] = ["type": "adaptive"]
-                }
-            }
+            payload = ["model": model, "max_tokens": 16, "stream": false,
+                       "messages": [["role": "user", "content": "Reply with OK."]]]
         case .gemini:
             route = "models/\(model):generateContent"
-            var config: Object = ["responseMimeType": "application/json", "candidateCount": 1]
-            if effort != .modelDefault {
-                config["thinkingConfig"] = ["thinkingLevel": effort.rawValue.uppercased()]
-            }
-            payload = ["systemInstruction": ["parts": [["text": translationInstructions]]],
-                       "contents": [["role": "user", "parts": [["text": prompt]]]],
-                       "generationConfig": config]
+            payload = ["contents": [["role": "user", "parts": [["text": "Reply with OK."]]]]]
         }
         guard let url = endpoint(provider, route: route),
               let body = try? JSONSerialization.data(withJSONObject: payload) else {
-            DispatchQueue.main.async { completion([:]) }; return
+            finish(.failure(.invalidConfiguration)); return
         }
-        let started = synchronized { () -> Bool in
-            guard isActive(selection), case .success(let key) = readKey(for: provider) else { return false }
+        switch synchronized({ readKey(for: provider) }) {
+        case .failure(let error):
+            finish(.failure(error))
+        case .success(let key):
             let transport = Transport { result in
-                var translated = [Int: String]()
-                if case .success(let response) = result, let output = outputText(response, kind: provider.kind) {
-                    translated = parseTranslations(output, count: texts.count)
-                }
-                let answer = translated
-                DispatchQueue.main.async {
-                    completion(synchronized { isActive(selection) } ? answer : [:])
+                switch result {
+                case .success: finish(.success(()))
+                case .failure(let error): finish(.failure(error))
                 }
             }
-            let remaining = deadline - ProcessInfo.processInfo.systemUptime
-            guard remaining > 0 else { return false }
-            transport.start(request(url, kind: provider.kind, key: key, body: body), timeLimit: remaining)
-            return true
+            transport.start(request(url, kind: provider.kind, key: key, body: body), timeLimit: 12)
         }
-        if !started { DispatchQueue.main.async { completion([:]) } }
     }
 
     private static func outputText(_ response: Object, kind: ProtocolKind) -> String? {
