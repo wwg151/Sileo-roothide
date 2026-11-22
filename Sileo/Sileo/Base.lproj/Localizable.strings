@@ -474,7 +474,9 @@
 "Hide_Separators" = "Hide Separators";
 "Auto_Translate_Depictions" = "Auto-Translate";
 "Depiction_Translation_Progress" = "Translating…";
-"Depiction_Translation_Finished" = "Translation complete.";
+"Depiction_Translation_Finished_AI" = "AI translation complete.";
+"Depiction_Translation_Finished_System" = "System translation complete.";
+"Depiction_Translation_Finished_Mixed" = "AI and system translation complete.";
 "Depiction_Translation_Failed_Inline" = "Translation incomplete. Untranslated text is shown as written.";
 "Auto_Translate_Depictions_Explain" = "Automatically translate native package descriptions and changelogs into Simplified Chinese. If an AI provider is enabled, text that needs translation is sent to that provider first. When system translation is used, including as a fallback, the text may be sent to Apple servers.";
 "Auto_Translate_Depictions_Unavailable" = "Sileo could not access system translation into Simplified Chinese on this device.";

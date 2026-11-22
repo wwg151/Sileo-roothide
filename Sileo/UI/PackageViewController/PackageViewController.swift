@@ -89,7 +89,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     }
     private var translationPageIdentity: TranslationPageIdentity?
     private enum TranslationStatus: Equatable {
-        case translating, done, failed
+        case translating, done(DepictionTranslation.OutputSource), failed
     }
     private var translationStatus: TranslationStatus? {
         didSet {
@@ -97,7 +97,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             translationStatusLabel.text = translationStatus.map {
                 switch $0 {
                 case .translating: return String(localizationKey: "Depiction_Translation_Progress")
-                case .done: return String(localizationKey: "Depiction_Translation_Finished")
+                case .done(let source): return source.completionTitle
                 case .failed: return String(localizationKey: "Depiction_Translation_Failed_Inline")
                 }
             }
@@ -257,9 +257,9 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         }
         guard canTranslateDepiction, viewIfLoaded?.window != nil, !isWaitingForNativeDepiction,
               let originalDepiction = originalDepiction else { return }
-        if translationResult != nil {
+        if let result = translationResult {
             if renderedTranslationMode != mode { drawTranslation() }
-            if translationStatus == nil { translationStatus = .done }
+            if translationStatus == nil { translationStatus = .done(result.outputSource) }
             return
         }
         guard !hasAttemptedTranslation else { return }
@@ -285,7 +285,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             self.translationResult = result
             // A few fragments the engine refuses are left as written; they do not
             // turn a translated page into a failure.
-            self.translationStatus = result == nil ? .failed : .done
+            self.translationStatus = result.map { TranslationStatus.done($0.outputSource) } ?? .failed
             if result != nil {
                 // A tab may already be on screen from a partial pass; the finished
                 // text replaces it even though the mode has not changed.

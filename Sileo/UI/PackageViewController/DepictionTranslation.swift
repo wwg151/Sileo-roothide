@@ -21,9 +21,22 @@ enum DepictionTranslation {
         }
     }
 
+    enum OutputSource: Equatable {
+        case ai, system, mixed
+
+        var completionTitle: String {
+            switch self {
+            case .ai: return String(localizationKey: "Depiction_Translation_Finished_AI")
+            case .system: return String(localizationKey: "Depiction_Translation_Finished_System")
+            case .mixed: return String(localizationKey: "Depiction_Translation_Finished_Mixed")
+            }
+        }
+    }
+
     struct Result {
         let translated: [String: Any]
         let compared: [String: Any]
+        let outputSource: OutputSource
     }
     private static let cache: NSCache<NSString, NSString> = {
         let cache = NSCache<NSString, NSString>()
@@ -187,19 +200,23 @@ enum DepictionTranslation {
         func run() {
             guard isCurrent() else { return }
             var resolvedPairs: [[String]]? = systemAvailable ? nil : []
-            var translations = [String: String]()
+            var translations = [String: (text: String, fromAI: Bool)]()
             var incomplete = false
             func buildResult() -> Result {
                 let replace: (String, Flavor) -> String = { text, flavor in
-                    guard let answer = translations[text] else { return text }
+                    guard let answer = translations[text]?.text else { return text }
                     switch flavor {
                     case .plain: return answer
                     case .markdown: return escapeMarkdown(answer)
                     case .html: return escapeHTML(answer)
                     }
                 }
+                let hasAI = translations.values.contains { $0.fromAI }
+                let hasSystem = translations.values.contains { !$0.fromAI }
+                let source: OutputSource = hasAI ? (hasSystem ? .mixed : .ai) : .system
                 return Result(translated: rewrite(depiction, replace: replace),
-                              compared: rewrite(depiction, compared: true, replace: replace))
+                              compared: rewrite(depiction, compared: true, replace: replace),
+                              outputSource: source)
             }
             func finish() {
                 guard !translations.isEmpty else { completion(nil, incomplete); return }
@@ -247,7 +264,7 @@ enum DepictionTranslation {
                 let piece = pieces[index]
                 if let ai = ai {
                     if let answer = cache.object(forKey: aiCacheKey(piece, ai)) {
-                        translations[piece.text] = answer as String
+                        translations[piece.text] = (answer as String, fromAI: true)
                         carryOn()
                         return
                     }
@@ -304,7 +321,7 @@ enum DepictionTranslation {
                 }
                 let key = (pair[0] + ">" + pair[1] + "\n" + piece.text) as NSString
                 func record(_ translated: String) {
-                    if translated != piece.text { translations[piece.text] = translated }
+                    if translated != piece.text { translations[piece.text] = (translated, fromAI: false) }
                     carryOn()
                 }
                 if let answer = cache.object(forKey: key) {
