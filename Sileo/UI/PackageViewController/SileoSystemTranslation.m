@@ -31,7 +31,6 @@ BOOL SileoSystemTranslationAvailable(void) {
             [translatorClass instancesRespondToSelector:@selector(translate:)] &&
             [requestClass instancesRespondToSelector:@selector(initWithSourceLocale:targetLocale:)] &&
             [requestClass instancesRespondToSelector:NSSelectorFromString(@"setText:")] &&
-            [requestClass instancesRespondToSelector:NSSelectorFromString(@"setForcedOfflineTranslation:")] &&
             ([requestClass instancesRespondToSelector:NSSelectorFromString(@"setTextTranslationHandler:")] ||
              [requestClass instancesRespondToSelector:NSSelectorFromString(@"setTranslationHandler:")] ||
              [requestClass instancesRespondToSelector:NSSelectorFromString(@"setCompletionHandler:")]);
@@ -179,7 +178,9 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
             return;
         }
         [request setValue:[[NSAttributedString alloc] initWithString:self.text] forKey:@"text"];
-        [request setValue:@(self.offline) forKey:@"forcedOfflineTranslation"];
+        if ([request respondsToSelector:NSSelectorFromString(@"setForcedOfflineTranslation:")]) {
+            [request setValue:@(self.offline) forKey:@"forcedOfflineTranslation"];
+        }
         void (^handler)(id, id) = ^(id first, id second) {
             @try {
                 if ([first isKindOfClass:NSError.class] || [second isKindOfClass:NSError.class]) {
