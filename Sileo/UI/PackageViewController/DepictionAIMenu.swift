@@ -212,7 +212,7 @@ final class DepictionAIMenu {
         alert.addAction(UIAlertAction(title: aiText("Continue"), style: .default) { [weak self, weak presenter, weak alert] _ in
             guard let presenter = presenter else { return }
             let model = (alert?.textFields?.first?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let next = {
+            let next: () -> Void = {
                 if model.isEmpty { Self.showError("Empty_Model", from: presenter) }
                 else { self?.confirmActivation(id, model: model, from: presenter) }
             }
