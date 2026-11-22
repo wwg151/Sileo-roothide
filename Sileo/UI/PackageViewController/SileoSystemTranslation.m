@@ -7,6 +7,7 @@
 // The engine is private, so never link it or assume that an individual selector exists.
 @interface NSObject (SileoTranslationEngine)
 + (void)availableLocalePairsForTask:(NSInteger)task completion:(void (^)(NSArray *))completion;
+- (void)startTranslationSession;
 - (instancetype)initWithSourceLocale:(NSLocale *)source targetLocale:(NSLocale *)target;
 - (void)translate:(id)request;
 @end
@@ -31,7 +32,8 @@ BOOL SileoSystemTranslationAvailable(void) {
             [requestClass instancesRespondToSelector:@selector(initWithSourceLocale:targetLocale:)] &&
             [requestClass instancesRespondToSelector:NSSelectorFromString(@"setText:")] &&
             [requestClass instancesRespondToSelector:NSSelectorFromString(@"setForcedOfflineTranslation:")] &&
-            ([requestClass instancesRespondToSelector:NSSelectorFromString(@"setTranslationHandler:")] ||
+            ([requestClass instancesRespondToSelector:NSSelectorFromString(@"setTextTranslationHandler:")] ||
+             [requestClass instancesRespondToSelector:NSSelectorFromString(@"setTranslationHandler:")] ||
              [requestClass instancesRespondToSelector:NSSelectorFromString(@"setCompletionHandler:")]);
     }
 #endif
@@ -99,49 +101,146 @@ static NSString *TranslatedText(id result) {
     return [text isKindOfClass:NSString.class] ? text : nil;
 }
 
-void SileoSystemTranslate(NSString *text, NSString *source, NSString *target, BOOL offline,
-                          void (^completion)(NSString *)) {
-    if (!SileoSystemTranslationAvailable()) {
-        completion(nil);
+// One translator and its session serve the whole app. iOS 16 starts a text
+// session on the translator itself, and a translator made per sentence is
+// answered with nothing at all.
+static id SileoTranslationEngine(void) {
+    static id translator;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        translator = [translatorClass new];
+        if ([translator respondsToSelector:NSSelectorFromString(@"startTranslationSession")]) {
+            [translator performSelector:NSSelectorFromString(@"startTranslationSession")];
+        }
+    });
+    return translator;
+}
+
+static void SileoRestartTranslationSession(void) {
+    id translator = SileoTranslationEngine();
+    if ([translator respondsToSelector:NSSelectorFromString(@"startTranslationSession")]) {
+        [translator performSelector:NSSelectorFromString(@"startTranslationSession")];
+    }
+}
+
+// A job is kept until it answers: its blocks hold it weakly, so the registry
+// is what keeps a request alive while the engine works on it.
+static NSMutableSet *SileoActiveTranslationJobs(void) {
+    static NSMutableSet *jobs;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ jobs = [NSMutableSet set]; });
+    return jobs;
+}
+
+// The engine answers some requests with an empty result rather than a
+// translation; another ask usually succeeds, so each text gets three tries
+// before it counts as untranslated.
+@interface SileoTranslationJob : NSObject
+@property (nonatomic, copy) NSString *text;
+@property (nonatomic, copy) NSString *source;
+@property (nonatomic, copy) NSString *target;
+@property (nonatomic) BOOL offline;
+@property (nonatomic) NSInteger attempt;
+@property (nonatomic) NSInteger token;
+@property (nonatomic, strong) id request;
+@property (nonatomic, copy) void (^completion)(NSString *);
+@end
+
+@implementation SileoTranslationJob
+
+- (void)start {
+    if (!self.completion) return;
+    [SileoActiveTranslationJobs() addObject:self];
+    if (self.attempt >= 3) {
+        [self finish:nil];
         return;
     }
-    __block id translator;
-    __block id request;
-    void (^finish)(id) = FinishOnce(^(id value) {
-        translator = nil;
-        request = nil;
-        completion(value);
-    });
+    self.attempt++;
+    NSInteger token = self.token + 1;
+    self.token = token;
+    __weak SileoTranslationJob *weakSelf = self;
+    void (^answer)(NSString *) = ^(NSString *value) {
+        SileoTranslationJob *job = weakSelf;
+        if (!job || job.token != token) return;
+        if (value.length) {
+            [job finish:value];
+        } else {
+            [job retry];
+        }
+    };
     @try {
-        translator = [translatorClass new];
-        request = [[requestClass alloc] initWithSourceLocale:[NSLocale localeWithLocaleIdentifier:source]
-                                               targetLocale:[NSLocale localeWithLocaleIdentifier:target]];
-        if (!translator || !request) {
-            finish(nil);
+        // The session has to exist before the request does: a request made
+        // first is accepted and then never answered.
+        id translator = SileoTranslationEngine();
+        id request = [[requestClass alloc] initWithSourceLocale:[NSLocale localeWithLocaleIdentifier:self.source]
+                                                 targetLocale:[NSLocale localeWithLocaleIdentifier:self.target]];
+        if (!request || !translator) {
+            [self finish:nil];
             return;
         }
-        [request setValue:[[NSAttributedString alloc] initWithString:text] forKey:@"text"];
-        [request setValue:@(offline) forKey:@"forcedOfflineTranslation"];
+        [request setValue:[[NSAttributedString alloc] initWithString:self.text] forKey:@"text"];
+        [request setValue:@(self.offline) forKey:@"forcedOfflineTranslation"];
         void (^handler)(id, id) = ^(id first, id second) {
             @try {
                 if ([first isKindOfClass:NSError.class] || [second isKindOfClass:NSError.class]) {
-                    finish(nil);
+                    answer(nil);
                     return;
                 }
-                NSString *answer = TranslatedText(first) ?: TranslatedText(second);
-                if (answer.length) finish(answer);
+                answer(TranslatedText(first) ?: TranslatedText(second));
             } @catch (NSException *exception) {
-                finish(nil);
+                answer(nil);
             }
         };
+        if ([request respondsToSelector:NSSelectorFromString(@"setTextTranslationHandler:")]) {
+            [request setValue:[handler copy] forKey:@"textTranslationHandler"];
+        }
         if ([request respondsToSelector:NSSelectorFromString(@"setTranslationHandler:")]) {
             [request setValue:[handler copy] forKey:@"translationHandler"];
         }
         if ([request respondsToSelector:NSSelectorFromString(@"setCompletionHandler:")]) {
             [request setValue:[handler copy] forKey:@"completionHandler"];
         }
+        self.request = request;
         [translator translate:request];
     } @catch (NSException *exception) {
-        finish(nil);
+        [self finish:nil];
+        return;
     }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 7 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        SileoTranslationJob *job = weakSelf;
+        if (job && job.token == token) [job retry];
+    });
+}
+
+- (void)retry {
+    // A session can end while the app sits in the background; begin another
+    // before asking again.
+    SileoRestartTranslationSession();
+    self.request = nil;
+    [self start];
+}
+
+- (void)finish:(NSString *)answer {
+    void (^completion)(NSString *) = self.completion;
+    self.completion = nil;
+    self.request = nil;
+    [SileoActiveTranslationJobs() removeObject:self];
+    if (completion) completion(answer);
+}
+
+@end
+
+void SileoSystemTranslate(NSString *text, NSString *source, NSString *target, BOOL offline,
+                          void (^completion)(NSString *)) {
+    if (!SileoSystemTranslationAvailable()) {
+        completion(nil);
+        return;
+    }
+    SileoTranslationJob *job = [[SileoTranslationJob alloc] init];
+    job.text = text;
+    job.source = source;
+    job.target = target;
+    job.offline = offline;
+    job.completion = completion;
+    [job start];
 }
