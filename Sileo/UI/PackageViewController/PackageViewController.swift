@@ -71,7 +71,24 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var isWaitingForNativeDepiction = false
     private var canTranslateDepiction = false
     private var hasAttemptedTranslation = false
-    private var isShowingTranslation = false
+    private var renderedTranslationMode = DepictionTranslation.Mode.original
+    private var translationModeOverride: DepictionTranslation.Mode?
+    private var translationSource: String?
+    private var translationTarget = DepictionTranslation.defaultTarget
+    private var translationResult: DepictionTranslation.Result?
+    private var hasPageTranslationConsent = false
+    private struct TranslationPageIdentity: Equatable {
+        let identifier: String
+        let version: String
+        let sourceFile: String?
+        let depictionURL: URL?
+    }
+    private var translationPageIdentity: TranslationPageIdentity?
+    private var shouldShowTranslationFailure = false
+
+    private var translationMode: DepictionTranslation.Mode {
+        translationModeOverride ?? (DepictionTranslation.isEnabled ? .translated : .original)
+    }
     private var depictionFooterView: DepictionBaseView?
 
     private var paymentProvider = ""
@@ -99,7 +116,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         guard let rawDepict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               renderDepiction(rawDepict, updatingMetadata: true) else { return }
         originalDepiction = rawDepict
+        translationID = UUID()
+        translationResult = nil
         hasAttemptedTranslation = false
+        renderedTranslationMode = .original
     }
 
     @discardableResult
@@ -148,27 +168,63 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         return true
     }
 
-    @objc private func refreshDepictionTranslation() {
-        guard DepictionTranslation.isEnabled else {
+    @objc private func translationSettingChanged() {
+        translationModeOverride = nil
+        hasPageTranslationConsent = false
+        shouldShowTranslationFailure = false
+        invalidateTranslation()
+        refreshDepictionTranslation()
+    }
+
+    private func invalidateTranslation() {
+        translationID = UUID()
+        hasAttemptedTranslation = false
+        translationResult = nil
+        showOriginalDepiction()
+    }
+
+    private func showOriginalDepiction() {
+        if renderedTranslationMode != .original, let originalDepiction = originalDepiction,
+           renderDepiction(originalDepiction, updatingMetadata: false) {
+            renderedTranslationMode = .original
+        }
+    }
+
+    private func refreshDepictionTranslation() {
+        guard translationMode != .original, DepictionTranslation.isEnabled || hasPageTranslationConsent else {
             translationID = UUID()
-            hasAttemptedTranslation = false
-            if isShowingTranslation, let originalDepiction = originalDepiction {
-                renderDepiction(originalDepiction, updatingMetadata: false)
-                isShowingTranslation = false
-            }
+            if translationResult == nil { hasAttemptedTranslation = false }
+            showOriginalDepiction()
             return
         }
-        guard canTranslateDepiction, !isWaitingForNativeDepiction, !hasAttemptedTranslation,
-              let originalDepiction = originalDepiction else { return }
+        guard canTranslateDepiction, !isWaitingForNativeDepiction, let originalDepiction = originalDepiction else { return }
+        if let result = translationResult {
+            guard renderedTranslationMode != translationMode else { return }
+            let depiction = translationMode == .compared ? result.compared : result.translated
+            if renderDepiction(depiction, updatingMetadata: false) { renderedTranslationMode = translationMode }
+            return
+        }
+        guard !hasAttemptedTranslation else { return }
         hasAttemptedTranslation = true
         let token = UUID()
         translationID = token
-        DepictionTranslation.translate(originalDepiction, isCurrent: { [weak self] in
-            self?.translationID == token && self?.canTranslateDepiction == true && DepictionTranslation.isEnabled
-        }, completion: { [weak self] translated in
-            guard let self = self, self.translationID == token, self.canTranslateDepiction,
-                  DepictionTranslation.isEnabled, let translated = translated else { return }
-            self.isShowingTranslation = self.renderDepiction(translated, updatingMetadata: false)
+        DepictionTranslation.translate(originalDepiction, source: translationSource, target: translationTarget,
+                                       isCurrent: { [weak self] in
+            guard let self = self else { return false }
+            return self.translationID == token && self.canTranslateDepiction &&
+                (DepictionTranslation.isEnabled || self.hasPageTranslationConsent)
+        }, completion: { [weak self] result in
+            guard let self = self, self.translationID == token, self.canTranslateDepiction else { return }
+            self.translationResult = result
+            if result != nil {
+                self.shouldShowTranslationFailure = false
+                self.refreshDepictionTranslation()
+            } else if self.shouldShowTranslationFailure {
+                self.shouldShowTranslationFailure = false
+                self.translationModeOverride = .original
+                self.showOriginalDepiction()
+                self.presentTranslationAlert(message: "Depiction_Translation_Unavailable")
+            }
         })
     }
 
@@ -200,7 +256,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
                                                name: PackageListManager.installChange,
                                                object: nil)
 
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshDepictionTranslation),
+        NotificationCenter.default.addObserver(self, selector: #selector(translationSettingChanged),
                                                name: DepictionTranslation.changed, object: nil)
         packageIconView.layer.cornerRadius = 15
 
@@ -301,7 +357,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         originalDepiction = nil
         isWaitingForNativeDepiction = false
         hasAttemptedTranslation = false
-        isShowingTranslation = false
+        translationResult = nil
+        renderedTranslationMode = .original
         depictionView?.removeFromSuperview()
         depictionView = nil
         
@@ -329,6 +386,17 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             package = backup
             self.package = backup
             self.savedProvisional = nil
+        }
+
+        let pageIdentity = TranslationPageIdentity(identifier: package.package, version: package.version,
+                                                   sourceFile: package.sourceFile, depictionURL: package.sileoDepiction)
+        if pageIdentity != translationPageIdentity {
+            translationPageIdentity = pageIdentity
+            hasPageTranslationConsent = false
+            shouldShowTranslationFailure = false
+            translationModeOverride = nil
+            translationSource = nil
+            translationTarget = DepictionTranslation.defaultTarget
         }
 
         let installedPackage = PackageListManager.shared.installedPackage(identifier: package.package)
@@ -616,7 +684,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         super.viewWillDisappear(animated)
         canTranslateDepiction = false
         translationID = UUID()
-        if !isShowingTranslation { hasAttemptedTranslation = false }
+        if translationResult == nil { hasAttemptedTranslation = false }
         
         let collapsed = splitViewController?.isCollapsed ?? false
         let navController = collapsed ? (splitViewController?.viewControllers[0] as? UINavigationController) : weakNavController
@@ -893,11 +961,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.present(sharePopup, animated: true)
     }
 
-    /// The "…" opens the package's actions: the system's menu beside the button
-    /// when hairlines are wanted, Sileo's own card when they are hidden. What it
-    /// holds is worked out when it opens, never on every change of state.
+    /// A tap still opens the package actions in the chosen menu style.
+    /// A long press exposes translation through UIKit's button menu.
+    @available(iOS 14.0, *)
     private func installShareMenu() {
-        guard let shareButton = shareButton else { return }
         refreshShareMenu()
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(refreshShareMenu),
@@ -906,14 +973,130 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     }
 
     @objc private func refreshShareMenu() {
-        guard let shareButton = shareButton else { return }
+        guard #available(iOS 14.0, *), let shareButton = shareButton else { return }
         shareButton.removeTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
-        let attached = SileoActionMenu.attachMenu(to: shareButton, header: nil) { [weak self] in
-            self?.shareMenuActions() ?? []
+        guard #available(iOS 15.0, *), DepictionTranslation.supportedPlatform else {
+            let attached = SileoActionMenu.attachMenu(to: shareButton, header: nil) { [weak self] in
+                self?.shareMenuActions() ?? []
+            }
+            if !attached { shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside) }
+            return
         }
-        if !attached {
+
+        let usesSystemShareMenu = !UIColor.hidesSeparators
+        let deferred = UIDeferredMenuElement.uncached { [weak self] completion in
+            guard let self = self, self.package != nil else { completion([]); return }
+            var items = usesSystemShareMenu ? SileoActionMenu.menuElements(self.shareMenuActions()) : []
+            items.append(self.depictionTranslationMenu())
+            completion(items)
+        }
+        // Keep the primary action and use the button's native long-press menu.
+        // When the primary menu is already native, UIKit shares it between both gestures.
+        shareButton.menu = UIMenu(children: [deferred])
+        shareButton.showsMenuAsPrimaryAction = usesSystemShareMenu
+        if !usesSystemShareMenu {
             shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
         }
+    }
+
+    @available(iOS 15.0, *)
+    private func depictionTranslationMenu() -> UIMenu {
+        let modes = DepictionTranslation.Mode.allCases.map { mode in
+            UIAction(title: mode.title, state: mode == renderedTranslationMode ? .on : .off) { [weak self] _ in
+                self?.selectTranslationMode(mode)
+            }
+        }
+        return UIMenu(title: String(localizationKey: "Depiction_Translation_Menu"),
+                      image: UIImage(systemName: "character.bubble"), children: [
+            UIMenu(options: .displayInline, children: modes),
+            UIMenu(options: .displayInline, children: [translationLanguageMenu(choosingSource: true),
+                                                       translationLanguageMenu(choosingSource: false)])
+        ])
+    }
+
+    @available(iOS 15.0, *)
+    private func translationLanguageMenu(choosingSource: Bool) -> UIMenu {
+        let title = String(localizationKey: choosingSource ? "Depiction_Translation_Source" : "Depiction_Translation_Target")
+        let detect = String(localizationKey: "Depiction_Translation_Detect")
+        let chosen: String? = choosingSource ? translationSource : translationTarget
+        let options = UIDeferredMenuElement.uncached { [weak self] completion in
+            guard let self = self else { completion([]); return }
+            DepictionTranslation.languages(choosingSource: choosingSource, source: self.translationSource,
+                                            target: self.translationTarget) { [weak self] identifiers in
+                let sorted = identifiers.map { ($0, DepictionTranslation.languageName($0)) }.sorted {
+                    $0.1.localizedStandardCompare($1.1) == .orderedAscending
+                }
+                let selected = chosen.flatMap { value in
+                    identifiers.first(where: { $0 == value }) ??
+                        identifiers.first(where: { DepictionTranslation.matchesLanguage($0, value) })
+                }
+                var actions: [UIMenuElement] = sorted.map { identifier, name in
+                    UIAction(title: name, state: identifier == selected ? .on : .off) { [weak self] _ in
+                        self?.selectTranslationLanguage(identifier, choosingSource: choosingSource)
+                    }
+                }
+                if actions.isEmpty {
+                    actions.append(UIAction(title: String(localizationKey: "Depiction_Translation_No_Languages"),
+                                            attributes: .disabled) { _ in })
+                }
+                completion(actions)
+            }
+        }
+        var children: [UIMenuElement] = [options]
+        if choosingSource {
+            children.insert(UIAction(title: detect, state: chosen == nil ? .on : .off) { [weak self] _ in
+                self?.selectTranslationLanguage(nil, choosingSource: true)
+            }, at: 0)
+        }
+        let menu = UIMenu(title: title, children: children)
+        menu.subtitle = chosen.map(DepictionTranslation.languageName) ?? detect
+        return menu
+    }
+
+    private func selectTranslationMode(_ mode: DepictionTranslation.Mode) {
+        guard navigationController?.topViewController === self else { return }
+        if mode != .original, !DepictionTranslation.isEnabled, !hasPageTranslationConsent {
+            let loadID = depictionLoadID
+            presentTranslationAlert(message: "Depiction_Translation_Consent") { [weak self] in
+                guard let self = self, self.depictionLoadID == loadID else { return }
+                self.hasPageTranslationConsent = true
+                self.selectTranslationMode(mode)
+            }
+            return
+        }
+        translationModeOverride = mode
+        shouldShowTranslationFailure = mode != .original && translationResult == nil
+        if translationResult == nil && renderedTranslationMode == .original {
+            translationID = UUID()
+            hasAttemptedTranslation = false
+        }
+        refreshDepictionTranslation()
+    }
+
+    private func selectTranslationLanguage(_ identifier: String?, choosingSource: Bool) {
+        if choosingSource {
+            guard translationSource != identifier else { return }
+            translationSource = identifier
+        } else {
+            guard let identifier = identifier, translationTarget != identifier else { return }
+            translationTarget = identifier
+        }
+        shouldShowTranslationFailure = translationMode != .original
+        invalidateTranslation()
+        refreshDepictionTranslation()
+    }
+
+    private func presentTranslationAlert(message: String, onConfirm: (() -> Void)? = nil) {
+        guard presentedViewController == nil, viewIfLoaded?.window != nil else { return }
+        let alert = UIAlertController(title: String(localizationKey: "Depiction_Translation_Menu"),
+                                      message: String(localizationKey: message), preferredStyle: .alert)
+        if let onConfirm = onConfirm {
+            alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+            alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default) { _ in onConfirm() })
+        } else {
+            alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel))
+        }
+        present(alert, animated: true)
     }
 
     @objc private func presentShareCard(_ sender: UIButton) {

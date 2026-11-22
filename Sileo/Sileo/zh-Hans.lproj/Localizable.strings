@@ -410,6 +410,16 @@
 "Auto_Translate_Depictions" = "自动翻译插件包详情";
 "Auto_Translate_Depictions_Explain" = "将原生插件包简介和更新日志自动翻译成简体中文。Apple 的系统翻译服务可能将正文发送到 Apple 服务器。";
 "Auto_Translate_Depictions_Unavailable" = "Sileo 无法在此设备上使用简体中文系统翻译。";
+"Depiction_Translation_Menu" = "翻译";
+"Depiction_Translation_Original" = "原文";
+"Depiction_Translation_Translated" = "译文";
+"Depiction_Translation_Compared" = "对照";
+"Depiction_Translation_Source" = "源语言";
+"Depiction_Translation_Target" = "目标语言";
+"Depiction_Translation_Detect" = "自动检测";
+"Depiction_Translation_Consent" = "要翻译当前插件包的原生简介和更新日志吗？Apple 的系统翻译服务可能将正文发送到 Apple 服务器。";
+"Depiction_Translation_Unavailable" = "当前页面和语言组合没有可用译文，已保留原文。";
+"Depiction_Translation_No_Languages" = "没有可用语言";
 "Remove_Broken_Sources" = "移除损坏的插件源";
 "Remove_Broken_Sources.Title" = "移除损坏的插件源？";
 "Remove_Broken_Sources.Message" = "将移除无法载入的插件源。此操作不可撤销。";

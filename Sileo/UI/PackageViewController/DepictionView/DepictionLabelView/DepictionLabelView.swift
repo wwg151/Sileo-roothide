@@ -70,6 +70,9 @@ class DepictionLabelView: DepictionBaseView {
         label.textColor = textColor
         label.font = UIFont.systemFont(ofSize: fontSize, weight: weight)
         label.text = text
+        if !isActionable, viewController is PackageViewController, dictionary["_sileoTranslatedLabel"] as? Bool == true {
+            label.numberOfLines = 0
+        }
 
         let alignment = (dictionary["alignment"] as? Int) ?? 0
         switch alignment {
@@ -117,7 +120,10 @@ class DepictionLabelView: DepictionBaseView {
     }
     
     override func depictionHeight(width: CGFloat) -> CGFloat {
-        20 + margins.top + margins.bottom
+        let insets = margins.top + margins.bottom
+        guard label.numberOfLines == 0 else { return 20 + insets }
+        let textWidth = max(1, width - margins.left - margins.right)
+        return max(20, ceil(label.sizeThatFits(CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height)) + insets
     }
 
     override func layoutSubviews() {

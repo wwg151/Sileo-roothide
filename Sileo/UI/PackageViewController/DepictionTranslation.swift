@@ -6,7 +6,24 @@ import NaturalLanguage
 enum DepictionTranslation {
     static let settingKey = "AutoTranslateDepictions"
     static let changed = Notification.Name(settingKey)
-    private static let target = "zh-Hans"
+    static let defaultTarget = "zh-Hans"
+
+    enum Mode: CaseIterable {
+        case original, translated, compared
+
+        var title: String {
+            switch self {
+            case .original: return String(localizationKey: "Depiction_Translation_Original")
+            case .translated: return String(localizationKey: "Depiction_Translation_Translated")
+            case .compared: return String(localizationKey: "Depiction_Translation_Compared")
+            }
+        }
+    }
+
+    struct Result {
+        let translated: [String: Any]
+        let compared: [String: Any]
+    }
     private static let cache: NSCache<NSString, NSString> = {
         let cache = NSCache<NSString, NSString>()
         cache.countLimit = 500
@@ -35,8 +52,30 @@ enum DepictionTranslation {
 
     static func verify(_ completion: @escaping (Bool) -> Void) {
         availablePairs { pairs in
-            completion(pairs?.contains(where: { $0.count == 2 && score($0[1], target) > 0 }) == true)
+            completion(pairs?.contains(where: { $0.count == 2 && score($0[1], defaultTarget) > 0 }) == true)
         }
+    }
+
+    static func languages(choosingSource: Bool, source: String?, target: String,
+                          completion: @escaping ([String]) -> Void) {
+        availablePairs { pairs in
+            let options = (pairs ?? []).compactMap { pair -> String? in
+                guard pair.count == 2 else { return nil }
+                if choosingSource {
+                    return score(pair[1], target) > 0 ? pair[0] : nil
+                }
+                return source.map { score(pair[0], $0) > 0 } != false ? pair[1] : nil
+            }
+            completion(Set(options).sorted())
+        }
+    }
+
+    static func languageName(_ identifier: String) -> String {
+        Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+    }
+
+    static func matchesLanguage(_ lhs: String, _ rhs: String) -> Bool {
+        score(lhs, rhs) > 0
     }
 
     private static func availablePairs(_ completion: @escaping ([[String]]?) -> Void) {
@@ -73,8 +112,8 @@ enum DepictionTranslation {
 
     /// A page is applied as a unit. If a request fails or the page moves on,
     /// the original remains visible and no more work is submitted.
-    static func translate(_ depiction: [String: Any], isCurrent: @escaping () -> Bool,
-                          completion: @escaping ([String: Any]?) -> Void) {
+    static func translate(_ depiction: [String: Any], source: String?, target: String,
+                          isCurrent: @escaping () -> Bool, completion: @escaping (Result?) -> Void) {
         guard isCurrent(), SileoSystemTranslationAvailable() else { completion(nil); return }
         var seen = Set<String>()
         var pieces = [Piece]()
@@ -85,14 +124,19 @@ enum DepictionTranslation {
         _ = rewrite(depiction) { text, _ in
             guard pieces.count < 160, text.utf16.count <= 3000, text.filter(\.isLetter).count >= 4,
                   text != placeholder, text != noDescription, seen.insert(text).inserted else { return text }
-            // Leave existing Chinese paragraphs intact, including Traditional Chinese.
+            if let source = source {
+                pieces.append(Piece(text: text, source: source))
+                return text
+            }
+            // Leave existing Chinese intact when translating into Chinese automatically.
             let han = text.unicodeScalars.contains { (0x3400...0x9FFF).contains($0.value) || (0x20000...0x323AF).contains($0.value) }
             recognizer.reset()
             recognizer.processString(text)
             let confidence = recognizer.languageHypotheses(withMaximum: 1).values.first ?? 0
-            if confidence >= 0.55, let source = recognizer.dominantLanguage?.rawValue,
-               parts(source).languageCode != "zh", !(han && source != "ja" && source != "ko"), source != "und" {
-                pieces.append(Piece(text: text, source: source))
+            if confidence >= 0.55, let detected = recognizer.dominantLanguage?.rawValue, detected != "und",
+               !matchesLanguage(detected, target),
+               !(parts(target).languageCode == "zh" && (parts(detected).languageCode == "zh" || (han && detected != "ja" && detected != "ko"))) {
+                pieces.append(Piece(text: text, source: detected))
             }
             return text
         }
@@ -105,10 +149,13 @@ enum DepictionTranslation {
             func next(_ index: Int) {
                 guard isCurrent(), ProcessInfo.processInfo.systemUptime < deadline else { completion(nil); return }
                 guard index < pieces.count else {
-                    completion(translations.isEmpty ? nil : rewrite(depiction) { text, markdown in
+                    guard !translations.isEmpty else { completion(nil); return }
+                    let replace: (String, Bool) -> String = { text, markdown in
                         guard let answer = translations[text] else { return text }
                         return markdown ? escapeMarkdown(answer) : answer
-                    })
+                    }
+                    completion(Result(translated: rewrite(depiction, replace: replace),
+                                      compared: rewrite(depiction, compared: true, replace: replace)))
                     return
                 }
                 let piece = pieces[index]
@@ -146,31 +193,47 @@ enum DepictionTranslation {
         }
     }
 
-    private static func rewrite(_ depiction: [String: Any], replace: (String, Bool) -> String) -> [String: Any] {
+    private static func rewrite(_ depiction: [String: Any], compared: Bool = false,
+                                replace: (String, Bool) -> String) -> [String: Any] {
         var result = depiction
         switch depiction["class"] as? String {
         case "DepictionMarkdownView":
             if depiction["useRawFormat"] as? Bool != true, let markdown = depiction["markdown"] as? String {
-                result["markdown"] = rewriteMarkdown(markdown) { replace($0, true) }
+                let translated = rewriteMarkdown(markdown) { replace($0, true) }
+                if translated != markdown {
+                    result["markdown"] = translated
+                    if compared { return comparison(original: depiction, translated: result) }
+                }
             }
         case "DepictionLabelView":
             if let text = depiction["text"] as? String {
-                result["text"] = translateText(text) { replace($0, false) }
+                let translated = translateText(text) { replace($0, false) }
+                if translated != text {
+                    result["text"] = translated
+                    result["_sileoTranslatedLabel"] = true
+                    if compared { return comparison(original: depiction, translated: result) }
+                }
             }
         case "DepictionTabView":
             if let tabs = depiction["tabs"] as? [[String: Any]] {
-                result["tabs"] = tabs.map { rewrite($0, replace: replace) }
+                result["tabs"] = tabs.map { rewrite($0, compared: compared, replace: replace) }
             }
         case "DepictionStackView", "DepictionAutoStackView", "DepictionLayerView":
             if let views = depiction["views"] as? [[String: Any]] {
-                result["views"] = views.map { rewrite($0, replace: replace) }
+                result["views"] = views.map { rewrite($0, compared: compared, replace: replace) }
             }
         case "DepictionMinVersionForceView":
-            if let view = depiction["view"] as? [String: Any] { result["view"] = rewrite(view, replace: replace) }
+            if let view = depiction["view"] as? [String: Any] {
+                result["view"] = rewrite(view, compared: compared, replace: replace)
+            }
         default:
             break
         }
         return result
+    }
+
+    private static func comparison(original: [String: Any], translated: [String: Any]) -> [String: Any] {
+        ["class": "DepictionStackView", "views": [original, translated]]
     }
 
     private static func rewriteMarkdown(_ markdown: String, replace: (String) -> String) -> String {

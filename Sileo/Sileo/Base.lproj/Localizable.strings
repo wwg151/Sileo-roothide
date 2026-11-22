@@ -404,6 +404,16 @@
 "Auto_Translate_Depictions" = "Auto-Translate Package Details";
 "Auto_Translate_Depictions_Explain" = "Automatically translate native package descriptions and changelogs into Simplified Chinese. Apple’s system translation service may send the text to Apple servers.";
 "Auto_Translate_Depictions_Unavailable" = "Sileo could not access system translation into Simplified Chinese on this device.";
+"Depiction_Translation_Menu" = "Translate";
+"Depiction_Translation_Original" = "Original";
+"Depiction_Translation_Translated" = "Translated";
+"Depiction_Translation_Compared" = "Compared";
+"Depiction_Translation_Source" = "Source Language";
+"Depiction_Translation_Target" = "Target Language";
+"Depiction_Translation_Detect" = "Detect Language";
+"Depiction_Translation_Consent" = "Translate the native description and changelog on this page? Apple’s system translation service may send this text to Apple servers.";
+"Depiction_Translation_Unavailable" = "No system translation is available for this page and language pair. The original text is shown.";
+"Depiction_Translation_No_Languages" = "No languages available";
 "Remove_Broken_Sources" = "Remove Broken Sources";
 "Remove_Broken_Sources.Title" = "Remove Broken Sources?";
 "Remove_Broken_Sources.Message" = "Sources that could not be loaded will be removed. This cannot be undone.";
