@@ -159,13 +159,16 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
     self.token = token;
     __weak SileoTranslationJob *weakSelf = self;
     void (^answer)(NSString *) = ^(NSString *value) {
-        SileoTranslationJob *job = weakSelf;
-        if (!job || job.token != token) return;
-        if (value.length) {
-            [job finish:value];
-        } else {
-            [job retry];
-        }
+        // The engine calls back on its own queue; the caller draws a depiction.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SileoTranslationJob *job = weakSelf;
+            if (!job || job.token != token) return;
+            if (value.length) {
+                [job finish:value];
+            } else {
+                [job retry];
+            }
+        });
     };
     @try {
         // The session has to exist before the request does: a request made
