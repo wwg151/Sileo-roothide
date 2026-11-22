@@ -17,6 +17,7 @@ class SettingsSwitchTableViewCell: UITableViewCell {
     var fallback = false
     
     var defaultKey: String?
+    var onChange: ((Bool) -> Void)?
     
     public func sync() {
         if let key = defaultKey {
@@ -60,6 +61,10 @@ class SettingsSwitchTableViewCell: UITableViewCell {
     }
     
     @objc public func didChange(sender: UISwitch!) {
+        if let onChange = onChange {
+            onChange(sender.isOn)
+            return
+        }
         if let key = defaultKey {
             if key == "DeveloperMode" && sender.isOn {
                 guard let view = viewControllerForPresentation else { return }

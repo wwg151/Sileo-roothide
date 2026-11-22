@@ -65,6 +65,13 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var navBarDownloadButtonItem: UIBarButtonItem?
 
     private var depictionView: DepictionBaseView?
+    private var originalDepiction: [String: Any]?
+    private var depictionLoadID = UUID()
+    private var translationID = UUID()
+    private var isWaitingForNativeDepiction = false
+    private var canTranslateDepiction = false
+    private var hasAttemptedTranslation = false
+    private var isShowingTranslation = false
     private var depictionFooterView: DepictionBaseView?
 
     private var paymentProvider = ""
@@ -88,33 +95,31 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var allowNavbarUpdates = false
     private var currentNavBarOpacity = CGFloat(0)
     
-    private func parseNativeDepiction(_ data: Data, host: String, failureCallback: (() -> Void)?) {
-        guard let rawJSON = try? JSONSerialization.jsonObject(with: data, options: []),
-              let rawDepict = rawJSON as? [String: Any]
-        else {
-            failureCallback?()
-            return
+    private func parseNativeDepiction(_ data: Data) {
+        guard let rawDepict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              renderDepiction(rawDepict, updatingMetadata: true) else { return }
+        originalDepiction = rawDepict
+        hasAttemptedTranslation = false
+    }
+
+    @discardableResult
+    private func renderDepiction(_ rawDepict: [String: Any], updatingMetadata: Bool) -> Bool {
+        let oldDepictView = depictionView
+        guard let newDepictView = DepictionBaseView.view(dictionary: rawDepict, viewController: self, tintColor: nil, isActionable: false) else {
+            return false
         }
-        if !Thread.isMainThread {
-            DispatchQueue.main.async { [weak self] in
-                self?.parseNativeDepiction(data, host: host, failureCallback: failureCallback)
-            }
-            return
+        if !updatingMetadata, let oldTabs = oldDepictView as? DepictionTabView,
+           let newTabs = newDepictView as? DepictionTabView, newTabs.tabContentViews.indices.contains(oldTabs.activeTab) {
+            newTabs.activeTab = oldTabs.activeTab
         }
         
-        if let rawTintColor = rawDepict["tintColor"] as? String, let tintColor = UIColor(css: rawTintColor) {
+        if updatingMetadata, let rawTintColor = rawDepict["tintColor"] as? String, let tintColor = UIColor(css: rawTintColor) {
             self.depictionFooterView?.tintColor = tintColor
             self.downloadButton.tintColor = tintColor
             self.downloadButton.updateStyle()
             self.navBarDownloadButton?.tintColor = tintColor
             self.navBarDownloadButton?.updateStyle()
         }
-        
-        let oldDepictView = self.depictionView
-        guard let newDepictView = DepictionBaseView.view(dictionary: rawDepict, viewController: self, tintColor: nil, isActionable: false) else {
-            return
-        }
-        
         oldDepictView?.delegate = nil
         newDepictView.delegate = self
         
@@ -135,10 +140,35 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             newDepictView.alpha = 1
         }, completion: { _ in
             oldDepictView?.removeFromSuperview()
-            if let minVersion = rawDepict["minVersion"] as? String,
+            if updatingMetadata, let minVersion = rawDepict["minVersion"] as? String,
                 minVersion.compare(StoreVersion) == .orderedDescending {
                 self.versionTooLow()
             }
+        })
+        return true
+    }
+
+    @objc private func refreshDepictionTranslation() {
+        guard DepictionTranslation.isEnabled else {
+            translationID = UUID()
+            hasAttemptedTranslation = false
+            if isShowingTranslation, let originalDepiction = originalDepiction {
+                renderDepiction(originalDepiction, updatingMetadata: false)
+                isShowingTranslation = false
+            }
+            return
+        }
+        guard canTranslateDepiction, !isWaitingForNativeDepiction, !hasAttemptedTranslation,
+              let originalDepiction = originalDepiction else { return }
+        hasAttemptedTranslation = true
+        let token = UUID()
+        translationID = token
+        DepictionTranslation.translate(originalDepiction, isCurrent: { [weak self] in
+            self?.translationID == token && self?.canTranslateDepiction == true && DepictionTranslation.isEnabled
+        }, completion: { [weak self] translated in
+            guard let self = self, self.translationID == token, self.canTranslateDepiction,
+                  DepictionTranslation.isEnabled, let translated = translated else { return }
+            self.isShowingTranslation = self.renderDepiction(translated, updatingMetadata: false)
         })
     }
 
@@ -170,6 +200,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
                                                name: PackageListManager.installChange,
                                                object: nil)
 
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshDepictionTranslation),
+                                               name: DepictionTranslation.changed, object: nil)
         packageIconView.layer.cornerRadius = 15
 
         self.extendedLayoutIncludesOpaqueBars = true
@@ -264,6 +296,12 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             self.view.layoutIfNeeded()
         }
         
+        depictionLoadID = UUID()
+        translationID = UUID()
+        originalDepiction = nil
+        isWaitingForNativeDepiction = false
+        hasAttemptedTranslation = false
+        isShowingTranslation = false
         depictionView?.removeFromSuperview()
         depictionView = nil
         
@@ -371,20 +409,25 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             depictionView.delegate = self
             contentView.addSubview(depictionView)
             self.depictionView = depictionView
+            originalDepiction = rawDepiction
         }
 
-        if !package.fromStatusFile,
-            let depiction = package.sileoDepiction {
+        if !package.fromStatusFile, let depiction = package.sileoDepiction {
+            isWaitingForNativeDepiction = true
+            let loadID = depictionLoadID
             let urlRequest = URLManager.urlRequest(depiction)
             EvanderNetworking.request(request: urlRequest, type: Data.self) { [weak self] success, _, _, data in
-                guard success,
-                      let data = data,
-                      let `self` = self else { return }
-                self.parseNativeDepiction(data, host: depiction.host ?? "", failureCallback: nil)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self, self.depictionLoadID == loadID else { return }
+                    self.isWaitingForNativeDepiction = false
+                    if success, let data = data { self.parseNativeDepiction(data) }
+                    self.refreshDepictionTranslation()
+                }
             }
         }
 
         self.reloadFooter(package: package, installedPackage: installedPackage)
+        refreshDepictionTranslation()
     }
 
     private func reloadFooter(package: Package, installedPackage: Package?) {
@@ -563,8 +606,17 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         self.scrollViewDidScroll(self.scrollView)
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        canTranslateDepiction = navigationController?.topViewController === self
+        refreshDepictionTranslation()
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        canTranslateDepiction = false
+        translationID = UUID()
+        if !isShowingTranslation { hasAttemptedTranslation = false }
         
         let collapsed = splitViewController?.isCollapsed ?? false
         let navController = collapsed ? (splitViewController?.viewControllers[0] as? UINavigationController) : weakNavController

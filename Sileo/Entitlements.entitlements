@@ -6,6 +6,8 @@
 	<true/>
 	<key>com.apple.private.security.storage.AppDataContainers</key>
 	<true/>
+	<key>com.apple.private.translation</key>
+	<true/>
 	<key>com.apple.developer.networking.multipath</key>
 	<true/>
 	<key>com.apple.private.persona-mgmt</key>

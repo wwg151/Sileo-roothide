@@ -2,6 +2,7 @@
 #import "WhiteBlur.h"
 #import "ControlFileParserFast.h"
 #import "AppFileShare.h"
+#import "SileoSystemTranslation.h"
 
 #include <spawn.h>
 #import "dpkgversion.h"

@@ -99,7 +99,7 @@ extension SettingsViewController { // UITableViewDataSource
         case 1: // Themes
             return 5
         case 2:
-            return 16
+            return DepictionTranslation.supportedPlatform ? 17 : 16
         case 3: // About section
             return 5
         default:
@@ -239,6 +239,13 @@ extension SettingsViewController { // UITableViewDataSource
                 cell.amyPogLabel.text = String(localizationKey: "Skip_Operation_Confirmation")
                 cell.fallback = false
                 cell.defaultKey = "SkipOperationConfirmation"
+            case 16:
+                cell.amyPogLabel.text = String(localizationKey: "Auto_Translate_Depictions")
+                cell.defaultKey = DepictionTranslation.settingKey
+                cell.onChange = { [weak self, weak cell] enabled in
+                    guard let self = self, let cell = cell else { return }
+                    self.changeAutomaticTranslation(enabled, cell: cell)
+                }
             default:
                 fatalError("You done goofed")
             }
@@ -362,6 +369,31 @@ extension SettingsViewController { // UITableViewDataSource
         }
     }
     
+    private func changeAutomaticTranslation(_ enabled: Bool, cell: SettingsSwitchTableViewCell) {
+        func setEnabled(_ value: Bool) {
+            UserDefaults.standard.set(value, forKey: DepictionTranslation.settingKey)
+            NotificationCenter.default.post(name: DepictionTranslation.changed, object: nil)
+        }
+        guard enabled else { setEnabled(false); return }
+        cell.sync()
+        let title = String(localizationKey: "Auto_Translate_Depictions")
+        let alert = UIAlertController(title: title, message: String(localizationKey: "Auto_Translate_Depictions_Explain"), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .default) { [weak self, weak cell] _ in
+            cell?.control.isEnabled = false
+            DepictionTranslation.verify { available in
+                if available { setEnabled(true) }
+                cell?.control.isEnabled = true
+                cell?.sync()
+                guard !available, let self = self, self.viewIfLoaded?.window != nil else { return }
+                let error = UIAlertController(title: title, message: String(localizationKey: "Auto_Translate_Depictions_Unavailable"), preferredStyle: .alert)
+                error.addAction(UIAlertAction(title: String(localizationKey: "OK"), style: .cancel))
+                self.present(error, animated: true)
+            }
+        })
+        present(alert, animated: true)
+    }
+
     private func cacheClear() {
         let alert = UIAlertController(title: String(localizationKey: "Clear_Cache"),
                                       message: String(format: String(localizationKey: "Clear_Cache_Message"), FileManager.default.sizeString(EvanderNetworking._cacheDirectory)),
