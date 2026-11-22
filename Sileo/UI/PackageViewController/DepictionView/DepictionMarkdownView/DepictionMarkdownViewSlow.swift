@@ -30,7 +30,7 @@ class DepictionMarkdownViewSlow: DepictionBaseView, CSTextViewActionHandler {
 
         heightRequested = false
 
-        textView = CSTextView(frame: .zero)
+        textView = CSTextView(frame: .zero, allowsSelection: viewController is PackageViewController && !isActionable)
         super.init(dictionary: dictionary, viewController: viewController, tintColor: tintColor, isActionable: isActionable)
 
         textView.backgroundColor = .clear
@@ -132,14 +132,8 @@ class DepictionMarkdownViewSlow: DepictionBaseView, CSTextViewActionHandler {
         let margins: CGFloat = useMargins ? 32 : 0
         let spacing: CGFloat = useSpacing ? 33 : 0
 
-        guard let attributedString = attributedString else {
-            return 0
-        }
-
-        let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
-        let targetSize = CGSize(width: width - margins, height: CGFloat.greatestFiniteMagnitude)
-        let fitSize = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRangeMake(0, attributedString.length), nil, targetSize, nil)
-        return fitSize.height + spacing
+        guard attributedString != nil else { return 0 }
+        return textView.depictionTextHeight(width: width - margins) + spacing
     }
 
     func process(action: String) -> Bool {
