@@ -99,7 +99,7 @@ extension SettingsViewController { // UITableViewDataSource
         case 1: // Themes
             return 5
         case 2:
-            return DepictionTranslation.supportedPlatform ? 17 : 16
+            return DepictionTranslation.supportedPlatform ? 16 : 15
         case 3: // About section
             return 5
         default:
@@ -222,24 +222,18 @@ extension SettingsViewController { // UITableViewDataSource
                 cell.fallback = false
                 cell.defaultKey = "FloatingTabBar"
             case 12:
-                // Rows between lists follow the same switch: the app's own card
-                // when they are hidden, the system's menu when they are shown.
-                cell.amyPogLabel.text = String(localizationKey: "Hide_Separators")
-                cell.fallback = true
-                cell.defaultKey = "HideSeparators"
-            case 13:
                 cell.amyPogLabel.text = String(localizationKey: "Auto_Save_Packages")
                 cell.fallback = false
                 cell.defaultKey = "AutoSavePackages"
-            case 14:
+            case 13:
                 cell.amyPogLabel.text = String(localizationKey: "Auto_Respring")
                 cell.fallback = false
                 cell.defaultKey = "AutoRespring"
-            case 15:
+            case 14:
                 cell.amyPogLabel.text = String(localizationKey: "Skip_Operation_Confirmation")
                 cell.fallback = false
                 cell.defaultKey = "SkipOperationConfirmation"
-            case 16:
+            case 15:
                 cell.amyPogLabel.text = String(localizationKey: "Auto_Translate_Depictions")
                 cell.defaultKey = DepictionTranslation.settingKey
                 cell.onChange = { [weak self, weak cell] enabled in

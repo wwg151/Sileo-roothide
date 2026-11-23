@@ -162,6 +162,7 @@
 "Task_Title_Removal" = "Uninstall";
 "Task_Title_Mixed" = "Downloads, Installation & Removal";
 "Task_Attention" = "Needs attention";
+"Task_Confirm_Respring" = "Restart SpringBoard now?";
 "Task_Finish_Action_Failed" = "The completion action did not finish. You can retry using the completion button or return later.";
 "Task_Install_Issue" = "Task results need review";
 "Task_Completed" = "All tasks completed";
@@ -471,7 +472,6 @@
 "Conflict_Conflicts" = "Conflicts";
 "Conflict_Replaces" = "Replaces";
 "Floating_Tab_Bar" = "Floating Tab Bar";
-"Hide_Separators" = "Hide Separators";
 "Auto_Translate_Depictions" = "Auto-Translate";
 "Depiction_Translation_Progress" = "Translating…";
 "Depiction_Translation_Finished_AI" = "AI translation complete.";

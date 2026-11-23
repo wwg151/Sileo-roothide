@@ -59,8 +59,7 @@ class PackageQueueButton: PackageButton {
                                                object: nil)
         
         if #available(iOS 13.0, *) {
-            // A long press on any package opens its actions: the system's menu
-            // beside the button, or Sileo's own card when hairlines are hidden.
+            // A long press opens Sileo’s package action card.
             let delegate = PackageQueueMenuDelegate(button: self)
             contextMenuDelegate = delegate
             addInteraction(UIContextMenuInteraction(delegate: delegate))
@@ -679,9 +678,7 @@ private final class PackageQueueMenuDelegate: NSObject, UIContextMenuInteraction
             return nil
         }
 
-        // A context menu blurs the whole screen behind it; Sileo's own card
-        // does not, and it carries the system's hairlines when the switch asks
-        // for them. So the card is what a long press opens either way.
+        // Keep the existing card instead of showing a system preview.
         DispatchQueue.main.async { [weak button] in
             button?.presentActionCard()
         }
@@ -812,4 +809,3 @@ private final class PackageControlInfoViewController: UIViewController {
         dismiss(animated: true, completion: nil)
     }
 }
-

@@ -36,8 +36,6 @@ final class SileoActionMenu: UIViewController {
     private let header: String?
     private let items: [SileoActionMenuItem]
     private let sourceFrame: CGRect?
-    /// Hairlines between the rows, the way the system's menu draws them.
-    private let hairlines: Bool
 
     private let dimView = UIView()
     private let card = UIView()
@@ -51,11 +49,10 @@ final class SileoActionMenu: UIViewController {
     private static let cardWidth: CGFloat = 264
     private static let cornerRadius: CGFloat = 14
 
-    init(header: String?, items: [SileoActionMenuItem], sourceFrame: CGRect? = nil, hairlines: Bool = false) {
+    init(header: String?, items: [SileoActionMenuItem], sourceFrame: CGRect? = nil) {
         self.header = header
         self.items = items
         self.sourceFrame = sourceFrame
-        self.hairlines = hairlines
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
         modalTransitionStyle = .crossDissolve
@@ -210,22 +207,6 @@ final class SileoActionMenu: UIViewController {
             label.trailingAnchor.constraint(lessThanOrEqualTo: imageView.leadingAnchor, constant: -12)
         ])
 
-        // The system's menus keep their rows apart with a hairline: draw the
-        // same one here when the switch asks for it.
-        if hairlines, index < items.count - 1 {
-            let line = UIView()
-            line.backgroundColor = .separator
-            line.translatesAutoresizingMaskIntoConstraints = false
-            line.isUserInteractionEnabled = false
-            row.addSubview(line)
-            NSLayoutConstraint.activate([
-                line.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 16),
-                line.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-                line.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-                line.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
-            ])
-        }
-
         // A highlight while the finger is down, the same in both appearances.
         row.addAction(UIAction { [weak row] _ in
             UIView.animate(withDuration: 0.12) { row?.backgroundColor = .clear }
@@ -267,73 +248,14 @@ final class SileoActionMenu: UIViewController {
 }
 
 extension SileoActionMenu {
-    /// The switch in Settings picks the menu: Sileo's own card, which draws no
-    /// hairlines, or the system's, which drops down beside the button.
     static func present(header: String?,
                         items: [SileoActionMenuItem],
                         from host: UIViewController,
                         source: UIView? = nil,
                         sourceFrame: CGRect? = nil) {
-        // With the switch off the card keeps the system's hairlines, without
-        // the full-screen blur its context menu brings.
         host.present(SileoActionMenu(header: header,
                                      items: items,
-                                     sourceFrame: sourceFrame,
-                                     hairlines: !UIColor.hidesSeparators),
+                                     sourceFrame: sourceFrame ?? source.map { $0.convert($0.bounds, to: nil) }),
                      animated: true)
-    }
-
-    /// The items as system menu elements: rows the system draws, hairlines and
-    /// all.
-    @available(iOS 13.0, *)
-    static func menuElements(_ items: [SileoActionMenuItem]) -> [UIMenuElement] {
-        items.map { item -> UIMenuElement in
-            var attributes: UIMenuElement.Attributes = []
-            if item.destructive { attributes.insert(.destructive) }
-            if !item.enabled { attributes.insert(.disabled) }
-            let image = item.image ?? item.imageName.flatMap { UIImage(systemName: $0) }
-            return UIAction(title: item.title, image: image, attributes: attributes) { _ in
-                item.handler()
-            }
-        }
-    }
-
-    /// Gives the button the menu itself, so a tap opens it beside the button.
-    /// Answers false when the card is what the switch asks for.
-    @discardableResult
-    static func attachMenu(to button: UIButton,
-                           header: String?,
-                           items: @escaping () -> [SileoActionMenuItem]) -> Bool {
-        if #available(iOS 14.0, *), !UIColor.hidesSeparators {
-            let deferred = UIDeferredMenuElement { completion in
-                completion(menuElements(items()))
-            }
-            button.menu = UIMenu(title: header ?? "", children: [deferred])
-            button.showsMenuAsPrimaryAction = true
-            return true
-        }
-        if #available(iOS 14.0, *) {
-            button.menu = nil
-            button.showsMenuAsPrimaryAction = false
-        }
-        return false
-    }
-
-    /// The same for a bar button item, which opens its menu on a tap by itself.
-    @discardableResult
-    static func attachMenu(to item: UIBarButtonItem,
-                           header: String?,
-                           items: @escaping () -> [SileoActionMenuItem]) -> Bool {
-        if #available(iOS 14.0, *), !UIColor.hidesSeparators {
-            let deferred = UIDeferredMenuElement { completion in
-                completion(menuElements(items()))
-            }
-            item.menu = UIMenu(title: header ?? "", children: [deferred])
-            return true
-        }
-        if #available(iOS 14.0, *) {
-            item.menu = nil
-        }
-        return false
     }
 }

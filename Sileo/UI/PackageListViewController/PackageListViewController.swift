@@ -170,14 +170,20 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             backupButton.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
             backupButton.accessibilityLabel = String(localizationKey: "Backup_Restore")
             backupButton.addTarget(self, action: #selector(self.pressBackupButton(_:)), for: .touchDown)
-            // A card of Sileo's own, opened from the button.
-            backupButton.addTarget(self, action: #selector(self.presentBackupCard(_:)), for: .touchUpInside)
+            if #available(iOS 14.0, *) {
+                let actions = backupMenuItems().map { item in
+                    let attributes: UIMenuElement.Attributes = item.destructive ? .destructive : []
+                    let image = item.imageName.flatMap { UIImage(systemName: $0) }
+                    return UIAction(title: item.title, image: image, attributes: attributes) { [weak self] _ in
+                        self?.requestBackupConsent(then: item.handler)
+                    }
+                }
+                backupButton.menu = UIMenu(title: "", children: actions)
+                backupButton.showsMenuAsPrimaryAction = true
+            } else {
+                backupButton.addTarget(self, action: #selector(presentBackupMenu(_:)), for: .touchUpInside)
+            }
             self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: backupButton)
-            self.refreshBackupMenu()
-            NotificationCenter.default.addObserver(self,
-                                                   selector: #selector(self.refreshBackupMenu),
-                                                   name: Notification.Name("HideSeparators"),
-                                                   object: nil)
         }
         
         if packagesLoadIdentifier.contains("--wishlist") {
@@ -460,7 +466,7 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
         return true
     }
 
-    /// The backup and restore choices, for the card the button opens.
+    /// The actions available in the backup and restore menu.
     private func backupMenuItems() -> [SileoActionMenuItem] {
         [
             SileoActionMenuItem(title: String(localizationKey: "Backup_Task_List"),
@@ -499,43 +505,11 @@ class PackageListViewController: SileoScrollViewController, UIGestureRecognizerD
             message: String(localizationKey: "Backup_Risk_Message"),
             confirmTitle: String(localizationKey: "Backup_Risk_Agree"),
             cancelTitle: String(localizationKey: "Backup_Risk_Disagree")
-        ) { [weak self] in
+        ) {
             UserDefaults.standard.set(true, forKey: Self.backupRiskConsentKey)
-            self?.refreshBackupMenu()
             proceed()
         }
         panel.present(from: self)
-    }
-
-    /// The button's card, opened where the button is.
-    @objc private func presentBackupCard(_ sender: UIButton) {
-        requestBackupConsent { [weak self, weak sender] in
-            guard let self = self, let sender = sender else { return }
-            self.present(SileoActionMenu(header: nil,
-                                        items: self.backupMenuItems(),
-                                        sourceFrame: sender.convert(sender.bounds, to: nil)),
-                         animated: true)
-        }
-    }
-
-    /// The system's own menu when hairlines are wanted, Sileo's card otherwise.
-    @objc private func refreshBackupMenu() {
-        guard let button = navigationItem.rightBarButtonItem?.customView as? UIButton else { return }
-        button.removeTarget(self, action: #selector(presentBackupCard(_:)), for: .touchUpInside)
-        // A primary-action UIMenu bypasses touchUpInside, so do not attach
-        // it until the warning has been explicitly accepted.
-        guard UserDefaults.standard.bool(forKey: Self.backupRiskConsentKey) else {
-            button.menu = nil
-            button.showsMenuAsPrimaryAction = false
-            button.addTarget(self, action: #selector(presentBackupCard(_:)), for: .touchUpInside)
-            return
-        }
-        let attached = SileoActionMenu.attachMenu(to: button, header: nil) { [weak self] in
-            self?.backupMenuItems() ?? []
-        }
-        if !attached {
-            button.addTarget(self, action: #selector(presentBackupCard(_:)), for: .touchUpInside)
-        }
     }
 
     @objc private func presentBackupMenu(_ sender: Any?) {

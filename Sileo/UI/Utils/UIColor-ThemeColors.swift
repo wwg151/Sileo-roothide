@@ -46,21 +46,7 @@ extension UIColor {
         SileoThemeManager.shared.currentTheme.highlightColor ?? UIColor(white: 0.9, alpha: 1)
     }
     
-    /// Separators are hidden by default: the lists are told apart by spacing and
-    /// their own headers. The switch in Settings brings the hairlines back.
-    static var hidesSeparators: Bool {
-        let defaults = UserDefaults.standard
-        guard defaults.object(forKey: "HideSeparators") != nil else { return true }
-        return defaults.bool(forKey: "HideSeparators")
-    }
-
-    static var sileoSeparatorColor: UIColor {
-        if hidesSeparators {
-            return .clear
-        }
-        return SileoThemeManager.shared.currentTheme.seperatorColor
-            ?? UIColor(red: 234.0/255.0, green: 234.0/255.0, blue: 236.0/255.0, alpha: 1)
-    }
+    static var sileoSeparatorColor: UIColor { .clear }
     
     static var sileoHeaderColor: UIColor {
         SileoThemeManager.shared.currentTheme.headerColor ?? UIColor(red: 0.898, green: 0.98, blue: 1, alpha: 0.5)

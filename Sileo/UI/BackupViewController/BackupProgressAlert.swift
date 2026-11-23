@@ -376,6 +376,8 @@ final class BackupProgressAlert: SileoPanelViewController {
     private let manage = UIButton(type: .system)
     private let clear = UIButton(type: .system)
     private let action = UIButton(type: .system)
+    private let respringLater = UIButton(type: .system)
+    private let completionButtons = UIStackView()
     private var footer: UIStackView!
     private var renderScheduled = false
     private var startHandler: ((String?) -> Void)?
@@ -423,7 +425,7 @@ final class BackupProgressAlert: SileoPanelViewController {
                 self.startNextQueuedTask()
                 guard !UserDefaults.standard.bool(forKey: "AutoRespring"),
                       !self.roundRunning, !self.session.hasPendingTasks,
-                      !self.restoreCompletionFailed,
+                      !self.restoreCompletionFailed, !self.restoreNeedsRespring,
                       !self.session.tasks.isEmpty,
                       self.session.tasks.allSatisfy({ $0.outcome == true }),
                       self.session.removedResults.allSatisfy({ $0.outcome }) else { return }
@@ -489,7 +491,15 @@ final class BackupProgressAlert: SileoPanelViewController {
         management.axis = .horizontal
         management.spacing = 12
         management.distribution = .fillEqually
-        footer = UIStackView(arrangedSubviews: [management, action])
+        styleTaskButton(respringLater)
+        respringLater.setTitle(String(localizationKey: "After_Install_Respring_Later"), for: .normal)
+        respringLater.addTarget(self, action: #selector(respringLaterTapped), for: .touchUpInside)
+        completionButtons.addArrangedSubview(action)
+        completionButtons.addArrangedSubview(respringLater)
+        completionButtons.axis = .horizontal
+        completionButtons.spacing = 12
+        completionButtons.distribution = .fillEqually
+        footer = UIStackView(arrangedSubviews: [management, completionButtons])
         footer.axis = .vertical
         footer.spacing = 8
         setFooter(footer)
@@ -558,6 +568,10 @@ final class BackupProgressAlert: SileoPanelViewController {
         })
     }
 
+    private var restoreNeedsRespring: Bool {
+        session.accumulatedFinish == .reload || session.accumulatedFinish == .restart
+    }
+
     private var finishingRestore = false
     private var restoreCompletionFailed = false
 
@@ -573,13 +587,15 @@ final class BackupProgressAlert: SileoPanelViewController {
         case .reload, .restart: key = "After_Install_Respring"
         case .reboot, .usreboot: key = "After_Install_Reboot"
         }
-        let alert = UIAlertController(title: String(localizationKey: "Backup_Task_Complete_Action"),
-                                      message: session.lastSummary, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localizationKey: key), style: .default) { [weak self] _ in
+        let panel = SileoPanelViewController.confirm(
+            title: String(localizationKey: "Backup_Task_Complete_Action"),
+            message: restoreNeedsRespring ? String(localizationKey: "Task_Confirm_Respring") : session.message,
+            confirmTitle: String(localizationKey: key),
+            destructive: restoreNeedsRespring || finish == .reboot || finish == .usreboot
+        ) { [weak self] in
             self?.performRestoreCompletion(finish, refresh: refresh)
-        })
-        present(alert, animated: true)
+        }
+        panel.present(from: self)
     }
 
     private func performRestoreCompletion(_ finish: APTWrapper.FINISH, refresh: Bool) {
@@ -684,6 +700,16 @@ final class BackupProgressAlert: SileoPanelViewController {
             self?.render()
         })
         present(alert, animated: true)
+    }
+
+    private var showsRespringChoices: Bool {
+        !roundRunning && onFinishedClose != nil && restoreNeedsRespring
+            && !UserDefaults.standard.bool(forKey: "AutoRespring")
+    }
+
+    @objc private func respringLaterTapped() {
+        guard showsRespringChoices, !finishingRestore else { return }
+        close()
     }
 
     @objc private func actionTapped() {
@@ -990,8 +1016,12 @@ final class BackupProgressAlert: SileoPanelViewController {
         startAllButton?.isEnabled = managing ? (editingAllowed && !session.tasks.isEmpty) : (ready && !cancelling)
         startAllButton?.isHidden = !managing && (!ready || (roundRunning && !allowsPausing))
         action.isHidden = roundRunning ? !cancellable : onFinishedClose == nil
-        action.isEnabled = !cancelling
-        action.setTitle(String(localizationKey: roundRunning ? "Cancel" : (onFinishedClose != nil ? "Backup_Task_Complete_Action" : "Close")), for: .normal)
+        action.isEnabled = !cancelling && !finishingRestore
+        respringLater.isHidden = !showsRespringChoices
+        respringLater.isEnabled = !finishingRestore
+        let actionKey = roundRunning ? "Cancel" : (showsRespringChoices ? "After_Install_Respring" : "Backup_Task_Complete_Action")
+        action.setTitle(String(localizationKey: actionKey), for: .normal)
+        completionButtons.isHidden = action.isHidden && respringLater.isHidden
     }
 
     override func close(completion: (() -> Void)? = nil) {

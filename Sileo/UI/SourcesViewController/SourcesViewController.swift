@@ -225,7 +225,6 @@ final class SourcesViewController: SileoViewController {
         }
         
         deselectRepos()
-        refreshAddMenu()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -269,12 +268,17 @@ final class SourcesViewController: SileoViewController {
             } else {
                 nav.leftBarButtonItem = UIBarButtonItem(title: String(localizationKey: "Edit"), style: .done, target: self, action: #selector(self.toggleEditing(_:)))
                 let plusItem: UIBarButtonItem
-                // A card of Sileo's own: one list, no separators, and it follows
-                // the system's light and dark appearance.
-                plusItem = UIBarButtonItem(image: UIImage(systemName: "plus"),
-                                           style: .plain,
-                                           target: self,
-                                           action: #selector(self.presentAddCard(_:)))
+                if #available(iOS 14.0, *) {
+                    let actions = self.addMenuItems().map { item in
+                        let attributes: UIMenuElement.Attributes = item.destructive ? .destructive : []
+                        let image = item.imageName.flatMap { UIImage(systemName: $0) }
+                        return UIAction(title: item.title, image: image, attributes: attributes) { _ in item.handler() }
+                    }
+                    plusItem = UIBarButtonItem(image: UIImage(systemName: "plus"), menu: UIMenu(title: "", children: actions))
+                } else {
+                    plusItem = UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain,
+                                               target: self, action: #selector(self.presentAddRepoOptions))
+                }
                 // The search sits to the left of the add button.
                 nav.rightBarButtonItems = [plusItem, self.sourceSearchItem()]
             }
@@ -863,6 +867,9 @@ final class SourcesViewController: SileoViewController {
         alert.addAction(UIAlertAction(title: String(localizationKey: "Batch_Import_Packages"), style: .default) { [weak self] _ in
             self?.promptImportPackages()
         })
+        alert.addAction(UIAlertAction(title: String(localizationKey: "Removed_Sources_Title"), style: .default) { [weak self] _ in
+            self?.presentRemovedSources()
+        })
         alert.addAction(UIAlertAction(title: String(localizationKey: "Remove_Broken_Sources"), style: .destructive) { [weak self] _ in
             self?.removeBrokenSources()
         })
@@ -889,33 +896,6 @@ final class SourcesViewController: SileoViewController {
         present(alert, animated: true)
     }
     
-    /// The add button's choices, in Sileo's own card under the button.
-    @objc private func presentAddCard(_ sender: UIBarButtonItem) {
-        let items = addMenuItems()
-        var frame: CGRect?
-        if let button = sender.value(forKey: "view") as? UIView {
-            frame = button.convert(button.bounds, to: nil)
-        }
-        present(SileoActionMenu(header: nil, items: items, sourceFrame: frame), animated: true)
-    }
-
-    /// The + hands its menu to the system when hairlines are wanted; below that
-    /// it keeps its action and opens Sileo's own card.
-    @objc private func refreshAddMenu() {
-        guard let plusItem = navigationItem.rightBarButtonItems?.first else { return }
-        let attached = SileoActionMenu.attachMenu(to: plusItem, header: nil) { [weak self] in
-            self?.addMenuItems() ?? []
-        }
-        if attached {
-            // The menu answers the tap itself, so the card's action must not.
-            plusItem.target = nil
-            plusItem.action = nil
-        } else if plusItem.action == nil {
-            plusItem.target = self
-            plusItem.action = #selector(presentAddCard(_:))
-        }
-    }
-
     private func addMenuItems() -> [SileoActionMenuItem] {
         [
             SileoActionMenuItem(title: String(localizationKey: "Add_Source.Button.Add"),
@@ -984,12 +964,14 @@ final class SourcesViewController: SileoViewController {
             .map { $0.repoName.isEmpty ? $0.displayURL : $0.repoName }
             .sorted { $0.lowercased() < $1.lowercased() }
         let message = String(localizationKey: "Remove_Broken_Sources.Message") + "\n\n" + names.joined(separator: "\n")
-        let alert = UIAlertController(title: String(localizationKey: "Remove_Broken_Sources.Title"), message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: String(localizationKey: "Remove_Broken_Sources.Confirm"), style: .destructive) { [weak self] _ in
+        let panel = SileoPanelViewController.confirm(
+            title: String(localizationKey: "Remove_Broken_Sources.Title"),
+            message: message,
+            confirmTitle: String(localizationKey: "Remove_Broken_Sources.Confirm")
+        ) { [weak self] in
             self?.performRemoveBrokenSources(broken)
-        })
-        present(alert, animated: true)
+        }
+        panel.present(from: self)
     }
     
     private func performRemoveBrokenSources(_ repos: [Repo]) {

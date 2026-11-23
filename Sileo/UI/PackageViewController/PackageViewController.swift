@@ -372,15 +372,12 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let shareButton = UIButton(type: .custom)
         shareButton.setImage(UIImage(named: "More"), for: .normal)
         if #available(iOS 14.0, *) {
-            // A tap opens the system's own menu (see installShareMenu).
+            shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
         } else {
             shareButton.addTarget(self, action: #selector(PackageViewController.sharePackage), for: .touchUpInside)
         }
         shareButton.accessibilityIgnoresInvertColors = true
         self.shareButton = shareButton
-        if #available(iOS 14.0, *) {
-            installShareMenu()
-        }
 
         navBarDownloadButton.alpha = 0
 
@@ -1038,25 +1035,6 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             sharePopup.view.tintColor = tintColor
         }
         self.present(sharePopup, animated: true)
-    }
-
-    /// Share and wishlist remain separate from the install button’s actions.
-    @available(iOS 14.0, *)
-    private func installShareMenu() {
-        refreshShareMenu()
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(refreshShareMenu),
-                                               name: Notification.Name("HideSeparators"),
-                                               object: nil)
-    }
-
-    @objc private func refreshShareMenu() {
-        guard #available(iOS 14.0, *), let shareButton = shareButton else { return }
-        shareButton.removeTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside)
-        let attached = SileoActionMenu.attachMenu(to: shareButton, header: nil) { [weak self] in
-            self?.shareMenuActions() ?? []
-        }
-        if !attached { shareButton.addTarget(self, action: #selector(presentShareCard(_:)), for: .touchUpInside) }
     }
 
     func translationActionItem() -> SileoActionMenuItem? {

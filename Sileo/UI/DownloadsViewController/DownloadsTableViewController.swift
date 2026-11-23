@@ -1200,6 +1200,22 @@ class DownloadsTableViewController: SileoViewController {
     }
     
     @IBAction private func completeButtonTapped(_ sender: Any?) {
+        if returnButtonAction == .reload || returnButtonAction == .restart {
+            guard !isFired, presentedViewController == nil else { return }
+            let panel = SileoPanelViewController.confirm(
+                title: String(localizationKey: "After_Install_Respring"),
+                message: String(localizationKey: "Task_Confirm_Respring"),
+                confirmTitle: String(localizationKey: "Queue_Confirm_Button")
+            ) { [weak self] in
+                self?.performCompletionAction()
+            }
+            panel.present(from: self)
+            return
+        }
+        performCompletionAction()
+    }
+
+    private func performCompletionAction() {
         if returnButtonAction == .back && !refreshSileo {
             queueCompleted()
             return
@@ -1477,19 +1493,17 @@ class DownloadsTableViewController: SileoViewController {
                     }
                     switch self.returnButtonAction {
                     case .back, .uicache, .reopen:
-                        self.completeButtonTapped(nil)
+                        self.performCompletionAction()
                     case .reload, .restart:
                         if TabBarController.singleton?.allowsAutomaticTaskCompletion == true {
-                            self.completeButtonTapped(nil)
+                            self.performCompletionAction()
                         }
                     case .reboot, .usreboot:
                         // Preserve the original requirement for an explicit tap.
                         break
                     }
-                } else {
-                    // Successful installs only dismiss the queue. Never run a
-                    // finish command automatically, including Sileo's uicache
-                    // refresh, which can terminate this process on iOS 16.
+                } else if !self.shouldShow(self.returnButtonAction) {
+                    // Ordinary completions can close without running a finish command.
                     self.queueCompleted()
                 }
                 NotificationCenter.default.post(name: NSNotification.Name("Sileo.CompleteInstall"), object: nil)

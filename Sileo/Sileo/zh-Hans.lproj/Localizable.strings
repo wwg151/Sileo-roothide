@@ -161,6 +161,7 @@
 "Task_Title_Removal" = "卸载";
 "Task_Title_Mixed" = "下载、安装与卸载";
 "Task_Attention" = "需要处理";
+"Task_Confirm_Respring" = "确定现在注销吗？";
 "Task_Finish_Action_Failed" = "收尾操作未完成。你可以点击完成按钮重试，或稍后再处理。";
 "Task_Install_Issue" = "任务结果需要检查";
 "Task_Completed" = "所有任务已完成";
@@ -477,7 +478,6 @@
 "Conflict_Conflicts" = "冲突";
 "Conflict_Replaces" = "替换";
 "Floating_Tab_Bar" = "悬浮底栏";
-"Hide_Separators" = "隐藏分割线";
 "Auto_Translate_Depictions" = "自动翻译";
 "Depiction_Translation_Progress" = "正在翻译中…";
 "Depiction_Translation_Finished_AI" = "AI翻译已完成";
