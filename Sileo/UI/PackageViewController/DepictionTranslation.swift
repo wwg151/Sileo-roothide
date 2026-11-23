@@ -142,9 +142,9 @@ enum DepictionTranslation {
     }
 
     /// Apply the available translations together, keeping original prose for failed fragments.
-    /// Stop submitting work when the request is no longer current. A tab is handed
-    /// back through `progress` as soon as its own text is done, so a long changelog
-    /// does not hold back the description the page opens on.
+    /// Stop submitting work when the request is no longer current. Hand translated
+    /// text back through `progress` after processing a tab, without waiting for the
+    /// rest of the page or subsequent retries.
     static func translate(_ depiction: [String: Any], source: String?, target: String,
                           isCurrent: @escaping () -> Bool, progress: ((Result) -> Void)? = nil,
                           completion: @escaping (Result?, Bool) -> Void) {
@@ -194,9 +194,6 @@ enum DepictionTranslation {
             pieceGroup.append(fragmentGroup[index])
         }
         guard !pieces.isEmpty else { completion(nil, false); return }
-        // A long depiction may hold a hundred paragraphs; the last tab is allowed
-        // to take longer than a short one, but never forever.
-        let deadline = ProcessInfo.processInfo.systemUptime + min(180, 45 + 0.6 * Double(pieces.count))
         func run() {
             guard isCurrent() else { return }
             var resolvedPairs: [[String]]? = systemAvailable ? nil : []
@@ -225,22 +222,21 @@ enum DepictionTranslation {
             // A paragraph the engine leaves empty is asked for again at the end,
             // when the session has warmed up: that is where most of the stray
             // untranslated lines on a long page come from.
-            var queue = Array(0..<pieces.count)
+            // System translation has its own budget, starting only after both AI passes.
+            var queue = [Int]()
             var position = 0
             var missed = [Int]()
             var retried = false
             var handedBack = -1
             var lastIndex = -1
-            var triedAI = Set<Int>()
-            var consecutiveAIMisses = 0
-            let aiDeadline = deadline - 20
+            var systemDeadline: TimeInterval = 0
             func aiCacheKey(_ piece: Piece, _ selection: DepictionAIProvider.Selection) -> NSString {
                 ("ai:\(selection.cacheID)\n\(piece.source)>\(target)\n\(piece.text)") as NSString
             }
             func carryOn() {
                 guard isCurrent() else { return }
                 guard position < queue.count else {
-                    if !retried, !missed.isEmpty, ProcessInfo.processInfo.systemUptime < deadline {
+                    if !retried, !missed.isEmpty, ProcessInfo.processInfo.systemUptime < systemDeadline {
                         retried = true
                         queue = missed
                         missed = []
@@ -260,48 +256,8 @@ enum DepictionTranslation {
                     progress(buildResult())
                 }
                 lastIndex = index
-                guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete = true; finish(); return }
+                guard ProcessInfo.processInfo.systemUptime < systemDeadline else { incomplete = true; finish(); return }
                 let piece = pieces[index]
-                if let ai = ai {
-                    if let answer = cache.object(forKey: aiCacheKey(piece, ai)) {
-                        translations[piece.text] = (answer as String, fromAI: true)
-                        carryOn()
-                        return
-                    }
-                    if !retried, consecutiveAIMisses < 2, !triedAI.contains(index),
-                       ProcessInfo.processInfo.systemUptime < aiDeadline {
-                        // Batch adjacent pieces within this tab and language. Keep
-                        // system time available even when a third party is slow.
-                        var batch = [index]
-                        var size = piece.text.utf16.count
-                        for next in queue.dropFirst(position) {
-                            guard batch.count < 12, pieceGroup[next] == pieceGroup[index],
-                                  pieces[next].source == piece.source,
-                                  size + pieces[next].text.utf16.count <= 5000 else { break }
-                            if cache.object(forKey: aiCacheKey(pieces[next], ai)) == nil {
-                                batch.append(next)
-                                size += pieces[next].text.utf16.count
-                            }
-                        }
-                        triedAI.formUnion(batch)
-                        DepictionAIProvider.translate(batch.map { pieces[$0].text }, source: piece.source,
-                                                       target: target, using: ai,
-                                                       timeLimit: aiDeadline - ProcessInfo.processInfo.systemUptime) { answers in
-                            guard isCurrent() else { return }
-                            var accepted = 0
-                            for (offset, item) in batch.enumerated() {
-                                guard let answer = answers[offset]?.trimmingCharacters(in: .whitespacesAndNewlines),
-                                      !answer.isEmpty, answer != pieces[item].text else { continue }
-                                accepted += 1
-                                cache.setObject(answer as NSString, forKey: aiCacheKey(pieces[item], ai))
-                            }
-                            consecutiveAIMisses = accepted == 0 ? consecutiveAIMisses + 1 : 0
-                            position -= 1
-                            carryOn()
-                        }
-                        return
-                    }
-                }
                 guard let pairs = resolvedPairs else {
                     availablePairs { pairs in
                         guard isCurrent() else { return }
@@ -330,7 +286,7 @@ enum DepictionTranslation {
                 }
                 func request(_ onlyOffline: Bool) {
                     guard isCurrent() else { return }
-                    guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete = true; finish(); return }
+                    guard ProcessInfo.processInfo.systemUptime < systemDeadline else { incomplete = true; finish(); return }
                     SileoSystemTranslate(piece.text, pair[0], pair[1], onlyOffline) { answer in
                         guard isCurrent() else { return }
                         if let answer = answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -352,7 +308,124 @@ enum DepictionTranslation {
                 }
                 request(false)
             }
-            carryOn()
+            func startSystemFallback() {
+                guard isCurrent() else { return }
+                queue = pieces.indices.filter { translations[pieces[$0].text] == nil }
+                if !systemAvailable {
+                    incomplete = !queue.isEmpty
+                    finish()
+                    return
+                }
+                systemDeadline = ProcessInfo.processInfo.systemUptime + min(180, 45 + 0.6 * Double(queue.count))
+                carryOn()
+            }
+
+            guard let ai = ai else { startSystemFallback(); return }
+            var pending = [Int]()
+            for index in pieces.indices {
+                let piece = pieces[index]
+                if let answer = cache.object(forKey: aiCacheKey(piece, ai)) {
+                    translations[piece.text] = (answer as String, fromAI: true)
+                } else {
+                    pending.append(index)
+                }
+            }
+            func batches(_ indices: [Int], limit: Int, sizeLimit: Int) -> [[Int]] {
+                var result = [[Int]]()
+                var batch = [Int]()
+                var size = 0
+                for index in indices {
+                    let length = pieces[index].text.utf16.count
+                    if let first = batch.first,
+                       batch.count >= limit || size + length > sizeLimit ||
+                        pieceGroup[first] != pieceGroup[index] || pieces[first].source != pieces[index].source {
+                        result.append(batch)
+                        batch = []
+                        size = 0
+                    }
+                    batch.append(index)
+                    size += length
+                }
+                if !batch.isEmpty { result.append(batch) }
+                return result
+            }
+
+            let firstPass = batches(pending, limit: 12, sizeLimit: 5000)
+            var remainingByGroup = Dictionary(grouping: pending, by: { pieceGroup[$0] }).mapValues { $0.count }
+            var showedAIProgress = false
+            func showAIProgress() {
+                guard let progress = progress, !showedAIProgress, !translations.isEmpty else { return }
+                showedAIProgress = true
+                progress(buildResult())
+            }
+            if remainingByGroup[pieceGroup[0]] == nil { showAIProgress() }
+
+            func runAIPass(_ work: [[Int]], retry: Bool, completion: @escaping ([[Int]]) -> Void) {
+                guard isCurrent() else { return }
+                guard !work.isEmpty else { completion([]); return }
+                // Give every batch a chance; a slow batch or consecutive failures must not skip later text.
+                // Limit concurrency instead of letting every tab burst requests at once.
+                var next = 0
+                var inFlight = 0
+                var misses = [[Int]](repeating: [], count: work.count)
+                func pump() {
+                    guard isCurrent() else { return }
+                    while inFlight < 3, next < work.count {
+                        let slot = next
+                        let batch = work[slot]
+                        next += 1
+                        inFlight += 1
+                        DepictionAIProvider.translate(batch.map { pieces[$0].text }, source: pieces[batch[0]].source,
+                                                       target: target, using: ai, timeLimit: 30) { result in
+                            guard isCurrent() else { return }
+                            var reason: String?
+                            switch result {
+                            case .success(let answers):
+                                for (offset, index) in batch.enumerated() {
+                                    let piece = pieces[index]
+                                    guard let answer = answers[offset]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                          !answer.isEmpty, answer != piece.text else {
+                                        misses[slot].append(index)
+                                        continue
+                                    }
+                                    translations[piece.text] = (answer, fromAI: true)
+                                    cache.setObject(answer as NSString, forKey: aiCacheKey(piece, ai))
+                                }
+                                if !misses[slot].isEmpty { reason = "missingTranslations" }
+                            case .failure(let error):
+                                reason = error.rawValue
+                                misses[slot] = batch
+                            }
+                            if let reason = reason {
+                                let line = "AI translation pass=\(retry ? 2 : 1) batch=\(slot + 1) reason=\(reason) missing=\(misses[slot].count)/\(batch.count)"
+                                log.notice("\(line, privacy: .public)")
+                            }
+                            if !retry {
+                                let group = pieceGroup[batch[0]]
+                                remainingByGroup[group, default: 0] -= batch.count
+                                if remainingByGroup[group] == 0,
+                                   pieces.indices.contains(where: { pieceGroup[$0] == group && translations[pieces[$0].text] != nil }) {
+                                    showAIProgress()
+                                }
+                            }
+                            inFlight -= 1
+                            if next == work.count, inFlight == 0 {
+                                completion(misses)
+                            } else {
+                                pump()
+                            }
+                        }
+                    }
+                }
+                pump()
+            }
+            runAIPass(firstPass, retry: false) { misses in
+                let retryWork = misses.enumerated().flatMap { entry -> [[Int]] in
+                    let (slot, missing) = entry
+                    return batches(missing, limit: min(4, (firstPass[slot].count + 1) / 2), sizeLimit: 1800)
+                }
+                runAIPass(retryWork, retry: true) { _ in startSystemFallback() }
+            }
         }
         run()
     }

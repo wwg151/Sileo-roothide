@@ -57,7 +57,7 @@ enum DepictionAIProvider {
     enum Failure: String, Error {
         case invalidConfiguration, staleConfiguration, missingKey, keychainUnavailable, storageUnavailable
         case timeout, transport, redirect, authentication, rateLimited, httpStatus
-        case invalidResponse, responseTooLarge, paginationLimit
+        case invalidResponse, truncatedResponse, responseTooLarge, paginationLimit
     }
 
     private struct Activation: Codable {
@@ -575,9 +575,10 @@ enum DepictionAIProvider {
     """
 
     static func translate(_ texts: [String], source: String, target: String, using selection: Selection,
-                          timeLimit: TimeInterval = 15, completion: @escaping ([Int: String]) -> Void) {
-        guard timeLimit > 0 else { DispatchQueue.main.async { completion([:]) }; return }
-        let deadline = ProcessInfo.processInfo.systemUptime + min(15, timeLimit)
+                          timeLimit: TimeInterval, completion: @escaping (Result<[Int: String], Failure>) -> Void) {
+        func fail(_ reason: Failure) { DispatchQueue.main.async { completion(.failure(reason)) } }
+        guard timeLimit > 0 else { fail(.timeout); return }
+        let deadline = ProcessInfo.processInfo.systemUptime + min(30, timeLimit)
         let provider = selection.provider
         let rows: [[Any]] = texts.enumerated().map { [$0.offset, $0.element] }
         let input: Object = ["source": source, "target": target, "items": rows]
@@ -585,7 +586,7 @@ enum DepictionAIProvider {
               let model = cleanModel(selection.model, kind: provider.kind),
               let inputData = try? JSONSerialization.data(withJSONObject: input), inputData.count <= 128 * 1024,
               let prompt = String(data: inputData, encoding: .utf8) else {
-            DispatchQueue.main.async { completion([:]) }; return
+            fail(.invalidConfiguration); return
         }
         let route = translationRoute(for: provider.kind, model: model)
         func payload(_ effort: ThinkingEffort) -> Object {
@@ -619,46 +620,54 @@ enum DepictionAIProvider {
         let effort = selection.thinkingEffort
         guard let url = endpoint(provider, route: route),
               let body = try? JSONSerialization.data(withJSONObject: payload(effort)) else {
-            DispatchQueue.main.async { completion([:]) }; return
+            fail(.invalidConfiguration); return
         }
         let fallback = effort == .modelDefault ? nil : try? JSONSerialization.data(withJSONObject: payload(.modelDefault))
-        let started = synchronized { () -> Bool in
-            guard isActive(selection), case .success(let key) = readKey(for: provider),
-                  deadline > ProcessInfo.processInfo.systemUptime else { return false }
-            sendTranslation(url: url, provider: provider, key: key, authorization: selection, body: body,
-                            fallback: fallback, deadline: deadline, count: texts.count, completion: completion)
-            return true
+        synchronized {
+            guard isActive(selection) else { fail(.staleConfiguration); return }
+            switch readKey(for: provider) {
+            case .failure(let error): fail(error)
+            case .success(let key):
+                sendTranslation(url: url, provider: provider, key: key, authorization: selection, body: body,
+                                fallback: fallback, deadline: deadline, count: texts.count, completion: completion)
+            }
         }
-        if !started { DispatchQueue.main.async { completion([:]) } }
     }
 
     /// One request, then one retry without the effort field when the endpoint refuses it.
     private static func sendTranslation(url: URL, provider: Provider, key: String, authorization: Selection,
                                         body: Data, fallback: Data?, deadline: TimeInterval, count: Int,
-                                        completion: @escaping ([Int: String]) -> Void) {
+                                        completion: @escaping (Result<[Int: String], Failure>) -> Void) {
         let transport = Transport { result in
-            if case .failure(let failure) = result, failure == .httpStatus, let fallback = fallback,
+            if case .failure(.httpStatus) = result, let fallback = fallback,
                deadline > ProcessInfo.processInfo.systemUptime {
-                sendTranslation(url: url, provider: provider, key: key, authorization: authorization,
-                                body: fallback, fallback: nil, deadline: deadline, count: count,
-                                completion: completion)
-                return
+                let retried = synchronized { () -> Bool in
+                    guard isActive(authorization) else { return false }
+                    sendTranslation(url: url, provider: provider, key: key, authorization: authorization,
+                                    body: fallback, fallback: nil, deadline: deadline, count: count,
+                                    completion: completion)
+                    return true
+                }
+                if retried { return }
             }
-            var translated = [Int: String]()
-            if case .success(let response) = result, let output = outputText(response, kind: provider.kind) {
-                translated = parseTranslations(output, count: count)
+            let answer = result.flatMap { response -> Result<[Int: String], Failure> in
+                if isTruncated(response, kind: provider.kind) { return .failure(.truncatedResponse) }
+                guard let output = outputText(response, kind: provider.kind),
+                      let translations = parseTranslations(output, count: count) else { return .failure(.invalidResponse) }
+                return .success(translations)
             }
-            let answer = translated
             DispatchQueue.main.async {
-                completion(synchronized { isActive(authorization) } ? answer : [:])
+                completion(synchronized { isActive(authorization) } ? answer : .failure(.staleConfiguration))
             }
         }
         let remaining = deadline - ProcessInfo.processInfo.systemUptime
         guard remaining > 0 else {
-            DispatchQueue.main.async { completion([:]) }
+            DispatchQueue.main.async { completion(.failure(.timeout)) }
             return
         }
-        transport.start(request(url, kind: provider.kind, key: key, body: body), timeLimit: remaining)
+        var translationRequest = request(url, kind: provider.kind, key: key, body: body)
+        translationRequest.timeoutInterval = 30
+        transport.start(translationRequest, timeLimit: remaining)
     }
 
     struct ProbeError: Error {
@@ -827,6 +836,17 @@ enum DepictionAIProvider {
         }
     }
 
+    private static func isTruncated(_ response: Object, kind: ProtocolKind) -> Bool {
+        switch kind {
+        case .openAI:
+            return (response["choices"] as? [Object])?.first?["finish_reason"] as? String == "length"
+        case .anthropic:
+            return response["stop_reason"] as? String == "max_tokens"
+        case .gemini:
+            return (response["candidates"] as? [Object])?.first?["finishReason"] as? String == "MAX_TOKENS"
+        }
+    }
+
     private static func outputText(_ response: Object, kind: ProtocolKind) -> String? {
         switch kind {
         case .openAI:
@@ -882,19 +902,18 @@ enum DepictionAIProvider {
             + whitespace + #"\]"# + whitespace + #"\z"#)
     }()
 
-    private static func parseTranslations(_ output: String, count: Int) -> [Int: String] {
+    private static func parseTranslations(_ output: String, count: Int) -> [Int: String]? {
         // Check the entire grammar before decoding; Foundation may accept trailing commas or coerce numbers.
         // Pair arrays have no JSON object keys to silently collapse. A valid subset is allowed.
         guard translationGrammar?.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)) != nil,
               let rows = (try? JSONSerialization.jsonObject(with: Data(output.utf8))) as? [[Any]],
-              rows.count <= count else { return [:] }
+              rows.count <= count else { return nil }
         var translations = [Int: String]()
         for row in rows {
             guard row.count == 2, let number = row[0] as? NSNumber,
                   CFGetTypeID(number) != CFBooleanGetTypeID(),
                   let id = Int(number.stringValue), (0..<count).contains(id), translations[id] == nil,
-                  let text = row[1] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !text.contains("\u{0000}") else { return [:] }
+                  let text = row[1] as? String, !text.contains("\u{0000}") else { return nil }
             translations[id] = text
         }
         return translations
