@@ -114,17 +114,10 @@ static id SileoTranslationEngine(void) {
     dispatch_once(&once, ^{
         translator = [translatorClass new];
         if ([translator respondsToSelector:NSSelectorFromString(@"startTranslationSession")]) {
-            [translator performSelector:NSSelectorFromString(@"startTranslationSession")];
+            [translator startTranslationSession];
         }
     });
     return translator;
-}
-
-static void SileoRestartTranslationSession(void) {
-    id translator = SileoTranslationEngine();
-    if ([translator respondsToSelector:NSSelectorFromString(@"startTranslationSession")]) {
-        [translator performSelector:NSSelectorFromString(@"startTranslationSession")];
-    }
 }
 
 // A job is kept until it answers: its blocks hold it weakly, so the registry
@@ -148,6 +141,9 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
 @property (nonatomic) NSInteger token;
 @property (nonatomic, strong) id request;
 @property (nonatomic, copy) void (^completion)(NSString *);
+- (void)retry;
+- (void)finish:(NSString * _Nullable)answer;
+- (void)cancel;
 @end
 
 @implementation SileoTranslationJob
@@ -171,7 +167,7 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
             if (value.length) {
                 [job finish:value];
             } else {
-                [job retryRestartingSession:NO];
+                [job retry];
             }
         });
     };
@@ -215,27 +211,27 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
         [self finish:nil];
         return;
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        SileoTranslationJob *job = weakSelf;
-        if (job && job.token == token) [job retryRestartingSession:YES];
-    });
 }
 
-/// A second ask waits a moment: the engine drops back-to-back requests. Only a
-/// request that never answered at all ends the session, which is the one case
-/// that needs beginning again.
-- (void)retryRestartingSession:(BOOL)restart {
+// A second ask waits a moment: the engine drops back-to-back requests.
+- (void)retry {
+    self.token++;
     self.request = nil;
     __weak SileoTranslationJob *weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 350 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-        SileoTranslationJob *job = weakSelf;
-        if (!job || !job.completion) return;
-        if (restart) SileoRestartTranslationSession();
-        [job start];
+        [weakSelf start];
     });
 }
 
+- (void)cancel {
+    // The private framework exposes no supported cancellation API. Drop the
+    // callback and ownership of the request without restarting a shared session.
+    self.completion = nil;
+    [self finish:nil];
+}
+
 - (void)finish:(NSString *)answer {
+    self.token++;
     void (^completion)(NSString *) = self.completion;
     self.completion = nil;
     self.request = nil;
@@ -245,11 +241,11 @@ static NSMutableSet *SileoActiveTranslationJobs(void) {
 
 @end
 
-void SileoSystemTranslate(NSString *text, NSString *source, NSString *target, BOOL offline,
-                          void (^completion)(NSString *)) {
+SileoTranslationCancellation SileoSystemTranslate(NSString *text, NSString *source, NSString *target, BOOL offline,
+                                                  void (^completion)(NSString *)) {
     if (!SileoSystemTranslationAvailable()) {
-        completion(nil);
-        return;
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
+        return ^{};
     }
     SileoTranslationJob *job = [[SileoTranslationJob alloc] init];
     job.text = text;
@@ -257,5 +253,8 @@ void SileoSystemTranslate(NSString *text, NSString *source, NSString *target, BO
     job.target = target;
     job.offline = offline;
     job.completion = completion;
-    [job start];
+    // Always return the cancellation handle before the first possible answer.
+    dispatch_async(dispatch_get_main_queue(), ^{ [job start]; });
+    __weak SileoTranslationJob *weakJob = job;
+    return ^{ [weakJob cancel]; };
 }

@@ -72,6 +72,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var originalDepiction: [String: Any]?
     private var depictionLoadID = UUID()
     private var translationID = UUID()
+    private var translationWork: DepictionTranslation.Work?
     private var isWaitingForNativeDepiction = false
     private var canTranslateDepiction = false
     private var hasAttemptedTranslation = false
@@ -228,6 +229,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
     private func cancelTranslationRequest() {
         translationID = UUID()
+        translationWork?.cancel()
+        translationWork = nil
         // A rendered tab is not a complete result. When returning to the
         // page, restart from the fragment cache instead of treating it as done.
         if translationStatus == .translating { translationResult = nil }
@@ -259,7 +262,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
               let originalDepiction = originalDepiction else { return }
         if let result = translationResult {
             if renderedTranslationMode != mode { drawTranslation() }
-            if translationStatus == nil { translationStatus = .done(result.outputSource) }
+            if translationStatus == nil { translationStatus = result.incomplete ? .failed : .done(result.outputSource) }
             return
         }
         guard !hasAttemptedTranslation else { return }
@@ -267,8 +270,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let token = UUID()
         translationID = token
         translationStatus = .translating
+        let work = DepictionTranslation.Work()
+        translationWork = work
         DepictionTranslation.translate(originalDepiction, source: translationSource, target: translationTarget,
-                                       isCurrent: { [weak self] in
+                                       work: work, isCurrent: { [weak self] in
             guard let self = self else { return false }
             return self.translationID == token && self.canTranslateDepiction &&
                 (DepictionTranslation.isEnabled || self.hasPageTranslationConsent)
@@ -280,12 +285,11 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             self.translationResult = partial
             self.translationStatus = .translating
             self.drawTranslation()
-        }, completion: { [weak self] result, _ in
+        }, completion: { [weak self] result, incomplete in
             guard let self = self, self.translationID == token, self.canTranslateDepiction else { return }
+            self.translationWork = nil
             self.translationResult = result
-            // A few fragments the engine refuses are left as written; they do not
-            // turn a translated page into a failure.
-            self.translationStatus = result.map { TranslationStatus.done($0.outputSource) } ?? .failed
+            self.translationStatus = incomplete ? .failed : result.map { .done($0.outputSource) }
             if result != nil {
                 // A tab may already be on screen from a partial pass; the finished
                 // text replaces it even though the mode has not changed.

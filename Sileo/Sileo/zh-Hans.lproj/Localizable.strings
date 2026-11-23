@@ -482,9 +482,8 @@
 "Depiction_Translation_Progress" = "正在翻译中…";
 "Depiction_Translation_Finished_AI" = "AI翻译已完成";
 "Depiction_Translation_Finished_System" = "系统翻译已完成";
-"Depiction_Translation_Finished_Mixed" = "AI与系统混合翻译已完成";
 "Depiction_Translation_Failed_Inline" = "翻译未完成，未译内容保留原文";
-"Auto_Translate_Depictions_Explain" = "将原生插件包简介和更新日志自动翻译成简体中文。若已启用 AI 提供商，待译文字会先发送给该提供商。使用系统翻译时（包括回退到系统翻译时），正文可能发送到 Apple 服务器。";
+"Auto_Translate_Depictions_Explain" = "将原生插件包简介和更新日志自动翻译成简体中文。已选择并授权 AI 模型时，待译正文只发送给该模型的提供商。否则使用系统翻译，待译正文可能发送到 Apple 服务器。";
 "Auto_Translate_Depictions_Unavailable" = "Sileo 无法在此设备上使用简体中文系统翻译。";
 "Depiction_Translation_Menu" = "翻译";
 "Depiction_Translation_Original" = "原文";
@@ -493,7 +492,7 @@
 "Depiction_Translation_Source" = "源语言";
 "Depiction_Translation_Target" = "目标语言";
 "Depiction_Translation_Detect" = "自动检测";
-"Depiction_Translation_Consent" = "要翻译当前插件包的原生简介和更新日志吗？若已启用 AI 提供商，待译文字会先发送给该提供商。使用系统翻译时（包括回退到系统翻译时），正文可能发送到 Apple 服务器。";
+"Depiction_Translation_Consent" = "要翻译当前插件包的原生简介和更新日志吗？已选择并授权 AI 模型时，待译正文只发送给该模型的提供商。否则使用系统翻译，待译正文可能发送到 Apple 服务器。";
 "Depiction_Translation_No_Languages" = "没有可用语言";
 "Remove_Broken_Sources" = "移除损坏的插件源";
 "Remove_Broken_Sources.Title" = "移除损坏的插件源？";

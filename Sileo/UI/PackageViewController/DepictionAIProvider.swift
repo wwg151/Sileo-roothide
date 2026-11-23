@@ -371,9 +371,13 @@ enum DepictionAIProvider {
             self.completion = completion
         }
 
-        func start(_ original: URLRequest, timeLimit: TimeInterval) {
+        @discardableResult
+        func start(_ original: URLRequest, timeLimit: TimeInterval?) -> URLSessionDataTask {
             var request = original
-            request.timeoutInterval = min(request.timeoutInterval, timeLimit)
+            // URLSession requires finite intervals. Use a practical no-deadline
+            // value for depiction text; keep the short limits for model discovery.
+            let noDeadline: TimeInterval = TimeInterval(Int32.max)
+            request.timeoutInterval = timeLimit.map { min(original.timeoutInterval, $0) } ?? noDeadline
             let config = URLSessionConfiguration.ephemeral
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             config.urlCache = nil
@@ -382,10 +386,12 @@ enum DepictionAIProvider {
             config.httpShouldSetCookies = false
             config.waitsForConnectivity = false
             config.timeoutIntervalForRequest = request.timeoutInterval
-            config.timeoutIntervalForResource = timeLimit
+            config.timeoutIntervalForResource = timeLimit ?? noDeadline
             config.connectionProxyDictionary = ["HTTPEnable": 0, "HTTPSEnable": 0, "SOCKSEnable": 0,
                                                 "ProxyAutoConfigEnable": 0, "ProxyAutoDiscoveryEnable": 0]
-            URLSession(configuration: config, delegate: self, delegateQueue: nil).dataTask(with: request).resume()
+            let task = URLSession(configuration: config, delegate: self, delegateQueue: nil).dataTask(with: request)
+            task.resume()
+            return task
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -574,11 +580,11 @@ enum DepictionAIProvider {
     Omit an ID if you cannot translate it. Do not add explanations, Markdown fences, extra fields or other output.
     """
 
+    // These hooks run on the main queue, including registration of retries.
     static func translate(_ texts: [String], source: String, target: String, using selection: Selection,
-                          timeLimit: TimeInterval, completion: @escaping (Result<[Int: String], Failure>) -> Void) {
+                          isCurrent: @escaping () -> Bool, register: @escaping ((() -> Void)?) -> Void,
+                          completion: @escaping (Result<[Int: String], Failure>) -> Void) {
         func fail(_ reason: Failure) { DispatchQueue.main.async { completion(.failure(reason)) } }
-        guard timeLimit > 0 else { fail(.timeout); return }
-        let deadline = ProcessInfo.processInfo.systemUptime + min(30, timeLimit)
         let provider = selection.provider
         let rows: [[Any]] = texts.enumerated().map { [$0.offset, $0.element] }
         let input: Object = ["source": source, "target": target, "items": rows]
@@ -629,45 +635,45 @@ enum DepictionAIProvider {
             case .failure(let error): fail(error)
             case .success(let key):
                 sendTranslation(url: url, provider: provider, key: key, authorization: selection, body: body,
-                                fallback: fallback, deadline: deadline, count: texts.count, completion: completion)
+                                fallback: fallback, count: texts.count, isCurrent: isCurrent,
+                                register: register, completion: completion)
             }
         }
     }
 
     /// One request, then one retry without the effort field when the endpoint refuses it.
     private static func sendTranslation(url: URL, provider: Provider, key: String, authorization: Selection,
-                                        body: Data, fallback: Data?, deadline: TimeInterval, count: Int,
+                                        body: Data, fallback: Data?, count: Int,
+                                        isCurrent: @escaping () -> Bool, register: @escaping ((() -> Void)?) -> Void,
                                         completion: @escaping (Result<[Int: String], Failure>) -> Void) {
         let transport = Transport { result in
-            if case .failure(.httpStatus) = result, let fallback = fallback,
-               deadline > ProcessInfo.processInfo.systemUptime {
-                let retried = synchronized { () -> Bool in
-                    guard isActive(authorization) else { return false }
-                    sendTranslation(url: url, provider: provider, key: key, authorization: authorization,
-                                    body: fallback, fallback: nil, deadline: deadline, count: count,
-                                    completion: completion)
-                    return true
-                }
-                if retried { return }
-            }
             let answer = result.flatMap { response -> Result<[Int: String], Failure> in
-                if isTruncated(response, kind: provider.kind) { return .failure(.truncatedResponse) }
+                guard !isTruncated(response, kind: provider.kind) else { return .failure(.truncatedResponse) }
                 guard let output = outputText(response, kind: provider.kind),
-                      let translations = parseTranslations(output, count: count) else { return .failure(.invalidResponse) }
+                      let translations = parseTranslations(output, count: count) else {
+                    return .failure(.invalidResponse)
+                }
                 return .success(translations)
             }
             DispatchQueue.main.async {
-                completion(synchronized { isActive(authorization) } ? answer : .failure(.staleConfiguration))
+                guard isCurrent() else { return }
+                register(nil)
+                let active = synchronized { () -> Bool in
+                    guard isActive(authorization) else { return false }
+                    if case .failure(.httpStatus) = answer, let fallback = fallback {
+                        sendTranslation(url: url, provider: provider, key: key, authorization: authorization,
+                                        body: fallback, fallback: nil, count: count, isCurrent: isCurrent,
+                                        register: register, completion: completion)
+                    }
+                    return true
+                }
+                guard active else { completion(.failure(.staleConfiguration)); return }
+                if case .failure(.httpStatus) = answer, fallback != nil { return }
+                completion(answer)
             }
         }
-        let remaining = deadline - ProcessInfo.processInfo.systemUptime
-        guard remaining > 0 else {
-            DispatchQueue.main.async { completion(.failure(.timeout)) }
-            return
-        }
-        var translationRequest = request(url, kind: provider.kind, key: key, body: body)
-        translationRequest.timeoutInterval = 30
-        transport.start(translationRequest, timeLimit: remaining)
+        let task = transport.start(request(url, kind: provider.kind, key: key, body: body), timeLimit: nil)
+        register { task.cancel() }
     }
 
     struct ProbeError: Error {

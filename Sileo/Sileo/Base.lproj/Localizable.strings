@@ -476,9 +476,8 @@
 "Depiction_Translation_Progress" = "Translating…";
 "Depiction_Translation_Finished_AI" = "AI translation complete.";
 "Depiction_Translation_Finished_System" = "System translation complete.";
-"Depiction_Translation_Finished_Mixed" = "AI and system translation complete.";
 "Depiction_Translation_Failed_Inline" = "Translation incomplete. Untranslated text is shown as written.";
-"Auto_Translate_Depictions_Explain" = "Automatically translate native package descriptions and changelogs into Simplified Chinese. If an AI provider is enabled, text that needs translation is sent to that provider first. When system translation is used, including as a fallback, the text may be sent to Apple servers.";
+"Auto_Translate_Depictions_Explain" = "Automatically translate native package descriptions and changelogs into Simplified Chinese. If an AI model is selected and authorized, only that provider receives text that needs translation. Otherwise, system translation may send the text to Apple servers.";
 "Auto_Translate_Depictions_Unavailable" = "Sileo could not access system translation into Simplified Chinese on this device.";
 "Depiction_Translation_Menu" = "Translate";
 "Depiction_Translation_Original" = "Original";
@@ -487,7 +486,7 @@
 "Depiction_Translation_Source" = "Source Language";
 "Depiction_Translation_Target" = "Target Language";
 "Depiction_Translation_Detect" = "Detect Language";
-"Depiction_Translation_Consent" = "Translate the native description and changelog on this page? If an AI provider is enabled, text that needs translation is sent to that provider first. When system translation is used, including as a fallback, the text may be sent to Apple servers.";
+"Depiction_Translation_Consent" = "Translate the native description and changelog on this page? If an AI model is selected and authorized, only that provider receives text that needs translation. Otherwise, system translation may send the text to Apple servers.";
 "Depiction_Translation_No_Languages" = "No languages available";
 "Remove_Broken_Sources" = "Remove Broken Sources";
 "Remove_Broken_Sources.Title" = "Remove Broken Sources?";

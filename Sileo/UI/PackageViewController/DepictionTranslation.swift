@@ -22,13 +22,12 @@ enum DepictionTranslation {
     }
 
     enum OutputSource: Equatable {
-        case ai, system, mixed
+        case ai, system
 
         var completionTitle: String {
             switch self {
             case .ai: return String(localizationKey: "Depiction_Translation_Finished_AI")
             case .system: return String(localizationKey: "Depiction_Translation_Finished_System")
-            case .mixed: return String(localizationKey: "Depiction_Translation_Finished_Mixed")
             }
         }
     }
@@ -37,6 +36,7 @@ enum DepictionTranslation {
         let translated: [String: Any]
         let compared: [String: Any]
         let outputSource: OutputSource
+        let incomplete: Bool
     }
     private static let cache: NSCache<NSString, NSString> = {
         let cache = NSCache<NSString, NSString>()
@@ -141,16 +141,44 @@ enum DepictionTranslation {
         log.notice("\(line, privacy: .public)")
     }
 
-    /// Apply the available translations together, keeping original prose for failed fragments.
+    /// Owned by the page. All registration and explicit cancellation run on the main queue.
+    final class Work {
+        private var cancellations: [Int: () -> Void] = [:]
+        private(set) var cancelled = false
+
+        func register(_ key: Int, _ cancel: (() -> Void)?) {
+            if cancelled { cancel?(); return }
+            cancellations[key] = cancel
+        }
+
+        func cancel() {
+            cancelled = true
+            let pending = cancellations
+            cancellations.removeAll()
+            for cancel in pending.values { cancel() }
+        }
+
+        deinit {
+            let pending = cancellations
+            if !pending.isEmpty {
+                DispatchQueue.main.async { for cancel in pending.values { cancel() } }
+            }
+        }
+    }
+
+    /// Keep original prose for failed fragments; never switch engines mid-page.
     /// Stop submitting work when the request is no longer current. Hand translated
     /// text back through `progress` after processing a tab, without waiting for the
     /// rest of the page or subsequent retries.
     static func translate(_ depiction: [String: Any], source: String?, target: String,
-                          isCurrent: @escaping () -> Bool, progress: ((Result) -> Void)? = nil,
-                          completion: @escaping (Result?, Bool) -> Void) {
+                          work: Work, isCurrent pageIsCurrent: @escaping () -> Bool,
+                          progress: ((Result) -> Void)? = nil, completion: @escaping (Result?, Bool) -> Void) {
+        let isCurrent = { [weak work] in work?.cancelled == false && pageIsCurrent() }
+        let register: (Int, (() -> Void)?) -> Void = { [weak work] key, cancel in
+            if let work = work { work.register(key, cancel) } else { cancel?() }
+        }
         let ai = DepictionAIProvider.selection
-        let systemAvailable = SileoSystemTranslationAvailable()
-        guard isCurrent(), ai != nil || systemAvailable else { completion(nil, true); return }
+        guard isCurrent(), ai != nil || SileoSystemTranslationAvailable() else { completion(nil, true); return }
         var seen = Set<String>()
         var fragments = [String]()
         var fragmentGroup = [Int]()
@@ -169,8 +197,8 @@ enum DepictionTranslation {
         }
         let tabs = depictionGroups(depiction)
         func collect(_ text: String, group: Int) -> String {
-            if fragments.count < 240, text.utf16.count <= 3000, text.filter(\.isLetter).count >= 4,
-               text != placeholder, text != noDescription, seen.insert(text).inserted {
+            if text.contains(where: \.isLetter), text != placeholder, text != noDescription,
+               seen.insert(text).inserted {
                 fragments.append(text)
                 fragmentGroup.append(group)
             }
@@ -184,8 +212,11 @@ enum DepictionTranslation {
             }
         }
         let pageLanguage = source == nil ? detect(fragments.prefix(24).joined(separator: "\n")) : nil
+        var hasUnknownSource = false
         for (index, text) in fragments.enumerated() {
-            guard let detected = source ?? detect(text) ?? pageLanguage, !matchesLanguage(detected, target) else { continue }
+            let detected = source ?? detect(text) ?? pageLanguage ?? (ai != nil ? "auto" : nil)
+            guard let detected = detected else { hasUnknownSource = true; continue }
+            guard !matchesLanguage(detected, target) else { continue }
             // Do not use an English page-wide fallback to translate existing Chinese.
             let han = text.unicodeScalars.contains { (0x3400...0x9FFF).contains($0.value) || (0x20000...0x323AF).contains($0.value) }
             if source == nil, parts(target).languageCode == "zh",
@@ -193,27 +224,25 @@ enum DepictionTranslation {
             pieces.append(Piece(text: text, source: detected))
             pieceGroup.append(fragmentGroup[index])
         }
-        guard !pieces.isEmpty else { completion(nil, false); return }
+        guard !pieces.isEmpty else { completion(nil, hasUnknownSource); return }
         func run() {
             guard isCurrent() else { return }
-            var resolvedPairs: [[String]]? = systemAvailable ? nil : []
-            var translations = [String: (text: String, fromAI: Bool)]()
-            var incomplete = false
+            var resolvedPairs: [[String]]?
+            var translations = [String: String]()
+            var incomplete = hasUnknownSource
             func buildResult() -> Result {
                 let replace: (String, Flavor) -> String = { text, flavor in
-                    guard let answer = translations[text]?.text else { return text }
+                    guard let answer = translations[text] else { return text }
                     switch flavor {
                     case .plain: return answer
                     case .markdown: return escapeMarkdown(answer)
                     case .html: return escapeHTML(answer)
                     }
                 }
-                let hasAI = translations.values.contains { $0.fromAI }
-                let hasSystem = translations.values.contains { !$0.fromAI }
-                let source: OutputSource = hasAI ? (hasSystem ? .mixed : .ai) : .system
+                let source: OutputSource = ai == nil ? .system : .ai
                 return Result(translated: rewrite(depiction, replace: replace),
                               compared: rewrite(depiction, compared: true, replace: replace),
-                              outputSource: source)
+                              outputSource: source, incomplete: incomplete)
             }
             func finish() {
                 guard !translations.isEmpty else { completion(nil, incomplete); return }
@@ -222,21 +251,19 @@ enum DepictionTranslation {
             // A paragraph the engine leaves empty is asked for again at the end,
             // when the session has warmed up: that is where most of the stray
             // untranslated lines on a long page come from.
-            // System translation has its own budget, starting only after both AI passes.
             var queue = [Int]()
             var position = 0
             var missed = [Int]()
             var retried = false
             var handedBack = -1
             var lastIndex = -1
-            var systemDeadline: TimeInterval = 0
             func aiCacheKey(_ piece: Piece, _ selection: DepictionAIProvider.Selection) -> NSString {
                 ("ai:\(selection.cacheID)\n\(piece.source)>\(target)\n\(piece.text)") as NSString
             }
             func carryOn() {
                 guard isCurrent() else { return }
                 guard position < queue.count else {
-                    if !retried, !missed.isEmpty, ProcessInfo.processInfo.systemUptime < systemDeadline {
+                    if !retried, !missed.isEmpty {
                         retried = true
                         queue = missed
                         missed = []
@@ -256,7 +283,6 @@ enum DepictionTranslation {
                     progress(buildResult())
                 }
                 lastIndex = index
-                guard ProcessInfo.processInfo.systemUptime < systemDeadline else { incomplete = true; finish(); return }
                 let piece = pieces[index]
                 guard let pairs = resolvedPairs else {
                     availablePairs { pairs in
@@ -272,13 +298,13 @@ enum DepictionTranslation {
                 guard let pair = pair else {
                     failed(piece, pair: nil)
                     incomplete = true
-                    carryOn()
+                    DispatchQueue.main.async { carryOn() }
                     return
                 }
-                let key = (pair[0] + ">" + pair[1] + "\n" + piece.text) as NSString
+                let key = ("system:" + pair[0] + ">" + pair[1] + "\n" + piece.text) as NSString
                 func record(_ translated: String) {
-                    if translated != piece.text { translations[piece.text] = (translated, fromAI: false) }
-                    carryOn()
+                    if translated != piece.text { translations[piece.text] = translated }
+                    DispatchQueue.main.async { carryOn() }
                 }
                 if let answer = cache.object(forKey: key) {
                     record(answer as String)
@@ -286,11 +312,11 @@ enum DepictionTranslation {
                 }
                 func request(_ onlyOffline: Bool) {
                     guard isCurrent() else { return }
-                    guard ProcessInfo.processInfo.systemUptime < systemDeadline else { incomplete = true; finish(); return }
-                    SileoSystemTranslate(piece.text, pair[0], pair[1], onlyOffline) { answer in
+                    let cancel = SileoSystemTranslate(piece.text, pair[0], pair[1], onlyOffline) { answer in
+                        register(0, nil)
                         guard isCurrent() else { return }
-                        if let answer = answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            let cleanAnswer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let cleanAnswer = answer?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !cleanAnswer.isEmpty, cleanAnswer != piece.text {
                             cache.setObject(cleanAnswer as NSString, forKey: key)
                             record(cleanAnswer)
                         } else if !onlyOffline {
@@ -300,32 +326,24 @@ enum DepictionTranslation {
                             request(true)
                         } else {
                             failed(piece, pair: pair)
-                            incomplete = true
-                            missed.append(index)
+                            if retried { incomplete = true } else { missed.append(index) }
                             carryOn()
                         }
                     }
+                    register(0, cancel)
                 }
                 request(false)
             }
-            func startSystemFallback() {
-                guard isCurrent() else { return }
-                queue = pieces.indices.filter { translations[pieces[$0].text] == nil }
-                if !systemAvailable {
-                    incomplete = !queue.isEmpty
-                    finish()
-                    return
-                }
-                systemDeadline = ProcessInfo.processInfo.systemUptime + min(180, 45 + 0.6 * Double(queue.count))
+            guard let ai = ai else {
+                queue = Array(pieces.indices)
                 carryOn()
+                return
             }
-
-            guard let ai = ai else { startSystemFallback(); return }
             var pending = [Int]()
             for index in pieces.indices {
                 let piece = pieces[index]
                 if let answer = cache.object(forKey: aiCacheKey(piece, ai)) {
-                    translations[piece.text] = (answer as String, fromAI: true)
+                    translations[piece.text] = answer as String
                 } else {
                     pending.append(index)
                 }
@@ -376,7 +394,8 @@ enum DepictionTranslation {
                         next += 1
                         inFlight += 1
                         DepictionAIProvider.translate(batch.map { pieces[$0].text }, source: pieces[batch[0]].source,
-                                                       target: target, using: ai, timeLimit: 30) { result in
+                                                       target: target, using: ai, isCurrent: isCurrent,
+                                                       register: { register(slot, $0) }) { result in
                             guard isCurrent() else { return }
                             var reason: String?
                             switch result {
@@ -388,7 +407,7 @@ enum DepictionTranslation {
                                         misses[slot].append(index)
                                         continue
                                     }
-                                    translations[piece.text] = (answer, fromAI: true)
+                                    translations[piece.text] = answer
                                     cache.setObject(answer as NSString, forKey: aiCacheKey(piece, ai))
                                 }
                                 if !misses[slot].isEmpty { reason = "missingTranslations" }
@@ -424,7 +443,10 @@ enum DepictionTranslation {
                     let (slot, missing) = entry
                     return batches(missing, limit: min(4, (firstPass[slot].count + 1) / 2), sizeLimit: 1800)
                 }
-                runAIPass(retryWork, retry: true) { _ in startSystemFallback() }
+                runAIPass(retryWork, retry: true) { remaining in
+                    incomplete = incomplete || remaining.contains { !$0.isEmpty }
+                    finish()
+                }
             }
         }
         run()
@@ -589,6 +611,11 @@ enum DepictionTranslation {
             .replacingOccurrences(of: ">", with: "&gt;")
     }
 
+    // Protect complete inline constructs; prose on either side remains translatable.
+    private static let markdownInline = try! NSRegularExpression(pattern:
+        #"(?<!`) (`+) (?!`) .*? (?<!`) \1 (?!`) | !?\[[^\[\]\\]*\](?:\((?:[^()\\]|\\.|\([^()]*\))*\)|\[[^\]]*\])"#,
+        options: .allowCommentsAndWhitespace)
+
     private static func rewriteMarkdown(_ markdown: String, replace: (String) -> String) -> String {
         var fence: (marker: Character, length: Int)?
         // A code span can cross a newline. Leave any such span untouched,
@@ -625,13 +652,27 @@ enum DepictionTranslation {
                 }
             }
             let span = NSRange(line.startIndex..., in: line)
-            // Keep complex inline markup intact rather than risk changing a URL,
-            // reference label or code span (which can span multiple lines).
+            // Keep block HTML, reference definitions, indented code and multi-line
+            // code spans opaque. Translate the gaps around recognized inline syntax.
             guard fence == nil, !wasInCode, inlineCodeLength == nil, !line.hasPrefix("    "), !line.hasPrefix("\t"),
-                  !line.contains(where: { "<>[]`".contains($0) }),
                   fixedLine.firstMatch(in: line, range: span) == nil else { return line }
             let start = prefix.firstMatch(in: line, range: span).flatMap { Range($0.range, in: line)?.upperBound } ?? line.startIndex
-            return String(line[..<start]) + translateText(String(line[start...]), replace: replace)
+            let ranges = markdownInline.matches(in: line, range: NSRange(start..., in: line)).compactMap { Range($0.range, in: line) }
+            var cursor = start
+            var proseRanges = [Range<String.Index>]()
+            for range in ranges {
+                proseRanges.append(cursor..<range.lowerBound)
+                cursor = range.upperBound
+            }
+            proseRanges.append(cursor..<line.endIndex)
+            // If a construct is too complex to recognize, preserve the entire line.
+            guard !proseRanges.contains(where: { line[$0].contains(where: { "<>[]`".contains($0) }) }) else { return line }
+            var output = String(line[..<start])
+            for (position, gap) in proseRanges.enumerated() {
+                output += translateText(String(line[gap]), replace: replace)
+                if position < ranges.count { output += String(line[ranges[position]]) }
+            }
+            return output
         }.joined(separator: "\n")
     }
 
@@ -639,7 +680,33 @@ enum DepictionTranslation {
         func prose(_ fragment: Substring) -> String {
             guard let first = fragment.firstIndex(where: { !$0.isWhitespace }),
                   let last = fragment.lastIndex(where: { !$0.isWhitespace }) else { return String(fragment) }
-            return String(fragment[..<first]) + replace(String(fragment[first...last])) + String(fragment[fragment.index(after: last)...])
+            let end = fragment.index(after: last)
+            var output = String(fragment[..<first])
+            var start = first
+            while start < end {
+                var limit = start
+                var budget = 0
+                var space: String.Index?
+                var sentence: String.Index?
+                while limit < end {
+                    let char = fragment[limit]
+                    budget += String(char).utf16.count
+                    if budget > 1500, limit > start { break }
+                    if char.isWhitespace, budget >= 750 { space = limit }
+                    let next = fragment.index(after: limit)
+                    if budget >= 750, ".!?。！？".contains(char),
+                       next == end || fragment[next].isWhitespace { sentence = next }
+                    limit = next
+                }
+                let stop = limit == end ? end : (sentence ?? space ?? limit)
+                output += replace(String(fragment[start..<stop]))
+                start = stop
+                while start < end, fragment[start].isWhitespace {
+                    output.append(fragment[start])
+                    fragment.formIndex(after: &start)
+                }
+            }
+            return output + String(fragment[end...])
         }
         var start = text.startIndex
         var result = ""
