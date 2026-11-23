@@ -232,7 +232,9 @@ enum DepictionTranslation {
             var incomplete = hasUnknownSource
             func buildResult() -> Result {
                 let replace: (String, Flavor) -> String = { text, flavor in
-                    guard let answer = translations[text] else { return text }
+                    // A valid reply may intentionally leave a term unchanged.
+                    // Preserve its exact markup and don't duplicate it in comparison mode.
+                    guard let answer = translations[text], answer != text else { return text }
                     switch flavor {
                     case .plain: return answer
                     case .markdown: return escapeMarkdown(answer)
@@ -303,7 +305,7 @@ enum DepictionTranslation {
                 }
                 let key = ("system:" + pair[0] + ">" + pair[1] + "\n" + piece.text) as NSString
                 func record(_ translated: String) {
-                    if translated != piece.text { translations[piece.text] = translated }
+                    translations[piece.text] = translated
                     DispatchQueue.main.async { carryOn() }
                 }
                 if let answer = cache.object(forKey: key) {
@@ -316,7 +318,7 @@ enum DepictionTranslation {
                         register(0, nil)
                         guard isCurrent() else { return }
                         if let cleanAnswer = answer?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           !cleanAnswer.isEmpty, cleanAnswer != piece.text {
+                           !cleanAnswer.isEmpty {
                             cache.setObject(cleanAnswer as NSString, forKey: key)
                             record(cleanAnswer)
                         } else if !onlyOffline {
@@ -403,7 +405,7 @@ enum DepictionTranslation {
                                 for (offset, index) in batch.enumerated() {
                                     let piece = pieces[index]
                                     guard let answer = answers[offset]?.trimmingCharacters(in: .whitespacesAndNewlines),
-                                          !answer.isEmpty, answer != piece.text else {
+                                          !answer.isEmpty else {
                                         misses[slot].append(index)
                                         continue
                                     }
