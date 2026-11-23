@@ -1200,18 +1200,6 @@ class DownloadsTableViewController: SileoViewController {
     }
     
     @IBAction private func completeButtonTapped(_ sender: Any?) {
-        if returnButtonAction == .reload || returnButtonAction == .restart {
-            guard !isFired, presentedViewController == nil else { return }
-            let panel = SileoPanelViewController.confirm(
-                title: String(localizationKey: "After_Install_Respring"),
-                message: String(localizationKey: "Task_Confirm_Respring"),
-                confirmTitle: String(localizationKey: "Queue_Confirm_Button")
-            ) { [weak self] in
-                self?.performCompletionAction()
-            }
-            panel.present(from: self)
-            return
-        }
         performCompletionAction()
     }
 

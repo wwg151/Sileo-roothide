@@ -584,14 +584,16 @@ final class BackupProgressAlert: SileoPanelViewController {
         case .back: key = refresh ? "After_Install_Relaunch" : "Done"
         case .uicache: key = "Refresh"
         case .reopen: key = "After_Install_Relaunch"
-        case .reload, .restart: key = "After_Install_Respring"
+        case .reload, .restart:
+            performRestoreCompletion(finish, refresh: refresh)
+            return
         case .reboot, .usreboot: key = "After_Install_Reboot"
         }
         let panel = SileoPanelViewController.confirm(
             title: String(localizationKey: "Backup_Task_Complete_Action"),
-            message: restoreNeedsRespring ? String(localizationKey: "Task_Confirm_Respring") : session.message,
+            message: session.message,
             confirmTitle: String(localizationKey: key),
-            destructive: restoreNeedsRespring || finish == .reboot || finish == .usreboot
+            destructive: finish == .reboot || finish == .usreboot
         ) { [weak self] in
             self?.performRestoreCompletion(finish, refresh: refresh)
         }
