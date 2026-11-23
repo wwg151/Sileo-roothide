@@ -62,10 +62,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var shareButton: UIButton?
 
     private var navBarShareButtonItem: UIBarButtonItem?
-    private var navBarAIButtonItem: UIBarButtonItem?
-    private var aiMenuController: AnyObject?
     private var aiSelectionCacheID: String?
-    private static let aiTranslationChanged = Notification.Name("SileoDepictionAITranslationChanged")
     private var navBarDownloadButtonItem: UIBarButtonItem?
 
     private var depictionView: DepictionBaseView?
@@ -393,15 +390,10 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
 
         if #available(iOS 15.0, *), DepictionTranslation.supportedPlatform {
             aiSelectionCacheID = DepictionAIProvider.selection?.activationID
-            let menu = DepictionAIMenu(presenter: self) {
-                NotificationCenter.default.post(name: PackageViewController.aiTranslationChanged, object: nil)
-            }
-            aiMenuController = menu
-            navBarAIButtonItem = menu.makeButton()
             NotificationCenter.default.addObserver(self, selector: #selector(aiTranslationSelectionChanged),
-                                                   name: PackageViewController.aiTranslationChanged, object: nil)
+                                                   name: DepictionAIProvider.selectionChangedNotification, object: nil)
         }
-        self.navigationItem.rightBarButtonItems = [navBarShareButtonItem] + (navBarAIButtonItem.map { [$0] } ?? [])
+        self.navigationItem.rightBarButtonItem = navBarShareButtonItem
 
         let packageNavBarIconViewController = UIView(frame: CGRect(origin: .zero, size: CGSize(width: 50, height: 32)))
 
@@ -854,9 +846,9 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             if let navBarDownloadButtonItem = self.navBarDownloadButtonItem,
                 let navBarShareButtonItem = self.navBarShareButtonItem {
                 if (self.shareButton?.alpha ?? 0) > 0 {
-                    self.navigationItem.rightBarButtonItems = [navBarShareButtonItem] + (self.navBarAIButtonItem.map { [$0] } ?? [])
+                    self.navigationItem.rightBarButtonItem = navBarShareButtonItem
                 } else {
-                    self.navigationItem.rightBarButtonItems = [navBarDownloadButtonItem] + (self.navBarAIButtonItem.map { [$0] } ?? [])
+                    self.navigationItem.rightBarButtonItem = navBarDownloadButtonItem
                 }
             }
         }

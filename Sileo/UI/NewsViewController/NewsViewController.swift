@@ -25,6 +25,7 @@ class NewsViewController: SileoViewController, UICollectionViewDataSource, UICol
 
     private var sections = [Int64: [Package]]()
     private var timestamps = [Int64]()
+    private var aiMenuController: AnyObject?
 
     var dateFormatter: DateFormatter = DateFormatter()
     private var updateQueue: DispatchQueue = DispatchQueue(label: "org.coolstar.SileoStore.news-update-queue", qos: .userInitiated)
@@ -39,6 +40,13 @@ class NewsViewController: SileoViewController, UICollectionViewDataSource, UICol
         _ = NewsResolver.shared
         
         self.title = String(localizationKey: "News_Page")
+        if #available(iOS 15.0, *), DepictionTranslation.supportedPlatform {
+            let menu = DepictionAIMenu(presenter: self) {
+                NotificationCenter.default.post(name: DepictionAIProvider.selectionChangedNotification, object: nil)
+            }
+            aiMenuController = menu
+            navigationItem.rightBarButtonItem = menu.makeButton()
+        }
         
         dateFormatter.dateStyle = DateFormatter.Style.long
         dateFormatter.timeStyle = DateFormatter.Style.short

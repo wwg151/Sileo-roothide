@@ -4,6 +4,8 @@ import Security
 
 /// The UI must obtain consent before calling activate. Model discovery never activates a provider.
 enum DepictionAIProvider {
+    static let selectionChangedNotification = Notification.Name("SileoDepictionAITranslationChanged")
+
     enum ProtocolKind: String, Codable, CaseIterable {
         case openAI, anthropic, gemini
 
