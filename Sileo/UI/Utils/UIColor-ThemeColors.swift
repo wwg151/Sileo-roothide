@@ -46,7 +46,10 @@ extension UIColor {
         SileoThemeManager.shared.currentTheme.highlightColor ?? UIColor(white: 0.9, alpha: 1)
     }
     
-    static var sileoSeparatorColor: UIColor { .clear }
+    static var sileoSeparatorColor: UIColor {
+        SileoThemeManager.shared.currentTheme.seperatorColor
+            ?? UIColor(red: 234.0/255.0, green: 234.0/255.0, blue: 236.0/255.0, alpha: 1)
+    }
     
     static var sileoHeaderColor: UIColor {
         SileoThemeManager.shared.currentTheme.headerColor ?? UIColor(red: 0.898, green: 0.98, blue: 1, alpha: 0.5)

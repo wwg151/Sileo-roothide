@@ -1782,6 +1782,16 @@ extension DownloadsTableViewController: UITableViewDataSource {
         label.textColor = section == 3 ? .systemOrange : .secondaryLabel
         label.text = "\(text) · \(count)"
         header.addSubview(label)
+
+        let separator = SileoSeparatorView(frame: .zero)
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(separator)
+        NSLayoutConstraint.activate([
+            separator.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 16),
+            separator.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -16),
+            separator.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1)
+        ])
         return header
     }
     
