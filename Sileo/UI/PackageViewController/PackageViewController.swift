@@ -1055,17 +1055,16 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let loadID = depictionLoadID
         return { [weak self] in
             guard let self = self, self.depictionLoadID == loadID else { return false }
-            return self.presentSystemPageTranslation()
+            return self.translateCurrentPageWithSystem()
         }
     }
 
-    private func presentSystemPageTranslation() -> Bool {
+    private func translateCurrentPageWithSystem() -> Bool {
         guard canTranslateDepiction, DepictionTranslation.supportedPlatform,
               viewIfLoaded?.window != nil, presentedViewController == nil,
               translationPageIdentity != nil, originalDepiction != nil else { return false }
         // The explicit translation gesture authorizes Apple translation for this page only.
         startSystemPageTranslation()
-        presentDepictionTranslationOptions()
         return true
     }
 
