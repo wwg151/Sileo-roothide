@@ -79,6 +79,8 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     private var translationTarget = DepictionTranslation.defaultTarget
     private var translationResult: DepictionTranslation.Result?
     private var hasPageTranslationConsent = false
+    // A page requested with the system translation gesture stays on Apple's engine.
+    private var usesSystemPageTranslation = false
     private struct TranslationPageIdentity: Equatable {
         let identifier: String
         let version: String
@@ -206,6 +208,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
     @objc private func translationSettingChanged() {
         translationModeOverride = nil
         hasPageTranslationConsent = false
+        usesSystemPageTranslation = false
         invalidateTranslation()
         refreshDepictionTranslation()
     }
@@ -214,6 +217,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let cacheID = DepictionAIProvider.selection?.activationID
         guard cacheID != aiSelectionCacheID else { return }
         aiSelectionCacheID = cacheID
+        guard !usesSystemPageTranslation else { return }
         // A manual request is for the engine that was selected when it started.
         // Configuring another engine must not start a new request with auto off.
         if !DepictionTranslation.isEnabled {
@@ -270,7 +274,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         let work = DepictionTranslation.Work()
         translationWork = work
         DepictionTranslation.translate(originalDepiction, source: translationSource, target: translationTarget,
-                                       work: work, isCurrent: { [weak self] in
+                                       systemOnly: usesSystemPageTranslation, work: work, isCurrent: { [weak self] in
             guard let self = self else { return false }
             return self.translationID == token && self.canTranslateDepiction &&
                 (DepictionTranslation.isEnabled || self.hasPageTranslationConsent)
@@ -483,6 +487,7 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         if pageIdentity != translationPageIdentity {
             translationPageIdentity = pageIdentity
             hasPageTranslationConsent = false
+            usesSystemPageTranslation = false
             translationModeOverride = nil
             translationSource = nil
             translationTarget = DepictionTranslation.defaultTarget
@@ -1044,6 +1049,51 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
             guard let self = self, self.translationPageIdentity == identity else { return }
             self.presentDepictionTranslationOptions()
         }
+    }
+
+    func pageTranslationAction() -> () -> Bool {
+        let loadID = depictionLoadID
+        return { [weak self] in
+            guard let self = self, self.depictionLoadID == loadID else { return false }
+            return self.presentSystemPageTranslation()
+        }
+    }
+
+    private func presentSystemPageTranslation() -> Bool {
+        guard canTranslateDepiction, DepictionTranslation.supportedPlatform,
+              viewIfLoaded?.window != nil, presentedViewController == nil,
+              translationPageIdentity != nil, originalDepiction != nil else { return false }
+        let loadID = depictionLoadID
+        let isAISelected = DepictionAIProvider.selection != nil
+        let hasSystemConsent = (usesSystemPageTranslation && hasPageTranslationConsent)
+            || (DepictionTranslation.isEnabled && !isAISelected)
+        if hasSystemConsent {
+            startSystemPageTranslation()
+            presentDepictionTranslationOptions()
+        } else {
+            let title = String(localizationKey: "Depiction_Translation_System_Page")
+            let panel = SileoPanelViewController(title: title,
+                subtitle: String(localizationKey: "Depiction_Translation_System_Consent"), icon: "character.bubble")
+            panel.table.setItems([
+                SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: title, detail: nil, selected: false) { [weak self, weak panel] in
+                    panel?.close { [weak self] in
+                        guard let self = self, self.canTranslateDepiction,
+                              self.depictionLoadID == loadID, self.viewIfLoaded?.window != nil else { return }
+                        self.startSystemPageTranslation()
+                    }
+                }, height: 52)
+            ])
+            panel.present(from: self)
+        }
+        return true
+    }
+
+    private func startSystemPageTranslation() {
+        let wasUsingAI = !usesSystemPageTranslation && DepictionAIProvider.selection != nil
+        usesSystemPageTranslation = true
+        hasPageTranslationConsent = true
+        if wasUsingAI { invalidateTranslation() }
+        selectTranslationMode(translationMode == .compared ? .compared : .translated)
     }
 
     private func presentDepictionTranslationOptions() {

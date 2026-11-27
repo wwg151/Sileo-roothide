@@ -29,7 +29,8 @@ class DepictionMarkdownView: DepictionBaseView, CSTextViewActionHandler {
 
         heightRequested = false
 
-        textView = CSTextView(frame: .zero, allowsSelection: viewController is PackageViewController && !isActionable)
+        let page = !isActionable && DepictionTranslation.supportedPlatform ? viewController as? PackageViewController : nil
+        textView = CSTextView(frame: .zero, translatePage: page?.pageTranslationAction())
         super.init(dictionary: dictionary, viewController: viewController, tintColor: tintColor, isActionable: isActionable)
 
         textView.backgroundColor = .clear

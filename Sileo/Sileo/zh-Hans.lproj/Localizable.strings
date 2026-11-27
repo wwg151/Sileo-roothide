@@ -485,6 +485,8 @@
 "Auto_Translate_Depictions_Explain" = "将原生插件包简介和更新日志自动翻译成简体中文。已选择并授权 AI 模型时，待译正文只发送给该模型的提供商。否则使用系统翻译，待译正文可能发送到 Apple 服务器。";
 "Auto_Translate_Depictions_Unavailable" = "Sileo 无法在此设备上使用简体中文系统翻译。";
 "Depiction_Translation_Menu" = "翻译";
+"Depiction_Translation_System_Page" = "翻译此页";
+"Depiction_Translation_System_Consent" = "使用 Apple 系统翻译当前插件包的原生简介和更新日志。待译正文可能发送到 Apple 服务器。";
 "Depiction_Translation_Original" = "原文";
 "Depiction_Translation_Translated" = "译文";
 "Depiction_Translation_Compared" = "对照";

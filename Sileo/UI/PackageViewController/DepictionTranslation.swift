@@ -171,13 +171,13 @@ enum DepictionTranslation {
     /// text back through `progress` after processing a tab, without waiting for the
     /// rest of the page or subsequent retries.
     static func translate(_ depiction: [String: Any], source: String?, target: String,
-                          work: Work, isCurrent pageIsCurrent: @escaping () -> Bool,
+                          systemOnly: Bool, work: Work, isCurrent pageIsCurrent: @escaping () -> Bool,
                           progress: ((Result) -> Void)? = nil, completion: @escaping (Result?, Bool) -> Void) {
         let isCurrent = { [weak work] in work?.cancelled == false && pageIsCurrent() }
         let register: (Int, (() -> Void)?) -> Void = { [weak work] key, cancel in
             if let work = work { work.register(key, cancel) } else { cancel?() }
         }
-        let ai = DepictionAIProvider.selection
+        let ai = systemOnly ? nil : DepictionAIProvider.selection
         guard isCurrent(), ai != nil || SileoSystemTranslationAvailable() else { completion(nil, true); return }
         var seen = Set<String>()
         var fragments = [String]()
