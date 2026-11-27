@@ -1063,28 +1063,9 @@ class PackageViewController: SileoViewController, PackageQueueButtonDataProvider
         guard canTranslateDepiction, DepictionTranslation.supportedPlatform,
               viewIfLoaded?.window != nil, presentedViewController == nil,
               translationPageIdentity != nil, originalDepiction != nil else { return false }
-        let loadID = depictionLoadID
-        let isAISelected = DepictionAIProvider.selection != nil
-        let hasSystemConsent = (usesSystemPageTranslation && hasPageTranslationConsent)
-            || (DepictionTranslation.isEnabled && !isAISelected)
-        if hasSystemConsent {
-            startSystemPageTranslation()
-            presentDepictionTranslationOptions()
-        } else {
-            let title = String(localizationKey: "Depiction_Translation_System_Page")
-            let panel = SileoPanelViewController(title: title,
-                subtitle: String(localizationKey: "Depiction_Translation_System_Consent"), icon: "character.bubble")
-            panel.table.setItems([
-                SileoPanelTable.Item(SileoPanelViewController.choiceRow(title: title, detail: nil, selected: false) { [weak self, weak panel] in
-                    panel?.close { [weak self] in
-                        guard let self = self, self.canTranslateDepiction,
-                              self.depictionLoadID == loadID, self.viewIfLoaded?.window != nil else { return }
-                        self.startSystemPageTranslation()
-                    }
-                }, height: 52)
-            ])
-            panel.present(from: self)
-        }
+        // The explicit translation gesture authorizes Apple translation for this page only.
+        startSystemPageTranslation()
+        presentDepictionTranslationOptions()
         return true
     }
 
